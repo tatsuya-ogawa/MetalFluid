@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "CC7F5A92-B3AC-4ABC-9B3C-F660292ED0BC",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:MetalFluid.xcodeproj",
+      "identifier" : "0912392B2E1B99620033B350",
+      "name" : "MetalFluid"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:MetalFluid.xcodeproj",
+        "identifier" : "0951F3D72E3CE6AE0073471D",
+        "name" : "MetalFluidTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:MetalFluid.xcodeproj",
+        "identifier" : "0951F3D72E3CE6AE0073471D",
+        "name" : "MetalFluidTests"
+      }
+    }
+  ],
+  "version" : 1
+}
