@@ -43,9 +43,9 @@ extension MPMFluidRenderer {
             fatalError("Could not create pressure heatmap render pipeline state: \(error)")
         }
         
-        // Create depth stencil state for proper depth testing
+        // Create depth stencil state matching WebGPU-Ocean settings
         let depthStencilDescriptor = MTLDepthStencilDescriptor()
-        depthStencilDescriptor.depthCompareFunction = .lessEqual  // More lenient than .less
+        depthStencilDescriptor.depthCompareFunction = .less  // Match WebGPU-Ocean: 'less'
         depthStencilDescriptor.isDepthWriteEnabled = true
         depthStencilState = device.makeDepthStencilState(descriptor: depthStencilDescriptor)!
     }
@@ -298,8 +298,10 @@ extension MPMFluidRenderer {
         }
         
         renderEncoder.setRenderPipelineState(depthRenderPipelineState)
+        renderEncoder.setDepthStencilState(depthStencilState)
         renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        renderEncoder.setFragmentBuffer(fluidRenderUniformBuffer, offset: 0, index: 1)
         
         // Draw billboard quads (6 vertices per instance, same as WebGPU-Ocean)
         renderEncoder.drawPrimitives(

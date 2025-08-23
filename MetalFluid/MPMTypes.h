@@ -68,4 +68,14 @@ typedef struct {
     float sphere_size;     // Sphere size for billboard rendering (same as WebGPU-Ocean)
 } VertexShaderUniforms;
 
+// Fluid rendering uniforms (same as WebGPU-Ocean)
+typedef struct {
+    simd_float2 texelSize;
+    float sphereSize;
+    simd_float4x4 invProjectionMatrix;
+    simd_float4x4 projectionMatrix;
+    simd_float4x4 viewMatrix;
+    simd_float4x4 invViewMatrix;
+} FluidRenderUniforms;
+
 #endif /* MPMTypes_h */

@@ -160,9 +160,17 @@ vertex DepthVertexOut vs_depth(
     return out;
 }
 
-fragment float fs_depth(
-    DepthVertexOut in [[stage_in]]
+struct FragmentOutput {
+    float4 frag_color [[color(0)]];
+    float frag_depth [[depth(any)]];
+};
+
+fragment FragmentOutput fs_depth(
+    DepthVertexOut in [[stage_in]],
+    constant FluidRenderUniforms& uniforms [[buffer(1)]]
 ) {
+    FragmentOutput out;
+    
     // Same as WebGPU-Ocean depthMap.wgsl
     float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
@@ -173,11 +181,13 @@ fragment float fs_depth(
     float3 normal = float3(normalxy, normalz);
     
     // Calculate sphere radius and real view position (same as WebGPU-Ocean)
-    float radius = in.sphere_size / 2.0; // uniforms.sphere_size / 2 equivalent  
+    float radius = in.sphere_size / 2.0;
     float4 real_view_pos = float4(in.view_position + normal * radius, 1.0);
+    float4 clip_space_pos = uniforms.projectionMatrix * real_view_pos;
+    out.frag_depth = clip_space_pos.z / clip_space_pos.w;
     
-    // Return view space z (same as WebGPU-Ocean)
-    return real_view_pos.z;
+    out.frag_color = float4(real_view_pos.z, 0.0, 0.0, 1.0);
+    return out;
 }
 
 // Bilateral depth filter shaders
@@ -274,16 +284,6 @@ fragment float fs_bilateral(
     
     return sum / wsum;
 }
-
-// Fluid surface rendering uniforms
-struct FluidRenderUniforms {
-    float2 texelSize;
-    float sphereSize;
-    float4x4 invProjectionMatrix;
-    float4x4 projectionMatrix;
-    float4x4 viewMatrix;
-    float4x4 invViewMatrix;
-};
 
 struct FluidFragmentInput {
     float4 position [[position]];
