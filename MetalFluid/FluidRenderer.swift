@@ -517,35 +517,8 @@ class MPMFluidRenderer: NSObject {
             length: gaussianUniformSize,
             options: .storageModeShared
         )!
-        
-        // Debug logging
-        print("🔍 Buffer sizes:")
-        print("   Particle buffer: \(particleBufferSize) bytes (\(MemoryLayout<MPMParticle>.stride) per particle)")
-        print("   Grid buffer: \(gridBufferSize) bytes (\(MemoryLayout<MPMGridNode>.stride) per node)")
-        print("   Grid nodes: \(gridNodes)")
-        print("   Particle count: \(particleCount)")
-        print("   Compute uniform buffer: \(computeUniformBufferSize) bytes")
-        print("   Vertex uniform buffer: \(vertexUniformBufferSize) bytes")
-        print("   Filter uniform buffer: \(filterUniformSize) bytes")
     }
-    
-    internal func setupCubeIndexBuffer() {
-        let cubeIndices: [UInt32] = [
-            0, 1, 2,  0, 2, 3,  // Front face
-            4, 7, 6,  4, 6, 5,  // Back face
-            0, 4, 5,  0, 5, 1,  // Bottom face
-            2, 6, 7,  2, 7, 3,  // Top face
-            0, 3, 7,  0, 7, 4,  // Left face
-            1, 5, 6,  1, 6, 2   // Right face
-        ]
-        
-        cubeIndexBuffer = device.makeBuffer(
-            bytes: cubeIndices,
-            length: MemoryLayout<UInt32>.stride * cubeIndices.count,
-            options: .storageModeShared
-        )
-    }
-        
+            
     func update(deltaTime: Float, screenSize: SIMD2<Float>, mvpMatrix: float4x4, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
