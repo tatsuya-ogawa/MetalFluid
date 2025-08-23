@@ -77,20 +77,20 @@ extension MPMFluidRenderer {
         }
         
         // Depth filter pipeline
-        guard let filterVertexFunction = library.makeFunction(name: "vs_bilateral"),
+        guard let depthFilterVertexFunction = library.makeFunction(name: "vs_bilateral"),
               let filterFragmentFunction = library.makeFunction(name: "fs_bilateral")
         else {
             fatalError("Could not find depth filter shader functions")
         }
         
-        let filterPipelineDescriptor = MTLRenderPipelineDescriptor()
-        filterPipelineDescriptor.vertexFunction = filterVertexFunction
-        filterPipelineDescriptor.fragmentFunction = filterFragmentFunction
-        filterPipelineDescriptor.colorAttachments[0].pixelFormat = .r32Float
+        let depthFilterPipelineDescriptor = MTLRenderPipelineDescriptor()
+        depthFilterPipelineDescriptor.vertexFunction = depthFilterVertexFunction
+        depthFilterPipelineDescriptor.fragmentFunction = filterFragmentFunction
+        depthFilterPipelineDescriptor.colorAttachments[0].pixelFormat = .r32Float
         
         do {
             depthFilterPipelineState = try device.makeRenderPipelineState(
-                descriptor: filterPipelineDescriptor
+                descriptor: depthFilterPipelineDescriptor
             )
         } catch {
             fatalError("Could not create depth filter pipeline state: \(error)")
@@ -112,7 +112,7 @@ extension MPMFluidRenderer {
         let thicknessPipelineDescriptor = MTLRenderPipelineDescriptor()
         thicknessPipelineDescriptor.vertexFunction = thicknessVertexFunction
         thicknessPipelineDescriptor.fragmentFunction = thicknessFragmentFunction
-        thicknessPipelineDescriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        thicknessPipelineDescriptor.colorAttachments[0].pixelFormat = .r16Float
         thicknessPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
         
         // Enable additive blending for thickness accumulation
@@ -142,7 +142,7 @@ extension MPMFluidRenderer {
         let gaussianPipelineDescriptor = MTLRenderPipelineDescriptor()
         gaussianPipelineDescriptor.vertexFunction = gaussianVertexFunction
         gaussianPipelineDescriptor.fragmentFunction = gaussianFragmentFunction
-        gaussianPipelineDescriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        gaussianPipelineDescriptor.colorAttachments[0].pixelFormat = .r16Float
         // Note: Gaussian filter doesn't need depth attachment since it's a full-screen quad
         
         do {
@@ -209,7 +209,7 @@ extension MPMFluidRenderer {
     internal func setupFluidTextures(screenSize: SIMD2<Float>) {
         // Thickness textures
         let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm,
+            pixelFormat: .r16Float,
             width: Int(screenSize.x),
             height: Int(screenSize.y),
             mipmapped: false
