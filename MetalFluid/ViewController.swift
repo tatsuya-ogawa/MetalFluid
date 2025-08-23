@@ -1,6 +1,7 @@
 import MetalKit
 import UIKit
 import simd
+import ReplayKit
 
 class ViewController: UIViewController {
     // For 10fps control
@@ -34,6 +35,10 @@ class ViewController: UIViewController {
     private var particleSizeLabel: UILabel!
     private var massScaleSlider: UISlider!
     private var massScaleLabel: UILabel!
+    
+    // ReplayKit recording
+    private let screenRecorder = RPScreenRecorder.shared()
+    private var isRecording = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,6 +51,7 @@ class ViewController: UIViewController {
         setupRenderer()
         setupGestures()
         setupControlPanel()
+        setupKeyboardHandling()
     }
 
     private func setupMetalView() {
@@ -628,4 +634,98 @@ func perspective(fovy: Float, aspect: Float, nearZ: Float, farZ: Float)
         SIMD4<Float>(0, 0, zScale, -1),
         SIMD4<Float>(0, 0, wzScale, 0)
     )
+}
+
+// MARK: - Keyboard Handling and ReplayKit Recording
+extension ViewController {
+    
+    private func setupKeyboardHandling() {
+        // Make the view controller first responder to receive key events
+        view.becomeFirstResponder()
+    }
+    
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+    
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            
+            // Check for Shift+G
+            if key.charactersIgnoringModifiers == "r" && key.modifierFlags.contains(.shift) {
+                toggleRecording()
+                return
+            }
+        }
+        
+        super.pressesBegan(presses, with: event)
+    }
+    
+    private func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+    
+    private func startRecording() {
+        guard !isRecording else { return }
+        
+        screenRecorder.startRecording { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Failed to start recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error", 
+                                   message: "Failed to start screen recording: \(error.localizedDescription)")
+                } else {
+                    self?.isRecording = true
+                    print("🎥 Screen recording started - Press Shift+G to stop")
+                }
+            }
+        }
+    }
+    
+    private func stopRecording() {
+        guard isRecording else { return }
+        
+        screenRecorder.stopRecording { [weak self] previewController, error in
+            DispatchQueue.main.async {
+                self?.isRecording = false
+                
+                if let error = error {
+                    print("Failed to stop recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error", 
+                                   message: "Failed to stop recording: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let previewController = previewController else {
+                    print("No preview controller available")
+                    return
+                }
+                
+                previewController.previewControllerDelegate = self
+                self?.present(previewController, animated: true) {
+                    print("🎥 Screen recording stopped - Preview presented")
+                }
+            }
+        }
+    }
+    
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+// MARK: - RPPreviewViewControllerDelegate
+extension ViewController: RPPreviewViewControllerDelegate {
+    func previewControllerDidFinish(_ previewController: RPPreviewViewController) {
+        previewController.dismiss(animated: true) {
+            print("📱 Recording preview dismissed")
+        }
+    }
 }

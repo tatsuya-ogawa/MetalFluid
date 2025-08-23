@@ -21,5 +21,14 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIKeyCommands</key>
+	<array>
+		<dict>
+			<key>UIKeyCommand</key>
+			<string>r</string>
+			<key>UIKeyModifierFlags</key>
+			<string>UIKeyModifierShift</string>
+		</dict>
+	</array>
 </dict>
 </plist>
