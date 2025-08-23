@@ -161,7 +161,7 @@ fragment float fs_depth(
     // Calculate normalized coordinates for sphere surface
     float2 normalxy = pointCoord * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
-    if (r2 > 1.0) {
+    if (r2 > 2.0) {
         discard_fragment();
     }
     

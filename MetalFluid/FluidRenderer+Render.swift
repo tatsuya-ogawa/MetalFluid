@@ -319,8 +319,9 @@ extension MPMFluidRenderer {
             capacity: 1
         )
         
-        // Calculate parameters like WebGPU
-        let radius: Float = 0.1 // particle radius
+        // Calculate parameters like WebGPU - use dynamic particle size
+        let baseRadius: Float = 0.1 // base particle radius
+        let radius = baseRadius * particleSizeMultiplier // scale with slider
         let blurdDepthScale: Float = 10.0
         let maxFilterSize: Float = 100.0
         let blurFilterSize: Float = 12.0
