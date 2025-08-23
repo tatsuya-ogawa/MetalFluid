@@ -116,67 +116,68 @@ fragment float4 pressureHeatmapFragmentShader(VertexOut in [[stage_in]],
 }
 
 
-// Depth generation shaders
+// Billboard quad vertex data (same as WebGPU-Ocean)
+constant float2 cornerPositions[6] = {
+    float2( 0.5,  0.5),
+    float2( 0.5, -0.5),
+    float2(-0.5, -0.5),
+    float2( 0.5,  0.5),
+    float2(-0.5, -0.5),
+    float2(-0.5,  0.5)
+};
+
+// Depth generation shaders (WebGPU-Ocean style)
 struct DepthVertexOut {
     float4 position [[position]];
-    float pointSize [[point_size]];
-    float depth;
+    float2 uv;
     float3 view_position;
-    float sphere_radius;
+    float sphere_size;
 };
 
 vertex DepthVertexOut vs_depth(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
-    uint id [[vertex_id]]
+    uint vertex_id [[vertex_id]],
+    uint instance_id [[instance_id]]
 ) {
     DepthVertexOut out;
     
-    // Transform particle position to clip space
-    float4 worldPos = float4(particles[id].position, 1.0);
-    out.position = uniforms.mvpMatrix * worldPos;
+    // Get corner position (same as WebGPU-Ocean)
+    float2 corner_pos = cornerPositions[vertex_id];
+    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    out.uv = corner_pos + 0.5;
     
-    // Calculate view space position for sphere depth calculation
-    float4 viewPos = uniforms.viewMatrix * worldPos;
+    // Get particle data
+    float3 real_position = particles[instance_id].position;
+    float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
+    out.view_position = view_position;
+    out.sphere_size = uniforms.sphere_size;
     
-    // Store view space position for sphere depth calculation
-    out.view_position = viewPos.xyz;
-    
-    // Store normalized depth value (0 to 1)
-    out.depth = (out.position.z / out.position.w + 1.0) * 0.5;
-    
-    // Calculate sphere radius based on particle size
-    float distance = length(viewPos.xyz);
-    float baseSize = getBaseSize(distance);
-    out.pointSize = baseSize * uniforms.particleSizeMultiplier;
-    out.sphere_radius = out.pointSize * 0.5;
+    // Billboard positioning: add corner in view space, then project (same as WebGPU-Ocean)
+    float4 view_pos_with_corner = float4(view_position + corner, 1.0);
+    out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
     return out;
 }
 
 fragment float fs_depth(
-    DepthVertexOut in [[stage_in]],
-    float2 pointCoord [[point_coord]]
+    DepthVertexOut in [[stage_in]]
 ) {
-    // Calculate normalized coordinates for sphere surface
-    float2 normalxy = pointCoord * 2.0 - 1.0;
+    // Same as WebGPU-Ocean depthMap.wgsl
+    float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
-    if (r2 > 2.0) {
+    if (r2 > 1.1) {
         discard_fragment();
     }
-    
-    // Calculate z component of sphere normal
     float normalz = sqrt(1.0 - r2);
+    float3 normal = float3(normalxy, normalz);
     
-    // Calculate sphere radius in world units  
-    float radius = in.sphere_radius * 0.01;
-    float view_z_offset = normalz * radius;
+    // Calculate sphere radius and real view position (same as WebGPU-Ocean)
+    float radius = in.sphere_size / 2.0; // uniforms.sphere_size / 2 equivalent  
+    float4 real_view_pos = float4(in.view_position + normal * radius, 1.0);
     
-    // Apply depth offset in view space (same as WebGPU)
-    float real_view_z = in.view_position.z - view_z_offset;
-    
-    // Return view space z directly (like WebGPU implementation)
-    return abs(real_view_z);
+    // Return view space z (same as WebGPU-Ocean)
+    return real_view_pos.z;
 }
 
 // Bilateral depth filter shaders
@@ -225,7 +226,6 @@ fragment float fs_bilateral(
     texture2d<float> depthTexture [[texture(0)]],
     constant FilterUniforms& filterUniforms [[buffer(0)]]
 ) {
-    float2 texelSize = 1.0 / filterUniforms.screenSize;
     float2 iuv = in.texCoord * filterUniforms.screenSize;
     float centerDepth = abs(depthTexture.read(uint2(iuv)).r);
     
@@ -409,51 +409,49 @@ fragment float4 fluidFragmentShader(
     return float4(finalColor, 1.0);
 }
 
-// Thickness rendering shaders
+// Thickness rendering shaders (WebGPU-Ocean style)
 struct ThicknessVertexOut {
     float4 position [[position]];
-    float pointSize [[point_size]];
-    float4 color;
+    float2 uv;
 };
 
 vertex ThicknessVertexOut vs_thickness(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
-    uint id [[vertex_id]]
+    uint vertex_id [[vertex_id]],
+    uint instance_id [[instance_id]]
 ) {
     ThicknessVertexOut out;
     
-    // Transform particle position to clip space
-    float4 worldPos = float4(particles[id].position, 1.0);
-    out.position = uniforms.mvpMatrix * worldPos;
+    // Get corner position (same as WebGPU-Ocean thicknessMap.wgsl)
+    float2 corner_pos = cornerPositions[vertex_id];
+    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    out.uv = corner_pos + 0.5;
     
-    // Larger particle size for thickness rendering - even larger
-    float distance = length(out.position.xyz);
-    float baseSize = getBaseSize(distance);
-    out.pointSize = baseSize * uniforms.particleSizeMultiplier;
+    // Get particle data
+    float3 real_position = particles[instance_id].position;
+    float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
     
-    // Set color for thickness rendering
-    out.color = float4(1.0, 1.0, 1.0, 1.0);
+    // Billboard positioning: add corner in view space, then project (same as WebGPU-Ocean)
+    float4 view_pos_with_corner = float4(view_position + corner, 1.0);
+    out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
     return out;
 }
 
 fragment float4 fs_thickness(
-    ThicknessVertexOut in [[stage_in]],
-    float2 pointCoord [[point_coord]]
+    ThicknessVertexOut in [[stage_in]]
 ) {
-    // Convert point coordinates to normalized coordinates (-1 to 1)
-    float2 coord = pointCoord * 2.0 - 1.0;
-    float r2 = dot(coord, coord);
-    
-    // Discard fragments outside unit circle
-    if (r2 > 1.0) discard_fragment();
-    
-    // Calculate thickness based on sphere geometry
+    // Same as WebGPU-Ocean thicknessMap.wgsl
+    float2 normalxy = in.uv * 2.0 - 1.0;
+    float r2 = dot(normalxy, normalxy);
+    if (r2 > 1.0) {
+        discard_fragment();
+    }
     float thickness = sqrt(1.0 - r2);
-    float particleAlpha = 0.05; // Same as WebGPU
+    float particle_alpha = 0.05; // Same as WebGPU
     
-    return float4(float3(particleAlpha * thickness), 1.0);
+    return float4(float3(particle_alpha * thickness), 1.0);
 }
 
 // Gaussian filter shaders for thickness texture

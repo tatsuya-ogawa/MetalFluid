@@ -300,10 +300,13 @@ extension MPMFluidRenderer {
         renderEncoder.setRenderPipelineState(depthRenderPipelineState)
         renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        
+        // Draw billboard quads (6 vertices per instance, same as WebGPU-Ocean)
         renderEncoder.drawPrimitives(
-            type: .point,
+            type: .triangle,
             vertexStart: 0,
-            vertexCount: particleCount
+            vertexCount: 6,
+            instanceCount: particleCount
         )
         renderEncoder.endEncoding()
     }
@@ -409,10 +412,13 @@ extension MPMFluidRenderer {
         renderEncoder.setRenderPipelineState(thicknessRenderPipelineState)
         renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        
+        // Draw billboard quads (6 vertices per instance, same as WebGPU-Ocean)
         renderEncoder.drawPrimitives(
-            type: .point,
+            type: .triangle,
             vertexStart: 0,
-            vertexCount: particleCount
+            vertexCount: 6,
+            instanceCount: particleCount
         )
         renderEncoder.endEncoding()
     }

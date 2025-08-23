@@ -65,6 +65,7 @@ typedef struct {
     simd_int3 gridResolution;
     float rest_density;    // For pressure heatmap calculation
     float particleSizeMultiplier; // For dynamic particle size scaling
+    float sphere_size;     // Sphere size for billboard rendering (same as WebGPU-Ocean)
 } VertexShaderUniforms;
 
 #endif /* MPMTypes_h */

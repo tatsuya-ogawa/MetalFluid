@@ -50,6 +50,7 @@ struct VertexShaderUniforms {
     var gridResolution: SIMD3<Int32>
     var rest_density: Float
     var particleSizeMultiplier: Float
+    var sphere_size: Float
 }
 
 
@@ -363,6 +364,9 @@ class MPMFluidRenderer: NSObject {
     internal var gaussianUniformBuffer: MTLBuffer!
     internal var environmentTexture: MTLTexture!
     
+    // Cube index buffer for instanced rendering
+    internal var cubeIndexBuffer: MTLBuffer?
+    
     // Screen size for depth filtering
     internal var screenSize: SIMD2<Float> = SIMD2<Float>(800, 600)
     
@@ -524,6 +528,23 @@ class MPMFluidRenderer: NSObject {
         print("   Vertex uniform buffer: \(vertexUniformBufferSize) bytes")
         print("   Filter uniform buffer: \(filterUniformSize) bytes")
     }
+    
+    internal func setupCubeIndexBuffer() {
+        let cubeIndices: [UInt32] = [
+            0, 1, 2,  0, 2, 3,  // Front face
+            4, 7, 6,  4, 6, 5,  // Back face
+            0, 4, 5,  0, 5, 1,  // Bottom face
+            2, 6, 7,  2, 7, 3,  // Top face
+            0, 3, 7,  0, 7, 4,  // Left face
+            1, 5, 6,  1, 6, 2   // Right face
+        ]
+        
+        cubeIndexBuffer = device.makeBuffer(
+            bytes: cubeIndices,
+            length: MemoryLayout<UInt32>.stride * cubeIndices.count,
+            options: .storageModeShared
+        )
+    }
         
     func update(deltaTime: Float, screenSize: SIMD2<Float>, mvpMatrix: float4x4, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
@@ -573,7 +594,8 @@ class MPMFluidRenderer: NSObject {
             domainOrigin: domainOrigin,
             gridResolution: gridRes,
             rest_density: restDensity,
-            particleSizeMultiplier: particleSizeMultiplier
+            particleSizeMultiplier: particleSizeMultiplier,
+            sphere_size: 0.025 * particleSizeMultiplier  // Same calculation as WebGPU
         )
         
         frameIndex += 1
