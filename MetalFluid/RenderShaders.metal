@@ -116,7 +116,7 @@ fragment float4 pressureHeatmapFragmentShader(VertexOut in [[stage_in]],
 }
 
 
-// Billboard quad vertex data (same as WebGPU-Ocean)
+// Billboard quad vertex data for particle rendering
 constant float2 cornerPositions[6] = {
     float2( 0.5,  0.5),
     float2( 0.5, -0.5),
@@ -126,7 +126,7 @@ constant float2 cornerPositions[6] = {
     float2(-0.5,  0.5)
 };
 
-// Depth generation shaders (WebGPU-Ocean style)
+// Depth generation shaders
 struct DepthVertexOut {
     float4 position [[position]];
     float2 uv;
@@ -142,7 +142,7 @@ vertex DepthVertexOut vs_depth(
 ) {
     DepthVertexOut out;
     
-    // Get corner position (same as WebGPU-Ocean)
+    // Get corner position for billboard quad
     float2 corner_pos = cornerPositions[vertex_id];
     float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
     out.uv = corner_pos + 0.5;
@@ -153,7 +153,7 @@ vertex DepthVertexOut vs_depth(
     out.view_position = view_position;
     out.sphere_size = uniforms.sphere_size;
     
-    // Billboard positioning: add corner in view space, then project (same as WebGPU-Ocean)
+    // Billboard positioning: add corner in view space, then project
     float4 view_pos_with_corner = float4(view_position + corner, 1.0);
     out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
@@ -171,7 +171,7 @@ fragment FragmentOutput fs_depth(
 ) {
     FragmentOutput out;
     
-    // Same as WebGPU-Ocean depthMap.wgsl
+    // Calculate surface normal and depth
     float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
     if (r2 > 1.0) {
@@ -180,7 +180,7 @@ fragment FragmentOutput fs_depth(
     float normalz = sqrt(1.0 - r2);
     float3 normal = float3(normalxy, normalz);
     
-    // Calculate sphere radius and real view position (same as WebGPU-Ocean)
+    // Calculate sphere radius and real view position
     float radius = in.sphere_size / 2.0;
     float4 real_view_pos = float4(in.view_position + normal * radius, 1.0);
     float4 clip_space_pos = uniforms.projectionMatrix * real_view_pos;
@@ -239,16 +239,16 @@ fragment float fs_bilateral(
     float2 iuv = in.texCoord * filterUniforms.screenSize;
     float centerDepth = abs(depthTexture.read(uint2(iuv)).r);
     
-    // Skip filtering for background pixels (same as WebGPU)
+    // Skip filtering for background pixels
     if (centerDepth >= 1e4 || centerDepth <= 0.0) {
         return centerDepth;
     }
     
-    // Adaptive filter size calculation (same as WebGPU)
+    // Adaptive filter size calculation
     int filterSize = min(int(filterUniforms.maxFilterSize), 
                         int(ceil(filterUniforms.projectedParticleConstant / centerDepth)));
     
-    // Filter parameters (same as WebGPU)
+    // Filter parameters
     float sigma = float(filterSize) / 3.0;
     float twoSigma = 2.0 * sigma * sigma;
     float sigmaDepth = filterUniforms.depthThreshold / 3.0;
@@ -257,7 +257,7 @@ fragment float fs_bilateral(
     float sum = 0.0;
     float wsum = 0.0;
     
-    // Bilateral filter kernel (same range as WebGPU)
+    // Bilateral filter kernel
     for (int x = -filterSize; x <= filterSize; x++) {
         float2 coords = float2(float(x));
         float2 samplePos = iuv + coords * filterUniforms.direction;
@@ -296,7 +296,7 @@ float3 computeViewPosFromUVDepth(float2 texCoord, float depth, constant FluidRen
     // Convert screen coordinates to normalized device coordinates
     float4 ndc = float4(texCoord.x * 2.0 - 1.0, 1.0 - 2.0 * texCoord.y, 0.0, 1.0);
     
-    // Calculate the z component based on projection matrix (same as WebGPU)
+    // Calculate the z component based on projection matrix
     ndc.z = -uniforms.projectionMatrix[2].z + uniforms.projectionMatrix[3].z / depth;
     ndc.w = 1.0;
     
@@ -409,7 +409,7 @@ fragment float4 fluidFragmentShader(
     return float4(finalColor, 1.0);
 }
 
-// Thickness rendering shaders (WebGPU-Ocean style)
+// Thickness rendering shaders
 struct ThicknessVertexOut {
     float4 position [[position]];
     float2 uv;
@@ -423,7 +423,7 @@ vertex ThicknessVertexOut vs_thickness(
 ) {
     ThicknessVertexOut out;
     
-    // Get corner position (same as WebGPU-Ocean thicknessMap.wgsl)
+    // Get corner position for billboard quad
     float2 corner_pos = cornerPositions[vertex_id];
     float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
     out.uv = corner_pos + 0.5;
@@ -432,7 +432,7 @@ vertex ThicknessVertexOut vs_thickness(
     float3 real_position = particles[instance_id].position;
     float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
     
-    // Billboard positioning: add corner in view space, then project (same as WebGPU-Ocean)
+    // Billboard positioning: add corner in view space, then project
     float4 view_pos_with_corner = float4(view_position + corner, 1.0);
     out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
@@ -442,14 +442,14 @@ vertex ThicknessVertexOut vs_thickness(
 fragment float fs_thickness(
     ThicknessVertexOut in [[stage_in]]
 ) {
-    // Same as WebGPU-Ocean thicknessMap.wgsl
+    // Calculate thickness contribution
     float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
     if (r2 > 1.0) {
         discard_fragment();
     }
     float thickness = sqrt(1.0 - r2);
-    float particle_alpha = 0.05; // Same as WebGPU
+    float particle_alpha = 0.05;
     
     return particle_alpha * thickness;
 }
@@ -461,7 +461,7 @@ struct GaussianUniforms {
     int filterRadius;     // Filter kernel radius
 };
 
-// Gaussian filter fragment shader (same as WebGPU)
+// Gaussian filter fragment shader
 fragment float fs_gaussian(
     QuadVertexOut in [[stage_in]],
     texture2d<float> inputTexture [[texture(0)]],
@@ -474,7 +474,7 @@ fragment float fs_gaussian(
         return 0.0;
     }
     
-    // Fixed filter size like WebGPU
+    // Fixed filter size
     int filterSize = 30;
     float sigma = float(filterSize) / 3.0;
     float twoSigma = 2.0 * sigma * sigma;
@@ -482,7 +482,7 @@ fragment float fs_gaussian(
     float sum = 0.0;
     float wsum = 0.0;
     
-    // Apply 1D Gaussian blur (same as WebGPU)
+    // Apply 1D Gaussian blur
     for (int x = -filterSize; x <= filterSize; x++) {
         float2 coords = float2(float(x));
         float2 samplePos = iuv + gaussianUniforms.direction * coords;

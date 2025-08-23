@@ -29,7 +29,6 @@ class ViewController: UIViewController {
     private var modeButton: UIButton!
     private var stepButton: UIButton!
     private var resetButton: UIButton!
-    private var dumpButton: UIButton!
     private var renderModeButton: UIButton!
     private var particleSizeSlider: UISlider!
     private var particleSizeLabel: UILabel!
@@ -159,18 +158,6 @@ class ViewController: UIViewController {
             for: .touchUpInside
         )
 
-        // Dump button
-        dumpButton = UIButton(type: .system)
-        dumpButton.setTitle("Dump", for: .normal)
-        dumpButton.setTitleColor(.white, for: .normal)
-        dumpButton.backgroundColor = UIColor.systemCyan.withAlphaComponent(0.8)
-        dumpButton.layer.cornerRadius = 8
-        dumpButton.addTarget(
-            self,
-            action: #selector(dumpParticles),
-            for: .touchUpInside
-        )
-        
         // Render mode button
         renderModeButton = UIButton(type: .system)
         renderModeButton.setTitle("Particles", for: .normal)
@@ -223,7 +210,6 @@ class ViewController: UIViewController {
         controlPanel.addSubview(modeButton)
         controlPanel.addSubview(stepButton)
         controlPanel.addSubview(resetButton)
-        controlPanel.addSubview(dumpButton)
         controlPanel.addSubview(renderModeButton)
         controlPanel.addSubview(particleSizeSlider)
         controlPanel.addSubview(particleSizeLabel)
@@ -235,7 +221,6 @@ class ViewController: UIViewController {
         modeButton.translatesAutoresizingMaskIntoConstraints = false
         stepButton.translatesAutoresizingMaskIntoConstraints = false
         resetButton.translatesAutoresizingMaskIntoConstraints = false
-        dumpButton.translatesAutoresizingMaskIntoConstraints = false
         renderModeButton.translatesAutoresizingMaskIntoConstraints = false
         particleSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -299,24 +284,10 @@ class ViewController: UIViewController {
                 constant: -10
             ),
             resetButton.heightAnchor.constraint(equalToConstant: 40),
-            // Dump button constraints
-            dumpButton.topAnchor.constraint(
-                equalTo: resetButton.bottomAnchor,
-                constant: 10
-            ),
-            dumpButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            dumpButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
-            dumpButton.heightAnchor.constraint(equalToConstant: 40),
             
             // Render mode button constraints
             renderModeButton.topAnchor.constraint(
-                equalTo: dumpButton.bottomAnchor,
+                equalTo: resetButton.bottomAnchor,
                 constant: 10
             ),
             renderModeButton.leadingAnchor.constraint(
@@ -390,11 +361,6 @@ class ViewController: UIViewController {
             massScaleSlider.heightAnchor.constraint(equalToConstant: 30),
         ])
     }
-    @objc private func dumpParticles() {
-        guard let renderer = fluidRenderer else { return }
-        renderer.requestDebugDump()
-    }
-    
     @objc private func particleSizeChanged(_ slider: UISlider) {
         let size = slider.value
         particleSizeLabel.text = String(format: "Size: %.1fx", size)

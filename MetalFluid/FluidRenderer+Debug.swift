@@ -8,10 +8,7 @@ import Metal
 import MetalKit
 import simd
 extension MPMFluidRenderer{
-    // Reserve dump method (called from UI button, etc.)
-    public func requestDebugDump() {
-        shouldCopyGridForDebug = true
-    }
+    // Debug functionality for development
     // Debug output particle positions
     public func dumpParticlePositions() {
         let pointer = particleBuffer.contents().bindMemory(to: MPMParticle.self, capacity: particleCount)

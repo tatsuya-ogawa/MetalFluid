@@ -62,15 +62,15 @@ inline float3 getCellDifference(float3 gridPos, int3 cellIds) {
     return gridPos - (float3(cellIds) + 0.5);
 }
 
-// --- WebGPU compatible particle to grid coordinate conversion ---
+// --- Particle to grid coordinate conversion ---
 inline void particleToGridCoords(float3 particlePos,
                                        constant ComputeShaderUniforms &uniforms,
                                        thread float3 &gridPos,
                                        thread int3 &cellIds, 
                                        thread float3 &cellDiff) {
-    // WebGPU compatibility: use particle position directly as grid position
+    // Use particle position directly as grid position
     gridPos = particlePos;
-    cellIds = getGridCellIndices(gridPos, 0.0); // No offset like WebGPU
+    cellIds = getGridCellIndices(gridPos, 0.0);
     cellDiff = getCellDifference(gridPos, cellIds);
 }
 
@@ -143,7 +143,7 @@ kernel void particlesToGrid1(
     float3 position, cell_diff;
     int3 cell_ids;
     
-    // Use WebGPU compatible coordinate conversion
+    // Use coordinate conversion
     particleToGridCoords(p.position, uniforms, position, cell_ids, cell_diff);
     
     float3 w[3];

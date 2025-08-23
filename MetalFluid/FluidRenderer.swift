@@ -219,7 +219,7 @@ class WaterRenderer: ModeRenderer {
         // Step 1: Render depth map
         renderer.renderDepthMap(commandBuffer: commandBuffer)
         
-        // Step 2: Apply bilateral filter to depth (4 iterations as per WebGPU-Ocean)
+        // Step 2: Apply bilateral filter to depth (4 iterations)
         for _ in 0..<4 {
             renderer.applyDepthFilter(
                 commandBuffer: commandBuffer,
@@ -231,7 +231,7 @@ class WaterRenderer: ModeRenderer {
         // Step 3: Render thickness map
         renderer.renderThicknessMap(commandBuffer: commandBuffer)
         
-        // Step 4: Apply Gaussian filter to thickness (1 iteration as per WebGPU-Ocean)
+        // Step 4: Apply Gaussian filter to thickness (1 iteration)
         renderer.applyThicknessFilter(commandBuffer: commandBuffer, filterRadius: 4)
         
         // Step 5: Render final fluid surface
@@ -383,13 +383,13 @@ class MPMFluidRenderer: NSObject {
     // Sort constants
     internal var maxThreadsPerGroup: Int = 256
     
-    // Constants - WebGPU-Ocean inspired performance settings - Public for testing
+    // Performance settings - Public for testing
     public let particleCount: Int = 40000
     public let gridSize: Int = 64
     public var gridNodes: Int { gridSize * gridSize * gridSize }
     internal var frameIndex: Int = 0
     
-    // Number of simulation substeps per frame (matches WebGPU‑Ocean default)
+    // Number of simulation substeps per frame
     public var simulationSubsteps: Int = 2
     
     // Particle sorting configuration
@@ -627,8 +627,6 @@ class MPMFluidRenderer: NSObject {
         frameIndex = 0
     }
     
-    // Flag for dump reservation
-    internal var shouldCopyGridForDebug: Bool = false
     // --- Add grid debug buffer and methods ---
     public var debugGridBuffer: MTLBuffer!
     
