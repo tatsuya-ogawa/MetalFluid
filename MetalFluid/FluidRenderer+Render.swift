@@ -56,8 +56,8 @@ extension MPMFluidRenderer {
         }
         
         // Depth rendering pipeline
-        guard let depthVertexFunction = library.makeFunction(name: "depthVertexShader"),
-              let depthFragmentFunction = library.makeFunction(name: "depthFragmentShader")
+        guard let depthVertexFunction = library.makeFunction(name: "vs_depth"),
+              let depthFragmentFunction = library.makeFunction(name: "fs_depth")
         else {
             fatalError("Could not find depth shader functions")
         }
@@ -77,8 +77,8 @@ extension MPMFluidRenderer {
         }
         
         // Depth filter pipeline
-        guard let filterVertexFunction = library.makeFunction(name: "depthFilterVertexShader"),
-              let filterFragmentFunction = library.makeFunction(name: "depthFilterFragmentShader")
+        guard let filterVertexFunction = library.makeFunction(name: "vs_bilateral"),
+              let filterFragmentFunction = library.makeFunction(name: "fs_bilateral")
         else {
             fatalError("Could not find depth filter shader functions")
         }
@@ -103,8 +103,8 @@ extension MPMFluidRenderer {
         }
         
         // Thickness rendering pipeline
-        guard let thicknessVertexFunction = library.makeFunction(name: "thicknessVertexShader"),
-              let thicknessFragmentFunction = library.makeFunction(name: "thicknessFragmentShader")
+        guard let thicknessVertexFunction = library.makeFunction(name: "vs_thickness"),
+              let thicknessFragmentFunction = library.makeFunction(name: "fs_thickness")
         else {
             fatalError("Could not find thickness shader functions")
         }
@@ -133,8 +133,8 @@ extension MPMFluidRenderer {
         }
         
         // Gaussian filter pipeline
-        guard let gaussianVertexFunction = library.makeFunction(name: "depthFilterVertexShader"),
-              let gaussianFragmentFunction = library.makeFunction(name: "gaussianFilterFragmentShader")
+        guard let gaussianVertexFunction = library.makeFunction(name: "vs_bilateral"),
+              let gaussianFragmentFunction = library.makeFunction(name: "fs_gaussian")
         else {
             fatalError("Could not find Gaussian filter shader functions")
         }

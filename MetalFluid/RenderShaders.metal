@@ -125,7 +125,7 @@ struct DepthVertexOut {
     float sphere_radius;
 };
 
-vertex DepthVertexOut depthVertexShader(
+vertex DepthVertexOut vs_depth(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
     uint id [[vertex_id]]
@@ -154,7 +154,7 @@ vertex DepthVertexOut depthVertexShader(
     return out;
 }
 
-fragment float depthFragmentShader(
+fragment float fs_depth(
     DepthVertexOut in [[stage_in]],
     float2 pointCoord [[point_coord]]
 ) {
@@ -195,7 +195,7 @@ struct QuadVertexOut {
 };
 
 // Full-screen quad vertex shader for depth filtering
-vertex QuadVertexOut depthFilterVertexShader(uint vid [[vertex_id]]) {
+vertex QuadVertexOut vs_bilateral(uint vid [[vertex_id]]) {
     QuadVertexOut out;
     
     // Generate full-screen quad
@@ -220,7 +220,7 @@ vertex QuadVertexOut depthFilterVertexShader(uint vid [[vertex_id]]) {
 }
 
 // Bilateral depth filter fragment shader
-fragment float depthFilterFragmentShader(
+fragment float fs_bilateral(
     QuadVertexOut in [[stage_in]],
     texture2d<float> depthTexture [[texture(0)]],
     constant FilterUniforms& filterUniforms [[buffer(0)]]
@@ -416,7 +416,7 @@ struct ThicknessVertexOut {
     float4 color;
 };
 
-vertex ThicknessVertexOut thicknessVertexShader(
+vertex ThicknessVertexOut vs_thickness(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
     uint id [[vertex_id]]
@@ -438,7 +438,7 @@ vertex ThicknessVertexOut thicknessVertexShader(
     return out;
 }
 
-fragment float4 thicknessFragmentShader(
+fragment float4 fs_thickness(
     ThicknessVertexOut in [[stage_in]],
     float2 pointCoord [[point_coord]]
 ) {
@@ -464,7 +464,7 @@ struct GaussianUniforms {
 };
 
 // Gaussian filter fragment shader (same as WebGPU)
-fragment float4 gaussianFilterFragmentShader(
+fragment float4 fs_gaussian(
     QuadVertexOut in [[stage_in]],
     texture2d<float> inputTexture [[texture(0)]],
     constant GaussianUniforms& gaussianUniforms [[buffer(0)]]
