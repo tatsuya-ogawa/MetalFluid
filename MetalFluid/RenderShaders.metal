@@ -439,7 +439,7 @@ vertex ThicknessVertexOut vs_thickness(
     return out;
 }
 
-fragment float4 fs_thickness(
+fragment float fs_thickness(
     ThicknessVertexOut in [[stage_in]]
 ) {
     // Same as WebGPU-Ocean thicknessMap.wgsl
@@ -451,7 +451,7 @@ fragment float4 fs_thickness(
     float thickness = sqrt(1.0 - r2);
     float particle_alpha = 0.05; // Same as WebGPU
     
-    return float4(float3(particle_alpha * thickness), 1.0);
+    return particle_alpha * thickness;
 }
 
 // Gaussian filter shaders for thickness texture
@@ -462,7 +462,7 @@ struct GaussianUniforms {
 };
 
 // Gaussian filter fragment shader (same as WebGPU)
-fragment float4 fs_gaussian(
+fragment float fs_gaussian(
     QuadVertexOut in [[stage_in]],
     texture2d<float> inputTexture [[texture(0)]],
     constant GaussianUniforms& gaussianUniforms [[buffer(0)]]
@@ -471,7 +471,7 @@ fragment float4 fs_gaussian(
     float thickness = inputTexture.read(uint2(iuv)).r;
     
     if (thickness == 0.0) {
-        return float4(0.0, 0.0, 0.0, 1.0);
+        return 0.0;
     }
     
     // Fixed filter size like WebGPU
@@ -503,5 +503,5 @@ fragment float4 fs_gaussian(
     
     sum /= wsum;
     
-    return float4(sum, 0.0, 0.0, 1.0);
+    return sum;
 }
