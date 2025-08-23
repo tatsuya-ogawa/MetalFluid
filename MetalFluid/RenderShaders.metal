@@ -166,7 +166,7 @@ fragment float fs_depth(
     // Same as WebGPU-Ocean depthMap.wgsl
     float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
-    if (r2 > 1.1) {
+    if (r2 > 1.0) {
         discard_fragment();
     }
     float normalz = sqrt(1.0 - r2);
