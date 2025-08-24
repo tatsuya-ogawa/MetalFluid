@@ -574,10 +574,6 @@ class MPMFluidRenderer: NSObject {
             
     func update(deltaTime: Float, screenSize: SIMD2<Float>, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
-        let timeStep:Float = 0.1//min(deltaTime, 0.2)
-        let nodeCount = UInt32(gridNodes)
-        let (boundaryMin,boundaryMax) = getBoundaryMinMax()
-        
         // Update compute shader uniforms using the helper method
         updateComputeUniforms()
         
