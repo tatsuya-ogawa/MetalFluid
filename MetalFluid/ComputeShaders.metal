@@ -87,56 +87,36 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
         return; // Invalid SDF value, skip collision
     }
     
-    const float minPenetration = 0.2;   // Detection threshold
-    const float restitution = 0.8;      // Bounce coefficient (0 = no bounce, 1 = perfect bounce)
-    const float friction = 0.1;         // Surface friction
-    
-    if (collision.fillMode == 1) {
-        // Fill mode: Keep particles inside, push out particles outside
-        if (sdfValue > minPenetration) { // Outside the mesh, push back in
-            float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
-            
-            // Minimal position correction to prevent deep penetration
-            float penetrationDepth = min(sdfValue, 1.0);
-            position -= normal * penetrationDepth * 0.1;
-            
-            // Velocity-based reflection (inward direction)
-            float normalVelocity = dot(velocity, normal);
-            if (normalVelocity > 0.0) { // Moving away from surface, redirect inward
-                // Reflect velocity toward the surface with bounce
-                velocity -= normal * normalVelocity * (1.0 + restitution);
-                
-                // Add friction to tangential velocity
-                float3 tangentialVelocity = velocity - normal * dot(velocity, normal);
-                velocity -= tangentialVelocity * friction;
-            }
+    // Handle collision with larger detection threshold
+    const float collisionThreshold = 1.0; // Larger threshold for early detection
+    if (sdfValue < collisionThreshold) {
+        float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+        
+        // Move particle outside surface with safety margin
+        float pushDistance = max(-sdfValue + 0.5, 0.5); // Always push at least 0.5 units out
+        position += normal * pushDistance;
+        
+        // Strong collision response
+        const float restitution = 1.2;  // Strong bounce
+        const float friction = 0.1;     // Low friction for now
+        
+        // Decompose velocity into normal and tangential components
+        float vn = dot(velocity, normal);  // Normal component
+        float3 vt = velocity - normal * vn; // Tangential component
+        
+        // Always apply strong outward velocity
+        if (vn < 2.0) { // If not already moving fast outward
+            vn = max(vn * -restitution, 3.0); // Strong outward push
         }
-    } else {
-        // Surface collision mode: Push particles outside (most common case)
-        if (sdfValue < -minPenetration) { // Inside the mesh, push out
-            float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
-            
-            // Minimal position correction to prevent deep penetration
-            float penetrationDepth = min(-sdfValue, 1.0);
-            position += normal * penetrationDepth * 0.2;
-            
-            // Velocity-based reflection (primary collision response)
-            float normalVelocity = dot(velocity, normal);
-            if (normalVelocity < 0.0) { // Moving into the surface
-                // Perfect reflection with restitution
-                velocity -= normal * normalVelocity * (1.0 + restitution);
-                
-                // Apply friction to tangential component
-                float3 tangentialVelocity = velocity - normal * dot(velocity, normal);
-                velocity -= tangentialVelocity * friction;
-                
-                // Scale up velocity to ensure visible bouncing
-                float velocityMagnitude = length(velocity);
-                if (velocityMagnitude > 0.01) {
-                    velocity = normalize(velocity) * max(velocityMagnitude, 2.0);
-                }
-            }
+        
+        // Apply minimal friction to tangential component
+        float vt_magnitude = length(vt);
+        if (vt_magnitude > 0.01) {
+            vt *= (1.0 - friction);
         }
+        
+        // Recombine velocity components
+        velocity = normal * vn + vt;
     }
 }
 
