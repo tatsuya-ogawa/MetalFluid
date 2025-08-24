@@ -88,7 +88,7 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
     }
     
     // Handle collision with larger detection threshold
-    const float collisionThreshold = 0.5; // Larger threshold for early detection
+    const float collisionThreshold = -0.1; // Larger threshold for early detection
     if (sdfValue < collisionThreshold) {
         float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
         
