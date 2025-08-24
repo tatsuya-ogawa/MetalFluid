@@ -61,8 +61,7 @@ typedef struct {
     simd_float4x4 projectionMatrix;
     simd_float4x4 viewMatrix;
     float gridSpacing;
-    simd_float3 domainOrigin;           // For rendering (with offset)
-    simd_float3 physicalDomainOrigin;   // For physics calculations (without offset)
+    simd_float3 physicalDomainOrigin;   // For physics calculations
     simd_int3 gridResolution;
     float rest_density;    // For pressure heatmap calculation
     float particleSizeMultiplier; // For dynamic particle size scaling
