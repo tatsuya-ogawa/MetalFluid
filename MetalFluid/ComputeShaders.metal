@@ -35,11 +35,12 @@ inline float3x3 clampAffineC(float3x3 C) {
 
 // --- SDF Collision Detection Utilities ---
 inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    // Apply collision offset and scale to world position
-    float3 offsetPos = (worldPos + collision.collisionOffset) * collision.collisionScale;
+    // Apply collision scale and offset to world position (translate from mesh space to world space)
+    float3 meshSpacePos = worldPos - collision.collisionOffset;
+    meshSpacePos = meshSpacePos / collision.collisionScale;
     
-    // Convert offset position to SDF texture coordinates
-    float3 texCoord = (offsetPos - collision.sdfOrigin) / collision.sdfSize;
+    // Convert mesh space position to SDF texture coordinates
+    float3 texCoord = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
     
     // Check bounds
     if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
@@ -53,9 +54,6 @@ inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant Co
 inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
     const float eps = 0.01;
     float3 gradient;
-    
-    // Apply collision offset and scale to world position for gradient calculation
-    float3 offsetPos = (worldPos + collision.collisionOffset) * collision.collisionScale;
     
     gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) - 
                  sampleSDF(worldPos - float3(eps, 0, 0), sdfTexture, collision);
@@ -80,11 +78,12 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
                            constant CollisionUniforms &collision) {
     if (!collision.enableCollision) return;
     
-    // Apply collision offset and scale to world position
-    float3 offsetPos = (worldPos + collision.collisionOffset) * collision.collisionScale;
+    // Apply collision scale and offset to world position (translate from mesh space to world space)
+    float3 meshSpacePos = worldPos - collision.collisionOffset;
+    meshSpacePos = meshSpacePos / collision.collisionScale;
     
-    // Check if offset position is within reasonable bounds to avoid sampling issues
-    float3 relativePos = (offsetPos - collision.sdfOrigin) / collision.sdfSize;
+    // Check if mesh space position is within reasonable bounds to avoid sampling issues
+    float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
     if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
         return; // Outside SDF bounds, no collision
     }
