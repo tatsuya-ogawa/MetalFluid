@@ -116,30 +116,6 @@ class MeshLoader {
         return scaledTriangles
     }
     
-    /// Load Stanford Bunny OBJ from online source with caching
-    func loadStanfordBunny(offsetToBottom: SIMD3<Float>?) -> [Triangle] {
-        let bunnyURL = URL(string: "https://graphics.stanford.edu/~mdfisher/Data/Meshes/bunny.obj")!
-        let cachedFileURL = cacheDirectory.appendingPathComponent("bunny.obj")
-        
-        // Check if cached file exists
-        if FileManager.default.fileExists(atPath: cachedFileURL.path) {
-            print("📁 Loading cached bunny.obj from: \(cachedFileURL.path)")
-            return loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
-        }
-        
-        // Download and cache the file
-        print("🌐 Downloading bunny.obj from Stanford...")
-        do {
-            let data = try Data(contentsOf: bunnyURL)
-            try data.write(to: cachedFileURL)
-            print("💾 Cached bunny.obj to: \(cachedFileURL.path)")
-            return loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
-        } catch {
-            print("❌ Failed to download bunny.obj: \(error)")
-            return []
-        }
-    }
-    
     /// Load bunny asynchronously (non-blocking)
     func loadStanfordBunnyAsync(offsetToBottom: SIMD3<Float>?, completion: @escaping ([Triangle]) -> Void) {
         let bunnyURL = URL(string: "https://graphics.stanford.edu/~mdfisher/Data/Meshes/bunny.obj")!

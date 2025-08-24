@@ -152,19 +152,6 @@ class CollisionManager {
     
     // MARK: - Mesh Loading
     
-    /// Load Stanford Bunny with caching
-    func loadStanfordBunny(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
-        // Load mesh triangles from online source with caching
-        let triangles = meshLoader.loadStanfordBunny(offsetToBottom: nil)
-        
-        if triangles.isEmpty {
-            print("No triangles loaded from Stanford Bunny")
-            return
-        }
-        
-        processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
-    }
-    
     /// Load Stanford Bunny asynchronously
     func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
         meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
