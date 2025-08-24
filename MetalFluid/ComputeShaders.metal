@@ -33,6 +33,74 @@ inline float3x3 clampAffineC(float3x3 C) {
     return float3x3(C[0]*scale, C[1]*scale, C[2]*scale);
 }
 
+// --- SDF Collision Detection Utilities ---
+inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+    // Convert world position to SDF texture coordinates
+    float3 texCoord = (worldPos - collision.sdfOrigin) / collision.sdfSize;
+    
+    // Check bounds
+    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
+        return 1.0; // Outside SDF volume, no collision
+    }
+    
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    return sdfTexture.sample(sdfSampler, texCoord).r;
+}
+
+inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+    const float eps = 0.01;
+    float3 gradient;
+    
+    gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) - 
+                 sampleSDF(worldPos - float3(eps, 0, 0), sdfTexture, collision);
+    gradient.y = sampleSDF(worldPos + float3(0, eps, 0), sdfTexture, collision) - 
+                 sampleSDF(worldPos - float3(0, eps, 0), sdfTexture, collision);
+    gradient.z = sampleSDF(worldPos + float3(0, 0, eps), sdfTexture, collision) - 
+                 sampleSDF(worldPos - float3(0, 0, eps), sdfTexture, collision);
+    
+    return normalize(gradient / (2.0 * eps));
+}
+
+inline void handleCollision(device float3 &position, device float3 &velocity, 
+                           float3 worldPos, texture3d<float> sdfTexture, 
+                           constant CollisionUniforms &collision) {
+    if (!collision.enableCollision) return;
+    
+    float sdfValue = sampleSDF(worldPos, sdfTexture, collision);
+    
+    if (collision.fillMode == 1) {
+        // Fill mode: Keep particles inside, push out particles outside
+        if (sdfValue > 0.0) { // Outside the mesh, push back in
+            float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+            
+            // Push particle back into the mesh
+            float penetrationDepth = sdfValue;
+            position -= normal * penetrationDepth * collision.collisionStiffness;
+            
+            // Reverse velocity toward surface
+            float normalVelocity = dot(velocity, normal);
+            if (normalVelocity > 0.0) { // Moving away from surface
+                velocity -= normal * normalVelocity * (1.0 + collision.collisionDamping);
+            }
+        }
+    } else {
+        // Surface collision mode: Push particles outside
+        if (sdfValue < 0.0) { // Inside the mesh, push out
+            float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+            
+            // Push particle out of the mesh
+            float penetrationDepth = -sdfValue;
+            position += normal * penetrationDepth * collision.collisionStiffness;
+            
+            // Reflect velocity with damping
+            float normalVelocity = dot(velocity, normal);
+            if (normalVelocity < 0.0) { // Moving into the surface
+                velocity -= normal * normalVelocity * (1.0 + collision.collisionDamping);
+            }
+        }
+    }
+}
+
 inline uint gridIndex(uint x, uint y, uint z, int3 res) {
     return x * (res.z * res.y) + y * res.z + z;
 }
@@ -293,6 +361,8 @@ kernel void gridToParticles(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
+                            texture3d<float> sdfTexture [[texture(0)]],
+                            constant CollisionUniforms& collision [[buffer(3)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -370,6 +440,10 @@ kernel void gridToParticles(
     if (x_n.z > wall_max.z) {
         particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
     }
+    // Handle mesh collision detection
+    handleCollision(particles[id].position, particles[id].velocity, 
+                   particles[id].position, sdfTexture, collision);
+    
     // Clamp position based on boundaries (direct clamp in world coordinates)
     particles[id].position = clamp(particles[id].position, uniforms.boundaryMin+1.0*uniforms.gridSpacing, uniforms.boundaryMax-2.0*uniforms.gridSpacing);
 }

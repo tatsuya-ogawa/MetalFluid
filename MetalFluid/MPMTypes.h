@@ -55,6 +55,17 @@ typedef struct {
     uint32_t timeSalt;
 } ComputeShaderUniforms;
 
+// Collision detection uniforms
+typedef struct {
+    simd_float3 sdfOrigin;        // SDF volume origin in world space
+    simd_float3 sdfSize;          // SDF volume size
+    simd_int3 sdfResolution;      // SDF texture resolution
+    float collisionStiffness;     // Collision response strength
+    float collisionDamping;       // Velocity damping on collision
+    uint32_t enableCollision;     // Enable/disable collision detection
+    uint32_t fillMode;            // 0: surface collision, 1: fill inside
+} CollisionUniforms;
+
 // Vertex shader specific uniforms
 typedef struct {
     simd_float4x4 mvpMatrix;

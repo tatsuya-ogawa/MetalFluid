@@ -284,6 +284,13 @@ extension MPMFluidRenderer {
                 computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                 computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                computeEncoder.setBuffer(collisionUniformBuffer, offset: 0, index: 3)
+                
+                // Set SDF texture if available
+                if let sdfTexture = sdfTexture {
+                    computeEncoder.setTexture(sdfTexture, index: 0)
+                }
+                
                 computeEncoder.dispatchThreadgroups(
                     particleThreadgroups,
                     threadsPerThreadgroup: particleThreadsPerThreadgroup

@@ -40,6 +40,16 @@ struct ComputeShaderUniforms {
     var timeSalt: UInt32
 }
 
+struct CollisionUniforms {
+    var sdfOrigin: SIMD3<Float>
+    var sdfSize: SIMD3<Float>
+    var sdfResolution: SIMD3<Int32>
+    var collisionStiffness: Float
+    var collisionDamping: Float
+    var enableCollision: UInt32
+    var fillMode: UInt32  // 0: surface collision, 1: fill inside
+}
+
 // Vertex shader specific uniforms
 struct VertexShaderUniforms {
     var mvpMatrix: float4x4
@@ -351,6 +361,11 @@ class MPMFluidRenderer: NSObject {
     // Sort constants
     internal var maxThreadsPerGroup: Int = 256
     
+    // Collision detection
+    internal var sdfTexture: MTLTexture?
+    internal var collisionUniformBuffer: MTLBuffer!
+    internal var sdfGenerator: SDFGenerator!
+    
     // Performance settings - Public for testing
     public var particleCount: Int
     public var gridSize: Int
@@ -449,6 +464,117 @@ class MPMFluidRenderer: NSObject {
         waterRenderer = WaterRenderer(fluidRenderer: self)
     }
     
+    // Load OBJ file and generate SDF for collision detection
+    public func loadCollisionMesh(objURL: URL, resolution: Int32 = 64, fillMode: Bool = false) {
+        let triangles = sdfGenerator.loadOBJ(from: objURL)
+        
+        if triangles.isEmpty {
+            print("No triangles loaded from OBJ file")
+            return
+        }
+        
+        // Calculate bounding box
+        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+        
+        for triangle in triangles {
+            minBounds = min(minBounds, triangle.v0)
+            minBounds = min(minBounds, triangle.v1)
+            minBounds = min(minBounds, triangle.v2)
+            maxBounds = max(maxBounds, triangle.v0)
+            maxBounds = max(maxBounds, triangle.v1)
+            maxBounds = max(maxBounds, triangle.v2)
+        }
+        
+        // Expand bounds slightly for safety
+        let padding: Float = 2.0
+        minBounds -= SIMD3<Float>(padding, padding, padding)
+        maxBounds += SIMD3<Float>(padding, padding, padding)
+        
+        // Generate SDF texture with specified resolution
+        let sdfResolution = SIMD3<Int32>(resolution, resolution, resolution)
+        sdfTexture = sdfGenerator.generateSDF(
+            triangles: triangles,
+            resolution: sdfResolution,
+            boundingBox: (min: minBounds, max: maxBounds)
+        )
+        
+        if sdfTexture != nil {
+            // Update collision uniforms
+            let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+                to: CollisionUniforms.self,
+                capacity: 1
+            )
+            
+            collisionUniformPointer[0] = CollisionUniforms(
+                sdfOrigin: minBounds,
+                sdfSize: maxBounds - minBounds,
+                sdfResolution: sdfResolution,
+                collisionStiffness: 1.0,
+                collisionDamping: 0.8,
+                enableCollision: 1,
+                fillMode: fillMode ? 1 : 0
+            )
+            
+            print("Successfully loaded collision mesh with \(triangles.count) triangles")
+            print("SDF resolution: \(resolution)x\(resolution)x\(resolution)")
+            print("Fill mode: \(fillMode ? "Inside fill" : "Surface collision")")
+            print("SDF bounds: \(minBounds) to \(maxBounds)")
+        } else {
+            print("Failed to generate SDF texture")
+        }
+    }
+    
+    // Update SDF resolution for existing collision mesh
+    public func updateSDFResolution(_ newResolution: Int32) {
+        guard sdfTexture != nil else {
+            print("No collision mesh loaded")
+            return
+        }
+        
+        // Regenerate with new resolution (requires re-loading the mesh)
+        print("SDF resolution updated to \(newResolution)x\(newResolution)x\(newResolution)")
+        print("Note: Re-load collision mesh with loadCollisionMesh() to apply new resolution")
+    }
+    
+    // Get current SDF resolution
+    public func getCurrentSDFResolution() -> Int32? {
+        guard sdfTexture != nil else { return nil }
+        
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        return collisionUniformPointer[0].sdfResolution.x
+    }
+    
+    // Toggle fill mode (inside fill vs surface collision)
+    public func setFillMode(_ fillMode: Bool) {
+        guard sdfTexture != nil else {
+            print("No collision mesh loaded")
+            return
+        }
+        
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        collisionUniformPointer[0].fillMode = fillMode ? 1 : 0
+        
+        print("Fill mode set to: \(fillMode ? "Inside fill" : "Surface collision")")
+    }
+    
+    // Get current fill mode
+    public func getFillMode() -> Bool {
+        guard sdfTexture != nil else { return false }
+        
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        return collisionUniformPointer[0].fillMode == 1
+    }
+    
     internal func setupMetal() {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
@@ -523,6 +649,16 @@ class MPMFluidRenderer: NSObject {
             length: fluidRenderUniformSize,
             options: .storageModeShared
         )!
+        
+        // Collision uniform buffer
+        let collisionUniformSize = MemoryLayout<CollisionUniforms>.stride
+        collisionUniformBuffer = device.makeBuffer(
+            length: collisionUniformSize,
+            options: .storageModeShared
+        )!
+        
+        // Initialize SDF generator
+        sdfGenerator = SDFGenerator(device: device)
         
         // Gaussian uniform buffer
         let gaussianUniformSize = MemoryLayout<GaussianUniforms>.stride
