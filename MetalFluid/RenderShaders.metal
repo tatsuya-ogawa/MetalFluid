@@ -1,6 +1,11 @@
 #include <metal_stdlib>
 #include "MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
+
+// Grid index calculation function (same as in ComputeShaders.metal)
+inline uint gridIndex(uint x, uint y, uint z, int3 res) {
+    return x * (res.z * res.y) + y * res.z + z;
+}
 // MLS-MPM rendering shaders
 struct VertexOut {
     float4 position [[position]];
@@ -34,7 +39,8 @@ vertex VertexOut pressureHeatmapVertexShader(
     out.position = uniforms.mvpMatrix * worldPos;
     
     // Sample grid data at particle position for pressure-based coloring
-    float3 gridPos = (particles[id].position - uniforms.domainOrigin) / uniforms.gridSpacing;
+    // Use physicalDomainOrigin for grid calculations (same coordinate system as compute shaders)
+    float3 gridPos = (particles[id].position - uniforms.physicalDomainOrigin) / uniforms.gridSpacing;
     int3 baseCell = int3(floor(gridPos - 0.5));
     
     // Sample grid mass (density/pressure) using B-spline interpolation
@@ -55,8 +61,7 @@ vertex VertexOut pressureHeatmapVertexShader(
                     cellIdx.y >= 0 && cellIdx.y < uniforms.gridResolution.y &&
                     cellIdx.z >= 0 && cellIdx.z < uniforms.gridResolution.z) {
                     
-                    uint gridIdx = cellIdx.x * (uniforms.gridResolution.z * uniforms.gridResolution.y) + 
-                                   cellIdx.y * uniforms.gridResolution.z + cellIdx.z;
+                    uint gridIdx = gridIndex(cellIdx.x, cellIdx.y, cellIdx.z, uniforms.gridResolution);
                     
                     float weight = weights[gx].x * weights[gy].y * weights[gz].z;
                     gridMass += grid[gridIdx].mass * weight;

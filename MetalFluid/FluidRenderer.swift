@@ -46,7 +46,8 @@ struct VertexShaderUniforms {
     var projectionMatrix: float4x4
     var viewMatrix: float4x4
     var gridSpacing: Float
-    var domainOrigin: SIMD3<Float>
+    var domainOrigin: SIMD3<Float>           // For rendering (with offset)
+    var physicalDomainOrigin: SIMD3<Float>   // For physics calculations (without offset)
     var gridResolution: SIMD3<Int32>
     var rest_density: Float
     var particleSizeMultiplier: Float
@@ -409,6 +410,7 @@ class MPMFluidRenderer: NSObject {
         let domainExtentZ: Float = Float(gridSize) * gridSpacing
         let originOffsetXZ: Float = -0.5
         // Auto-adjust Y offset based on height multiplier to keep fluid centered
+        // Higher multiplier needs more negative offset to center properly
         let originOffsetY: Float = -0.5 + (1.0 - gridHeightMultiplier) * 0.2
         let renderOrigin = SIMD3<Float>(
             originOffsetXZ * domainExtentX,
@@ -570,12 +572,14 @@ class MPMFluidRenderer: NSObject {
             to: VertexShaderUniforms.self,
             capacity: 1
         )
+        let adjustedDomainOrigin = domainOrigin + getDomainOriginTranslation()
         vertexUniformPointer[0] = VertexShaderUniforms(
             mvpMatrix: mvpMatrix,
             projectionMatrix: projectionMatrix,
             viewMatrix: viewMatrix,
             gridSpacing: gridSpacing,
-            domainOrigin: domainOrigin,
+            domainOrigin: adjustedDomainOrigin,
+            physicalDomainOrigin: domainOrigin,
             gridResolution: gridRes,
             rest_density: restDensity,
             particleSizeMultiplier: particleSizeMultiplier,
