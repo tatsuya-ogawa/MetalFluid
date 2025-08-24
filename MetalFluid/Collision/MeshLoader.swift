@@ -20,7 +20,7 @@ class MeshLoader {
     
     /// Load triangles from OBJ file with optional offset
     func loadOBJ(from url: URL, offsetToBottom: SIMD3<Float>?) -> [Triangle] {
-        guard let content = try? String(contentsOf: url) else {
+        guard let content = try? String(contentsOf: url,encoding: .utf8) else {
             print("Failed to load OBJ file from \(url)")
             return []
         }
