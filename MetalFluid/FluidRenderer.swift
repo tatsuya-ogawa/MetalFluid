@@ -410,7 +410,7 @@ class MPMFluidRenderer: NSObject {
         let originOffsetXZ: Float = -0.5
         // Auto-adjust Y offset based on height multiplier to keep fluid centered
         // Higher multiplier needs more negative offset to center properly
-        let originOffsetY: Float = -0.5 + (1.0 - gridHeightMultiplier) * 0.2
+        let originOffsetY: Float = -0.5 + (2.0 - gridHeightMultiplier) * 0.2
         let renderOrigin = SIMD3<Float>(
             originOffsetXZ * domainExtentX,
             originOffsetY * domainExtentY,
@@ -579,7 +579,7 @@ class MPMFluidRenderer: NSObject {
         
         let translationMatrix = float4x4(
             [1, 0, 0, scaledOffset.x],
-            [0, 1, 0, scaledOffset.y], 
+            [0, 1, 0, scaledOffset.y],
             [0, 0, 1, scaledOffset.z],
             [0, 0, 0, 1]
         )

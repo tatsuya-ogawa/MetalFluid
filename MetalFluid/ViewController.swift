@@ -28,7 +28,7 @@ class ViewController: UIViewController {
     // Initial values (shared between sliders and FluidRenderer)
     private let initialParticleCount: Float = 40000
     private let initialGridSize: Float = 48
-    private let initialGridHeightMultiplier: Float = 1.1
+    private let initialGridHeightMultiplier: Float = 1.5
 
     // UI Elements
     private var controlPanel: UIView!
