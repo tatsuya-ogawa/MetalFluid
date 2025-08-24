@@ -87,7 +87,7 @@ class ViewController: UIViewController {
     }
 
     private func setupRenderer() {
-        fluidRenderer = MPMFluidRenderer()
+        fluidRenderer = MPMFluidRenderer(particleCount: 40000, gridSize: 64, gridHeightMultiplier: 1.1)
     }
 
     private func setupGestures() {

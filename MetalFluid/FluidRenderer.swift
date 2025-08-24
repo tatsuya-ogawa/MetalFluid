@@ -352,9 +352,9 @@ class MPMFluidRenderer: NSObject {
     internal var maxThreadsPerGroup: Int = 256
     
     // Performance settings - Public for testing
-    public var particleCount: Int = 40000
-    public var gridSize: Int = 64
-    private let gridHeightMultiplier: Float = 1.1
+    public var particleCount: Int
+    public var gridSize: Int
+    private let gridHeightMultiplier: Float
     public var gridNodes: Int { gridSize * Int(Float(gridSize) * gridHeightMultiplier) * gridSize }
     internal var frameIndex: Int = 0
     
@@ -407,11 +407,13 @@ class MPMFluidRenderer: NSObject {
         let domainExtentX: Float = Float(gridSize) * gridSpacing
         let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
         let domainExtentZ: Float = Float(gridSize) * gridSpacing
-        let originOffset:Float = -0.5
+        let originOffsetXZ: Float = -0.5
+        // Auto-adjust Y offset based on height multiplier to keep fluid centered
+        let originOffsetY: Float = -0.5 + (1.0 - gridHeightMultiplier) * 0.2
         let renderOrigin = SIMD3<Float>(
-            originOffset * domainExtentX,
-            originOffset * domainExtentY,
-            originOffset * domainExtentZ
+            originOffsetXZ * domainExtentX,
+            originOffsetY * domainExtentY,
+            originOffsetXZ * domainExtentZ
         )
         return domainOrigin - renderOrigin
     }
@@ -429,10 +431,14 @@ class MPMFluidRenderer: NSObject {
     
     // Uniform data for MLS-MPM - Structs defined by typealias above
     
-    override init() {
+    init(particleCount: Int, gridSize: Int, gridHeightMultiplier: Float) {
+        self.particleCount = particleCount
+        self.gridSize = gridSize
+        self.gridHeightMultiplier = gridHeightMultiplier
         super.init()
         setupMetal()
         setupParticles()
+        frameIndex = 0
         setupModeRenderers()
     }
     
