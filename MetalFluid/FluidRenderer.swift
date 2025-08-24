@@ -98,6 +98,7 @@ enum RenderMode {
     case water
 }
 
+
 enum ParticleRenderMode {
     case pressureHeatmap
 }
@@ -191,6 +192,13 @@ class ParticleRenderer: ModeRenderer {
             renderEncoder.endEncoding()
         }
         
+        // Render collision mesh if available
+        renderer.collisionMeshRenderer?.render(
+            renderPassDescriptor: renderPassDescriptor,
+            commandBuffer: commandBuffer,
+            vertexUniformBuffer: renderer.vertexUniformBuffer
+        )
+        
         commandBuffer.commit()
     }
 }
@@ -275,6 +283,13 @@ class WaterRenderer: ModeRenderer {
         renderEncoder.setFragmentBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.endEncoding()
+        
+        // Render collision mesh if available
+        renderer.collisionMeshRenderer?.render(
+            renderPassDescriptor: renderPassDescriptor,
+            commandBuffer: commandBuffer,
+            vertexUniformBuffer: renderer.vertexUniformBuffer
+        )
         
         commandBuffer.commit()
     }
@@ -365,6 +380,9 @@ class MPMFluidRenderer: NSObject {
     internal var sdfTexture: MTLTexture?
     internal var collisionUniformBuffer: MTLBuffer!
     internal var sdfGenerator: SDFGenerator!
+    
+    // Collision mesh rendering
+    internal var collisionMeshRenderer: CollisionMeshRenderer?
     
     // Performance settings - Public for testing
     public var particleCount: Int
@@ -516,6 +534,9 @@ class MPMFluidRenderer: NSObject {
                 fillMode: fillMode ? 1 : 0
             )
             
+            // Load mesh into renderer for visualization
+            collisionMeshRenderer?.loadMesh(triangles: triangles)
+            
             print("Successfully loaded collision mesh with \(triangles.count) triangles")
             print("SDF resolution: \(resolution)x\(resolution)x\(resolution)")
             print("Fill mode: \(fillMode ? "Inside fill" : "Surface collision")")
@@ -575,6 +596,23 @@ class MPMFluidRenderer: NSObject {
         return collisionUniformPointer[0].fillMode == 1
     }
     
+    // Collision mesh visibility controls
+    public func setCollisionMeshVisible(_ visible: Bool) {
+        collisionMeshRenderer?.isVisible = visible
+    }
+    
+    public func isCollisionMeshVisible() -> Bool {
+        return collisionMeshRenderer?.isVisible ?? false
+    }
+    
+    public func setCollisionMeshColor(_ color: SIMD4<Float>) {
+        collisionMeshRenderer?.setColor(color)
+    }
+    
+    public func setCollisionMeshWireframe(_ wireframe: Bool) {
+        collisionMeshRenderer?.setWireframeMode(wireframe)
+    }
+    
     internal func setupMetal() {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
@@ -598,6 +636,9 @@ class MPMFluidRenderer: NSObject {
         setupRadixSortBuffers()
         setupDepthTextures(screenSize: screenSize)
         setupFluidTextures(screenSize: screenSize)
+        
+        // Initialize collision mesh renderer
+        collisionMeshRenderer = CollisionMeshRenderer(device: device)
     }
     
     internal func setupBuffers() {

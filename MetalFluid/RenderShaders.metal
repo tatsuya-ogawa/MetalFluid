@@ -23,6 +23,7 @@ inline float getBaseSize(const float distance){
     return max(10.0, 10.0 / (distance * 0.1 + 1.0));
 }
 
+
 // Pressure heatmap vertex shader
 vertex VertexOut pressureHeatmapVertexShader(
                               const device MPMParticle* particles [[buffer(0)]],
