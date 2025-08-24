@@ -4,6 +4,7 @@ import simd
 import ReplayKit
 
 class ViewController: UIViewController {
+    private let recordKey = "r"
     // For 10fps control
     private var lastComputeTime: CFTimeInterval = 0
 
@@ -784,7 +785,7 @@ extension ViewController {
             guard let key = press.key else { continue }
             
             // Check for Shift+G
-            if key.charactersIgnoringModifiers == "r" && key.modifierFlags.contains(.shift) {
+            if key.charactersIgnoringModifiers == recordKey && key.modifierFlags.contains(.shift) {
                 toggleRecording()
                 return
             }
@@ -803,7 +804,7 @@ extension ViewController {
     
     private func startRecording() {
         guard !isRecording else { return }
-        
+        fluidRenderer.reset()
         screenRecorder.startRecording { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
