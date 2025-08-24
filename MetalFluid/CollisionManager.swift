@@ -80,13 +80,20 @@ class CollisionManager {
         minBounds -= SIMD3<Float>(padding, padding, padding)
         maxBounds += SIMD3<Float>(padding, padding, padding)
         
-        // Generate SDF texture with specified resolution
+        // Generate SDF texture with specified resolution using GPU
         let sdfResolution = SIMD3<Int32>(resolution, resolution, resolution)
+        print("🚀 Starting GPU SDF generation...")
+        let startTime = CFAbsoluteTimeGetCurrent()
+        
         sdfTexture = sdfGenerator.generateSDF(
             triangles: triangles,
             resolution: sdfResolution,
             boundingBox: (min: minBounds, max: maxBounds)
         )
+        
+        let endTime = CFAbsoluteTimeGetCurrent()
+        let duration = endTime - startTime
+        print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
         
         if sdfTexture != nil {
             // Update collision uniforms
