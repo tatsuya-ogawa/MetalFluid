@@ -7,7 +7,7 @@ class MeshLoader {
     private let scaleFactor: Float
     private let cacheDirectory: URL
     
-    init(scaleFactor: Float = 15.0) {
+    init(scaleFactor: Float) {
         self.scaleFactor = scaleFactor
         
         // Create cache directory in tmp

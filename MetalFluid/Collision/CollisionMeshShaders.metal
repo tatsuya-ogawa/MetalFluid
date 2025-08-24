@@ -72,7 +72,7 @@ vertex CollisionVertexOut collisionMeshWireframeVertexShader(
     out.normal = vertices[vertexID].normal;
     
     // Use mesh color from uniforms with higher opacity for wireframe
-    out.color = float4(meshUniforms.meshColor.rgb, max(meshUniforms.meshColor.a, 0.8));
+    out.color = meshUniforms.meshColor;//float4(meshUniforms.meshColor.rgb, max(meshUniforms.meshColor.a, 0.8));
     
     return out;
 }
