@@ -577,37 +577,16 @@ class MPMFluidRenderer: NSObject {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
         let nodeCount = UInt32(gridNodes)
         let (boundaryMin,boundaryMax) = getBoundaryMinMax()
-        let currentTime = CACurrentMediaTime()
-        let timeSalt = UInt32(currentTime*1000)%UInt32.max
         
-        // Update compute shader uniforms
-        let computeUniformPointer = computeUniformBuffer.contents().bindMemory(
-            to: ComputeShaderUniforms.self,
-            capacity: 1
-        )
-        let gridRes = getGridRes()
-        computeUniformPointer[0] = ComputeShaderUniforms(
-            deltaTime: timeStep,
-            particleCount: UInt32(particleCount),
-            gravity: gravity,
-            gridSpacing: gridSpacing,
-            domainOrigin: domainOrigin,
-            gridResolution: gridRes,
-            gridNodeCount: nodeCount,
-            boundaryMin: boundaryMin,
-            boundaryMax: boundaryMax,
-            stiffness: stiffness,
-            rest_density: restDensity,
-            dynamic_viscosity: dynamic_viscosity,
-            massScale: massScale,
-            timeSalt: timeSalt
-        )
+        // Update compute shader uniforms using the helper method
+        updateComputeUniforms()
         
         // Update vertex shader uniforms
         let vertexUniformPointer = vertexUniformBuffer.contents().bindMemory(
             to: VertexShaderUniforms.self,
             capacity: 1
         )
+        let gridRes = getGridRes()
         vertexUniformPointer[0] = VertexShaderUniforms(
             projectionMatrix: projectionMatrix,
             viewMatrix: viewMatrix,
@@ -686,6 +665,37 @@ class MPMFluidRenderer: NSObject {
         }
     }
     
+    private func updateComputeUniforms() {
+        let (boundaryMin, boundaryMax) = getBoundaryMinMax()
+        let currentTime = CACurrentMediaTime()
+        let timeSalt = UInt32(currentTime*1000)%UInt32.max
+        let timeStep: Float = 0.1
+        let nodeCount = UInt32(gridNodes)
+        
+        // Update compute shader uniforms
+        let computeUniformPointer = computeUniformBuffer.contents().bindMemory(
+            to: ComputeShaderUniforms.self,
+            capacity: 1
+        )
+        let gridRes = getGridRes()
+        computeUniformPointer[0] = ComputeShaderUniforms(
+            deltaTime: timeStep,
+            particleCount: UInt32(particleCount),
+            gravity: gravity,
+            gridSpacing: gridSpacing,
+            domainOrigin: domainOrigin,
+            gridResolution: gridRes,
+            gridNodeCount: nodeCount,
+            boundaryMin: boundaryMin,
+            boundaryMax: boundaryMax,
+            stiffness: stiffness,
+            rest_density: restDensity,
+            dynamic_viscosity: dynamic_viscosity,
+            massScale: massScale,
+            timeSalt: timeSalt
+        )
+    }
+    
     public func setGridSize(_ size: Int) {
         if size != gridSize {
             gridSize = size
@@ -694,6 +704,16 @@ class MPMFluidRenderer: NSObject {
             setupMetal()
             setupParticles()
             setupModeRenderers()
+            
+            // Update compute uniforms immediately for new grid size
+            updateComputeUniforms()
+            
+            // Update collision boundaries for new grid size
+            let (boundaryMin, boundaryMax) = getBoundaryMinMax()
+            collisionManager?.updateGridBoundaries(
+                gridBoundaryMin: boundaryMin,
+                gridBoundaryMax: boundaryMax
+            )
         }
     }
 }

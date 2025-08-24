@@ -187,7 +187,8 @@ class CollisionMeshRenderer {
     
     func render(renderPassDescriptor: MTLRenderPassDescriptor,
                 commandBuffer: MTLCommandBuffer,
-                vertexUniformBuffer: MTLBuffer) {
+                vertexUniformBuffer: MTLBuffer,
+                collisionUniformBuffer: MTLBuffer) {
         
         guard isVisible,
               let depthStencilState = depthStencilState,
@@ -219,6 +220,7 @@ class CollisionMeshRenderer {
         renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
+        renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
         
         // Draw triangles
         renderEncoder.drawIndexedPrimitives(
@@ -234,7 +236,8 @@ class CollisionMeshRenderer {
     
     // Render within an existing render encoder (doesn't create or end encoding)
     func renderInEncoder(renderEncoder: MTLRenderCommandEncoder,
-                        vertexUniformBuffer: MTLBuffer) {
+                        vertexUniformBuffer: MTLBuffer,
+                        collisionUniformBuffer: MTLBuffer) {
         
         guard isVisible,
               let depthStencilState = depthStencilState,
@@ -261,6 +264,7 @@ class CollisionMeshRenderer {
         renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
+        renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
         
         // Draw triangles
         renderEncoder.drawIndexedPrimitives(

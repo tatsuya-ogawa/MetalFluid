@@ -20,11 +20,13 @@ vertex CollisionVertexOut collisionMeshVertexShader(
     const device CollisionVertex* vertices [[buffer(0)]],
     constant VertexShaderUniforms& vertexUniforms [[buffer(1)]],
     constant CollisionMeshUniforms& meshUniforms [[buffer(2)]],
+    constant CollisionUniforms& collisionUniforms [[buffer(3)]],
     uint vertexID [[vertex_id]]
 ) {
     CollisionVertexOut out;
     
-    float3 worldPos = vertices[vertexID].position;
+    // Apply collision offset and scale to vertex position
+    float3 worldPos = (vertices[vertexID].position + collisionUniforms.collisionOffset) * collisionUniforms.collisionScale;
     out.worldPosition = worldPos;
     out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;
@@ -54,11 +56,13 @@ vertex CollisionVertexOut collisionMeshWireframeVertexShader(
     const device CollisionVertex* vertices [[buffer(0)]],
     constant VertexShaderUniforms& vertexUniforms [[buffer(1)]],
     constant CollisionMeshUniforms& meshUniforms [[buffer(2)]],
+    constant CollisionUniforms& collisionUniforms [[buffer(3)]],
     uint vertexID [[vertex_id]]
 ) {
     CollisionVertexOut out;
     
-    float3 worldPos = vertices[vertexID].position;
+    // Apply collision offset and scale to vertex position
+    float3 worldPos = (vertices[vertexID].position + collisionUniforms.collisionOffset) * collisionUniforms.collisionScale;
     out.worldPosition = worldPos;
     out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;

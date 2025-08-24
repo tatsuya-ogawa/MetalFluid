@@ -166,8 +166,6 @@ class CollisionManager {
     // MARK: - Configuration
     
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
-        guard sdfTexture != nil else { return }
-        
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
             to: CollisionUniforms.self,
             capacity: 1
@@ -267,7 +265,8 @@ class CollisionManager {
         meshRenderer.render(
             renderPassDescriptor: renderPassDescriptor,
             commandBuffer: commandBuffer,
-            vertexUniformBuffer: vertexUniformBuffer
+            vertexUniformBuffer: vertexUniformBuffer,
+            collisionUniformBuffer: collisionUniformBuffer
         )
     }
     
@@ -276,7 +275,8 @@ class CollisionManager {
                                     vertexUniformBuffer: MTLBuffer) {
         meshRenderer.renderInEncoder(
             renderEncoder: renderEncoder,
-            vertexUniformBuffer: vertexUniformBuffer
+            vertexUniformBuffer: vertexUniformBuffer,
+            collisionUniformBuffer: collisionUniformBuffer
         )
     }
 }
