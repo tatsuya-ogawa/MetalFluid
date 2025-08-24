@@ -388,7 +388,7 @@ class MPMFluidRenderer: NSObject {
     public let gravity: Float = -2.5 //-9.81
     public let gridSpacing: Float = 1.0
     func getRenderScale(scale:Float) -> Float{
-        return scale * 0.03 / gridSpacing * pow(64.0 / Float(gridSize),2)
+        return scale / gridSpacing / Float(gridSize) * 2
     }
     internal var domainOrigin: SIMD3<Float>{
         get{
@@ -407,14 +407,15 @@ class MPMFluidRenderer: NSObject {
         let domainExtentX: Float = Float(gridSize) * gridSpacing
         let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
         let domainExtentZ: Float = Float(gridSize) * gridSpacing
-        let originOffsetXZ: Float = -0.5
+        let originOffsetX: Float = -0.5
+        let originOffsetZ: Float = -0.5
         // Auto-adjust Y offset based on height multiplier to keep fluid centered
         // Higher multiplier needs more negative offset to center properly
         let originOffsetY: Float = -0.5 + (2.0 - gridHeightMultiplier) * 0.2
         let renderOrigin = SIMD3<Float>(
-            originOffsetXZ * domainExtentX,
+            originOffsetX * domainExtentX,
             originOffsetY * domainExtentY,
-            originOffsetXZ * domainExtentZ
+            originOffsetZ * domainExtentZ
         )
         return domainOrigin - renderOrigin
     }

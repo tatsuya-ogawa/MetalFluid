@@ -247,7 +247,7 @@ class ViewController: UIViewController {
         // Grid size slider
         gridSizeSlider = UISlider()
         gridSizeSlider.minimumValue = 32
-        gridSizeSlider.maximumValue = 96
+        gridSizeSlider.maximumValue = 128
         gridSizeSlider.value = initialGridSize
         gridSizeSlider.addTarget(
             self,
