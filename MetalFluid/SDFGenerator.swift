@@ -116,11 +116,16 @@ class SDFGenerator {
                     maxBounds = max(max(max(maxBounds, triangle.v0), triangle.v1), triangle.v2)
                 }
                 
-                // Calculate offset to move bottom of mesh to desired position
+                // Calculate offset to move mesh to desired position
+                let currentCenter = (minBounds + maxBounds) * 0.5
                 let currentBottom = minBounds.y
-                let desiredBottom = offsetToBottom.y
-                let yOffset = desiredBottom - currentBottom
-                let totalOffset = SIMD3<Float>(offsetToBottom.x, yOffset, offsetToBottom.z)
+                
+                // Calculate offsets for each axis
+                let xOffset = offsetToBottom.x - currentCenter.x  // Center X
+                let yOffset = offsetToBottom.y - currentBottom    // Align bottom Y  
+                let zOffset = offsetToBottom.z - currentCenter.z  // Center Z
+                
+                let totalOffset = SIMD3<Float>(xOffset, yOffset, zOffset)
                 
                 // Apply offset
                 scaledTriangles = scaledTriangles.map { triangle in
@@ -129,11 +134,7 @@ class SDFGenerator {
                         v1: triangle.v1 + totalOffset,
                         v2: triangle.v2 + totalOffset
                     )
-                }
-                
-                print("🔧 Applied offset: \(totalOffset)")
-                print("🔧 Original bottom: \(currentBottom), new bottom: \(desiredBottom)")
-                
+                }                
                 // Print final bounds
                 let finalMinBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
                     min(min(min(result, triangle.v0), triangle.v1), triangle.v2)
@@ -141,7 +142,6 @@ class SDFGenerator {
                 let finalMaxBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
                     max(max(max(result, triangle.v0), triangle.v1), triangle.v2)
                 }
-                print("🔧 Final bounds: min=\(finalMinBounds), max=\(finalMaxBounds)")
             }
         }
         

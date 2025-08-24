@@ -121,13 +121,14 @@ class ViewController: UIViewController {
             return
         }
         // Get grid boundary to position bunny correctly
-        let (boundaryMin, _) = fluidRenderer.getBoundaryMinMax()
+        let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
         
         fluidRenderer.collisionManager?.loadMesh(
             objURL: bunnyURL,
             resolution: fluidRenderer.getGridRes(),
             fillMode: true,
-            gridBoundaryMin: boundaryMin
+            gridBoundaryMin: boundaryMin,
+            gridBoundaryMax: boundaryMax
         )
         
         // Configure collision visualization
