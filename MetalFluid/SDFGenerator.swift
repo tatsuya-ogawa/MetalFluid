@@ -2,12 +2,6 @@ import Foundation
 import Metal
 import simd
 
-struct Triangle {
-    let v0: SIMD3<Float>
-    let v1: SIMD3<Float>
-    let v2: SIMD3<Float>
-}
-
 // GPU Triangle structure (must match Metal shader)
 struct SDFTriangle {
     let v0: SIMD3<Float>
@@ -50,103 +44,6 @@ class SDFGenerator {
         }
     }
     
-    func loadOBJ(from url: URL, scaleFactor: Float = 100, offsetToBottom: SIMD3<Float>? = nil) -> [Triangle] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            print("Failed to load OBJ file")
-            return []
-        }
-        
-        var vertices: [SIMD3<Float>] = []
-        var triangles: [Triangle] = []
-        
-        let lines = content.components(separatedBy: .newlines)
-        
-        for line in lines {
-            let components = line.trimmingCharacters(in: .whitespaces).components(separatedBy: " ")
-            
-            if components[0] == "v" && components.count >= 4 {
-                let x = Float(components[1]) ?? 0
-                let y = Float(components[2]) ?? 0
-                let z = Float(components[3]) ?? 0
-                vertices.append(SIMD3<Float>(x, y, z))
-            }
-            else if components[0] == "f" && components.count >= 4 {
-                // Simple triangulation for quads -> triangles
-                let indices = components[1...].compactMap { component -> Int? in
-                    let parts = component.components(separatedBy: "/")
-                    return Int(parts[0])
-                }
-                
-                if indices.count >= 3 {
-                    let v0 = vertices[indices[0] - 1] // OBJ indices are 1-based
-                    let v1 = vertices[indices[1] - 1]
-                    let v2 = vertices[indices[2] - 1]
-                    triangles.append(Triangle(v0: v0, v1: v1, v2: v2))
-                    
-                    // If quad, add second triangle
-                    if indices.count >= 4 {
-                        let v3 = vertices[indices[3] - 1]
-                        triangles.append(Triangle(v0: v0, v1: v2, v2: v3))
-                    }
-                }
-            }
-        }
-        
-        // Scale the triangles to a reasonable size for the simulation
-        // The bunny model is very small (around 0.1 units), so scale it up
-        var scaledTriangles = triangles.map { triangle in
-            Triangle(
-                v0: triangle.v0 * scaleFactor,
-                v1: triangle.v1 * scaleFactor,
-                v2: triangle.v2 * scaleFactor
-            )
-        }
-        
-        print("🔧 Scaled triangles by factor of \(scaleFactor)")
-        
-        // Apply position offset if provided (to align with grid bounds)
-        if let offsetToBottom = offsetToBottom {
-            // Calculate current bounding box
-            if !scaledTriangles.isEmpty {
-                var minBounds = scaledTriangles[0].v0
-                var maxBounds = scaledTriangles[0].v0
-                
-                for triangle in scaledTriangles {
-                    minBounds = min(min(min(minBounds, triangle.v0), triangle.v1), triangle.v2)
-                    maxBounds = max(max(max(maxBounds, triangle.v0), triangle.v1), triangle.v2)
-                }
-                
-                // Calculate offset to move mesh to desired position
-                let currentCenter = (minBounds + maxBounds) * 0.5
-                let currentBottom = minBounds.y
-                
-                // Calculate offsets for each axis
-                let xOffset = offsetToBottom.x - currentCenter.x  // Center X
-                let yOffset = offsetToBottom.y - currentBottom    // Align bottom Y  
-                let zOffset = offsetToBottom.z - currentCenter.z  // Center Z
-                
-                let totalOffset = SIMD3<Float>(xOffset, yOffset, zOffset)
-                
-                // Apply offset
-                scaledTriangles = scaledTriangles.map { triangle in
-                    Triangle(
-                        v0: triangle.v0 + totalOffset,
-                        v1: triangle.v1 + totalOffset,
-                        v2: triangle.v2 + totalOffset
-                    )
-                }                
-                // Print final bounds
-                let finalMinBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
-                    min(min(min(result, triangle.v0), triangle.v1), triangle.v2)
-                }
-                let finalMaxBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
-                    max(max(max(result, triangle.v0), triangle.v1), triangle.v2)
-                }
-            }
-        }
-        
-        return scaledTriangles
-    }
     
     func generateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, boundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)) -> MTLTexture? {
         guard let pipelineState = sdfComputePipelineState else {

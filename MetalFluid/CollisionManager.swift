@@ -8,6 +8,7 @@ class CollisionManager {
     
     // SDF generation and collision detection
     private var sdfGenerator: SDFGenerator
+    private var meshLoader: MeshLoader
     private var sdfTexture: MTLTexture?
     private var collisionUniformBuffer: MTLBuffer
     
@@ -20,6 +21,7 @@ class CollisionManager {
     init(device: MTLDevice) {
         self.device = device
         self.sdfGenerator = SDFGenerator(device: device)
+        self.meshLoader = MeshLoader(scaleFactor: 100.0)
         self.meshRenderer = CollisionMeshRenderer(device: device)
         
         // Create collision uniform buffer
@@ -88,7 +90,7 @@ class CollisionManager {
     
     func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
         // Load mesh triangles without offset (transform will be applied in shaders)
-        let triangles = sdfGenerator.loadOBJ(from: objURL, offsetToBottom: nil)
+        let triangles = meshLoader.loadOBJ(from: objURL, offsetToBottom: nil)
         
         if triangles.isEmpty {
             print("No triangles loaded from OBJ file")
@@ -97,23 +99,13 @@ class CollisionManager {
         
         currentTriangles = triangles
         
-        // Calculate bounding box
-        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
-        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
-        
-        for triangle in triangles {
-            minBounds = min(minBounds, triangle.v0)
-            minBounds = min(minBounds, triangle.v1)
-            minBounds = min(minBounds, triangle.v2)
-            maxBounds = max(maxBounds, triangle.v0)
-            maxBounds = max(maxBounds, triangle.v1)
-            maxBounds = max(maxBounds, triangle.v2)
-        }
+        // Calculate bounding box using MeshLoader
+        let boundingBox = meshLoader.calculateBoundingBox(triangles: triangles)
         
         // Expand bounds slightly for safety
         let padding: Float = 2.0
-        minBounds -= SIMD3<Float>(padding, padding, padding)
-        maxBounds += SIMD3<Float>(padding, padding, padding)
+        let minBounds = boundingBox.min - SIMD3<Float>(padding, padding, padding)
+        let maxBounds = boundingBox.max + SIMD3<Float>(padding, padding, padding)
         
         // Generate SDF texture with specified resolution using GPU
         let sdfResolution = resolution
