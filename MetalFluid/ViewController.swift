@@ -115,26 +115,26 @@ class ViewController: UIViewController {
     }
     
     private func setupCollisionMesh() {
-        guard let bunnyURL = Bundle.main.url(forResource: "bunny", withExtension: "obj") else {
-            print("⚠️ bunny.obj not found in bundle. Collision detection disabled.")
-            return
-        }
         // Get grid boundary to position bunny correctly
         let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
         
-        fluidRenderer.collisionManager?.loadMesh(
-            objURL: bunnyURL,
+        // Load Stanford Bunny asynchronously (with caching)
+        fluidRenderer.collisionManager?.loadStanfordBunnyAsync(
             resolution: fluidRenderer.getGridRes(),
             fillMode: true,
             gridBoundaryMin: boundaryMin,
             gridBoundaryMax: boundaryMax
-        )
-        
-        // Configure collision visualization
-        fluidRenderer.collisionManager?.setMeshVisible(true)
-        fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent red
-        
-        print("🐰 Stanford Bunny collision mesh loaded successfully!")
+        ) { [weak self] success in
+            if success {
+                print("✅ Stanford Bunny loaded successfully!")
+                // Configure collision visualization
+                self?.fluidRenderer.collisionManager?.setMeshVisible(true)
+                self?.fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent white
+                print("🐰 Stanford Bunny collision mesh configured!")
+            } else {
+                print("❌ Failed to load Stanford Bunny. Collision detection disabled.")
+            }
+        }
     }
 
     private func setupGestures() {

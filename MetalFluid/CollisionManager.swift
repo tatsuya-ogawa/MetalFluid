@@ -86,17 +86,7 @@ class CollisionManager {
         return (transform, invTransform)
     }
     
-    // MARK: - Mesh Loading
-    
-    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
-        // Load mesh triangles without offset (transform will be applied in shaders)
-        let triangles = meshLoader.loadOBJ(from: objURL, offsetToBottom: nil)
-        
-        if triangles.isEmpty {
-            print("No triangles loaded from OBJ file")
-            return
-        }
-        
+    private func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, fillMode: Bool, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
         currentTriangles = triangles
         
         // Calculate bounding box using MeshLoader
@@ -159,6 +149,53 @@ class CollisionManager {
             print("Failed to generate SDF texture")
         }
     }
+    
+    // MARK: - Mesh Loading
+    
+    /// Load Stanford Bunny with caching
+    func loadStanfordBunny(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
+        // Load mesh triangles from online source with caching
+        let triangles = meshLoader.loadStanfordBunny(offsetToBottom: nil)
+        
+        if triangles.isEmpty {
+            print("No triangles loaded from Stanford Bunny")
+            return
+        }
+        
+        processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+    }
+    
+    /// Load Stanford Bunny asynchronously
+    func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
+        meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if triangles.isEmpty {
+                print("No triangles loaded from Stanford Bunny")
+                completion(false)
+                return
+            }
+            
+            self.processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            completion(true)
+        }
+    }
+    
+    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
+        // Load mesh triangles without offset (transform will be applied in shaders)
+        let triangles = meshLoader.loadOBJ(from: objURL, offsetToBottom: nil)
+        
+        if triangles.isEmpty {
+            print("No triangles loaded from OBJ file")
+            return
+        }
+        
+        processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+    }
+    
     
     // MARK: - Configuration
     

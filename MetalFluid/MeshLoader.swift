@@ -11,9 +11,17 @@ struct Triangle {
 
 class MeshLoader {
     private let scaleFactor: Float
+    private let cacheDirectory: URL
     
     init(scaleFactor: Float = 15.0) {
         self.scaleFactor = scaleFactor
+        
+        // Create cache directory in tmp
+        let tmpDirectory = FileManager.default.temporaryDirectory
+        self.cacheDirectory = tmpDirectory.appendingPathComponent("MeshCache", isDirectory: true)
+        
+        // Create cache directory if it doesn't exist
+        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
     }
     
     /// Load triangles from OBJ file with optional offset
@@ -106,6 +114,76 @@ class MeshLoader {
         
         print("Loaded \(scaledTriangles.count) triangles from OBJ file")
         return scaledTriangles
+    }
+    
+    /// Load Stanford Bunny OBJ from online source with caching
+    func loadStanfordBunny(offsetToBottom: SIMD3<Float>?) -> [Triangle] {
+        let bunnyURL = URL(string: "https://graphics.stanford.edu/~mdfisher/Data/Meshes/bunny.obj")!
+        let cachedFileURL = cacheDirectory.appendingPathComponent("bunny.obj")
+        
+        // Check if cached file exists
+        if FileManager.default.fileExists(atPath: cachedFileURL.path) {
+            print("📁 Loading cached bunny.obj from: \(cachedFileURL.path)")
+            return loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
+        }
+        
+        // Download and cache the file
+        print("🌐 Downloading bunny.obj from Stanford...")
+        do {
+            let data = try Data(contentsOf: bunnyURL)
+            try data.write(to: cachedFileURL)
+            print("💾 Cached bunny.obj to: \(cachedFileURL.path)")
+            return loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
+        } catch {
+            print("❌ Failed to download bunny.obj: \(error)")
+            return []
+        }
+    }
+    
+    /// Load bunny asynchronously (non-blocking)
+    func loadStanfordBunnyAsync(offsetToBottom: SIMD3<Float>?, completion: @escaping ([Triangle]) -> Void) {
+        let bunnyURL = URL(string: "https://graphics.stanford.edu/~mdfisher/Data/Meshes/bunny.obj")!
+        let cachedFileURL = cacheDirectory.appendingPathComponent("bunny.obj")
+        
+        // Check if cached file exists
+        if FileManager.default.fileExists(atPath: cachedFileURL.path) {
+            print("📁 Loading cached bunny.obj from: \(cachedFileURL.path)")
+            let triangles = loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
+            completion(triangles)
+            return
+        }
+        
+        // Download asynchronously
+        print("🌐 Downloading bunny.obj from Stanford...")
+        URLSession.shared.dataTask(with: bunnyURL) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ Failed to download bunny.obj: \(error)")
+                completion([])
+                return
+            }
+            
+            guard let data = data else {
+                print("❌ No data received for bunny.obj")
+                completion([])
+                return
+            }
+            
+            do {
+                try data.write(to: cachedFileURL)
+                print("💾 Cached bunny.obj to: \(cachedFileURL.path)")
+                let triangles = self.loadOBJ(from: cachedFileURL, offsetToBottom: offsetToBottom)
+                DispatchQueue.main.async {
+                    completion(triangles)
+                }
+            } catch {
+                print("❌ Failed to cache bunny.obj: \(error)")
+                DispatchQueue.main.async {
+                    completion([])
+                }
+            }
+        }.resume()
     }
     
     /// Calculate bounding box for given triangles
