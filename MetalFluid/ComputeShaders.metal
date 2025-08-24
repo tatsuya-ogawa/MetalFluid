@@ -58,7 +58,15 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
     gradient.z = sampleSDF(worldPos + float3(0, 0, eps), sdfTexture, collision) - 
                  sampleSDF(worldPos - float3(0, 0, eps), sdfTexture, collision);
     
-    return normalize(gradient / (2.0 * eps));
+    gradient = gradient / (2.0 * eps);
+    
+    // Safely normalize gradient, avoid division by zero
+    float gradLength = length(gradient);
+    if (gradLength < 1e-6) {
+        return float3(0, 1, 0); // Default to up vector if gradient is too small
+    }
+    
+    return gradient / gradLength;
 }
 
 inline void handleCollision(device float3 &position, device float3 &velocity, 
@@ -66,36 +74,54 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
                            constant CollisionUniforms &collision) {
     if (!collision.enableCollision) return;
     
+    // Check if worldPos is within reasonable bounds to avoid sampling issues
+    float3 relativePos = (worldPos - collision.sdfOrigin) / collision.sdfSize;
+    if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
+        return; // Outside SDF bounds, no collision
+    }
+    
     float sdfValue = sampleSDF(worldPos, sdfTexture, collision);
+    
+    // Check for valid SDF value
+    if (!isfinite(sdfValue)) {
+        return; // Invalid SDF value, skip collision
+    }
+    
+    const float minPenetration = 0.001; // Minimum penetration to handle
+    const float maxCorrection = 1.0;    // Maximum position correction per frame
     
     if (collision.fillMode == 1) {
         // Fill mode: Keep particles inside, push out particles outside
-        if (sdfValue > 0.0) { // Outside the mesh, push back in
+        if (sdfValue > minPenetration) { // Outside the mesh, push back in
             float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
             
-            // Push particle back into the mesh
-            float penetrationDepth = sdfValue;
-            position -= normal * penetrationDepth * collision.collisionStiffness;
+            // Limit penetration correction
+            float penetrationDepth = min(sdfValue, maxCorrection);
+            float correctionStrength = collision.collisionStiffness * 0.1; // Reduced strength
+            position -= normal * penetrationDepth * correctionStrength;
             
-            // Reverse velocity toward surface
+            // Reverse velocity toward surface with damping
             float normalVelocity = dot(velocity, normal);
             if (normalVelocity > 0.0) { // Moving away from surface
-                velocity -= normal * normalVelocity * (1.0 + collision.collisionDamping);
+                float dampingFactor = collision.collisionDamping * 0.5; // Reduced damping
+                velocity -= normal * normalVelocity * dampingFactor;
             }
         }
     } else {
         // Surface collision mode: Push particles outside
-        if (sdfValue < 0.0) { // Inside the mesh, push out
+        if (sdfValue < -minPenetration) { // Inside the mesh, push out
             float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
             
-            // Push particle out of the mesh
-            float penetrationDepth = -sdfValue;
-            position += normal * penetrationDepth * collision.collisionStiffness;
+            // Limit penetration correction
+            float penetrationDepth = min(-sdfValue, maxCorrection);
+            float correctionStrength = collision.collisionStiffness * 0.1; // Reduced strength
+            position += normal * penetrationDepth * correctionStrength;
             
             // Reflect velocity with damping
             float normalVelocity = dot(velocity, normal);
             if (normalVelocity < 0.0) { // Moving into the surface
-                velocity -= normal * normalVelocity * (1.0 + collision.collisionDamping);
+                float dampingFactor = collision.collisionDamping * 0.5; // Reduced damping
+                velocity -= normal * normalVelocity * dampingFactor;
             }
         }
     }
@@ -440,7 +466,7 @@ kernel void gridToParticles(
     if (x_n.z > wall_max.z) {
         particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
     }
-    // Handle mesh collision detection
+    // Handle mesh collision detection (now safe from hanging)
     handleCollision(particles[id].position, particles[id].velocity, 
                    particles[id].position, sdfTexture, collision);
     
