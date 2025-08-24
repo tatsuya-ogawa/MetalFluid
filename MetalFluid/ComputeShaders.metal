@@ -164,7 +164,7 @@ kernel void particlesToGrid1(
                 float3 cell_dist = (float3(cell_idx) + 0.5f) - position;
                 float3 Q = C * cell_dist;
                 
-                float mass_contrib = weight * p.mass;
+                float mass_contrib = weight * p.mass * uniforms.massScale;
                 float3 vel_contrib = mass_contrib * (velocity + Q);
                 atomicAddWithUniform(&grid[cell_index].mass, mass_contrib, uniforms);
                 atomicAddWithUniform(&grid[cell_index].velocity_x, vel_contrib.x, uniforms);
