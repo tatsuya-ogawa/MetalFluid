@@ -556,10 +556,6 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
-        // Reset camera position for better overview
-        cameraDistance = 5.0
-        cameraAngleX = 0.2
-        cameraAngleY = 0.3
     }
 
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
