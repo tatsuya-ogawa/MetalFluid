@@ -471,6 +471,7 @@ class MPMFluidRenderer: NSObject {
         self.gridHeightMultiplier = gridHeightMultiplier
         super.init()
         setupMetal()
+        setupCollisionManager()  // Initialize collision manager once
         setupParticles()
         frameIndex = 0
         setupModeRenderers()
@@ -504,8 +505,11 @@ class MPMFluidRenderer: NSObject {
         setupRadixSortBuffers()
         setupDepthTextures(screenSize: screenSize)
         setupFluidTextures(screenSize: screenSize)
-        
-        // Initialize collision manager
+    }
+    
+    private func setupCollisionManager() {
+        guard let device = device else { return }
+        // Initialize collision manager (only once)
         collisionManager = CollisionManager(device: device)
     }
     
