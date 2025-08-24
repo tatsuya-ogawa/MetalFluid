@@ -571,8 +571,22 @@ class MPMFluidRenderer: NSObject {
             to: VertexShaderUniforms.self,
             capacity: 1
         )
+        
+        // Apply render offset to mvpMatrix with appropriate scaling
+        let renderOffset = getDomainOriginTranslation()
+        let renderScale: Float = getRenderScale(scale: 1.0) // Use existing render scale function
+        let scaledOffset = renderOffset * renderScale / 400
+        
+        let translationMatrix = float4x4(
+            [1, 0, 0, scaledOffset.x],
+            [0, 1, 0, scaledOffset.y], 
+            [0, 0, 1, scaledOffset.z],
+            [0, 0, 0, 1]
+        )
+        let adjustedMvpMatrix = mvpMatrix * translationMatrix
+        
         vertexUniformPointer[0] = VertexShaderUniforms(
-            mvpMatrix: mvpMatrix,
+            mvpMatrix: adjustedMvpMatrix,
             projectionMatrix: projectionMatrix,
             viewMatrix: viewMatrix,
             gridSpacing: gridSpacing,
