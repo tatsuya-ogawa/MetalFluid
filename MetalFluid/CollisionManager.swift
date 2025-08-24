@@ -46,6 +46,8 @@ class CollisionManager {
             collisionStiffness: 1.0,  // Not used in velocity-based approach
             collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
+            collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
+            collisionOffset: 0.0 // Default offset
         )
     }
     
@@ -118,7 +120,9 @@ class CollisionManager {
                 sdfResolution: sdfResolution,
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
-                enableCollision: 1
+                enableCollision: 1,
+                collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
+                collisionOffset: 0.0 // Default offset
             )
             
             // Load mesh into renderer for visualization

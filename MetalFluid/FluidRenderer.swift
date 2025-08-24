@@ -47,6 +47,8 @@ struct CollisionUniforms {
     var collisionStiffness: Float
     var collisionDamping: Float
     var enableCollision: UInt32
+    var collisionScale: SIMD3<Float>
+    var collisionOffset: Float
 }
 
 // Vertex shader specific uniforms
