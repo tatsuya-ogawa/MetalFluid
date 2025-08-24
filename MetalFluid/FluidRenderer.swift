@@ -271,38 +271,6 @@ class WaterRenderer: ModeRenderer {
 }
 
 class MPMFluidRenderer: NSObject {
-    internal var domainOrigin: SIMD3<Float>{
-        get{
-            let domainExtent: Float = Float(gridSize) * gridSpacing
-            let originOffset:Float = 0.0
-            return SIMD3<Float>(
-                originOffset * domainExtent,
-                originOffset * domainExtent,
-                originOffset * domainExtent
-            )
-        }
-    }
-    public func getDomainOriginTranslation() -> SIMD3<Float> {
-        let domainExtent: Float = Float(gridSize) * gridSpacing
-        let originOffset:Float = -0.5
-        let renderOrigin = SIMD3<Float>(
-            originOffset * domainExtent,
-            originOffset * domainExtent,
-            originOffset * domainExtent
-        )
-        return domainOrigin - renderOrigin
-    }
-    internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
-        let pad: Float = 15.0
-        let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
-        let boundaryMax = domainOrigin + SIMD3<Float>(
-            Float(gridSize) - pad,
-            Float(gridSize) - pad,
-            Float(gridSize) - pad
-        ) * gridSpacing
-        return (boundaryMin, boundaryMax)
-    }
-    
     // Public for testing
     public var device: MTLDevice!
     public var commandQueue: MTLCommandQueue!
@@ -384,8 +352,8 @@ class MPMFluidRenderer: NSObject {
     internal var maxThreadsPerGroup: Int = 256
     
     // Performance settings - Public for testing
-    public let particleCount: Int = 40000
-    public let gridSize: Int = 64
+    public var particleCount: Int = 40000
+    public var gridSize: Int = 64
     public var gridNodes: Int { gridSize * gridSize * gridSize }
     internal var frameIndex: Int = 0
     
@@ -420,6 +388,38 @@ class MPMFluidRenderer: NSObject {
     public let gridSpacing: Float = 1.0
     func getRenderScale(scale:Float) -> Float{
         return scale * 0.03 / gridSpacing * pow(64.0 / Float(gridSize),2)
+    }
+    internal var domainOrigin: SIMD3<Float>{
+        get{
+            let domainExtent: Float = Float(gridSize) * gridSpacing
+            let originOffset:Float = 0.0
+            return SIMD3<Float>(
+                originOffset * domainExtent,
+                originOffset * domainExtent,
+                originOffset * domainExtent
+            )
+        }
+    }
+    public func getDomainOriginTranslation() -> SIMD3<Float> {
+        let domainExtent: Float = Float(gridSize) * gridSpacing
+        let originOffset:Float = -0.5
+        let renderOrigin = SIMD3<Float>(
+            originOffset * domainExtent,
+            originOffset * domainExtent,
+            originOffset * domainExtent
+        )
+        return domainOrigin - renderOrigin
+    }
+
+    let pad: Float = 5.0
+    internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
+        let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
+        let boundaryMax = domainOrigin + SIMD3<Float>(
+            Float(gridSize) - pad,
+            Float(gridSize) - pad,
+            Float(gridSize) - pad
+        ) * gridSpacing
+        return (boundaryMin, boundaryMax)
     }
     
     // Uniform data for MLS-MPM - Structs defined by typealias above
@@ -611,5 +611,27 @@ class MPMFluidRenderer: NSObject {
     public func setMassScale(_ scale: Float) {
         massScale = scale
         print("⚖️ Mass scale set to: \(scale)")
+    }
+    
+    public func setParticleCount(_ count: Int) {
+        if count != particleCount {
+            particleCount = count
+            print("🔢 Particle count set to: \(particleCount)")
+            // Reinitialize simulation with new particle count
+            setupMetal()
+            setupParticles()
+            setupModeRenderers()
+        }
+    }
+    
+    public func setGridSize(_ size: Int) {
+        if size != gridSize {
+            gridSize = size
+            print("📐 Grid size set to: \(gridSize)")
+            // Reinitialize simulation with new grid size
+            setupMetal()
+            setupParticles()
+            setupModeRenderers()
+        }
     }
 }

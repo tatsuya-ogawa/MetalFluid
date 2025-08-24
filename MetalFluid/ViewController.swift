@@ -35,6 +35,10 @@ class ViewController: UIViewController {
     private var particleSizeLabel: UILabel!
     private var massScaleSlider: UISlider!
     private var massScaleLabel: UILabel!
+    private var particleCountSlider: UISlider!
+    private var particleCountLabel: UILabel!
+    private var gridSizeSlider: UISlider!
+    private var gridSizeLabel: UILabel!
     
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
@@ -211,6 +215,42 @@ class ViewController: UIViewController {
         massScaleLabel.textColor = .white
         massScaleLabel.font = UIFont.systemFont(ofSize: 14)
         massScaleLabel.textAlignment = .center
+        
+        // Particle count slider
+        particleCountSlider = UISlider()
+        particleCountSlider.minimumValue = 1000
+        particleCountSlider.maximumValue = 400000
+        particleCountSlider.value = 40000
+        particleCountSlider.addTarget(
+            self,
+            action: #selector(particleCountChanged),
+            for: .valueChanged
+        )
+        
+        // Particle count label
+        particleCountLabel = UILabel()
+        particleCountLabel.text = "Particles: 40000"
+        particleCountLabel.textColor = .white
+        particleCountLabel.font = UIFont.systemFont(ofSize: 14)
+        particleCountLabel.textAlignment = .center
+        
+        // Grid size slider
+        gridSizeSlider = UISlider()
+        gridSizeSlider.minimumValue = 32
+        gridSizeSlider.maximumValue = 128
+        gridSizeSlider.value = 64
+        gridSizeSlider.addTarget(
+            self,
+            action: #selector(gridSizeChanged),
+            for: .valueChanged
+        )
+        
+        // Grid size label
+        gridSizeLabel = UILabel()
+        gridSizeLabel.text = "Grid: 64³"
+        gridSizeLabel.textColor = .white
+        gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
+        gridSizeLabel.textAlignment = .center
 
         // Add buttons to control panel
         controlPanel.addSubview(modeButton)
@@ -221,6 +261,10 @@ class ViewController: UIViewController {
         controlPanel.addSubview(particleSizeLabel)
         controlPanel.addSubview(massScaleSlider)
         controlPanel.addSubview(massScaleLabel)
+        controlPanel.addSubview(particleCountSlider)
+        controlPanel.addSubview(particleCountLabel)
+        controlPanel.addSubview(gridSizeSlider)
+        controlPanel.addSubview(gridSizeLabel)
 
         // Setup constraints
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
@@ -232,6 +276,10 @@ class ViewController: UIViewController {
         particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
         massScaleSlider.translatesAutoresizingMaskIntoConstraints = false
         massScaleLabel.translatesAutoresizingMaskIntoConstraints = false
+        particleCountSlider.translatesAutoresizingMaskIntoConstraints = false
+        particleCountLabel.translatesAutoresizingMaskIntoConstraints = false
+        gridSizeSlider.translatesAutoresizingMaskIntoConstraints = false
+        gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // Control panel constraints
@@ -244,7 +292,6 @@ class ViewController: UIViewController {
                 constant: 20
             ),
             controlPanel.widthAnchor.constraint(equalToConstant: 200),
-            controlPanel.heightAnchor.constraint(equalToConstant: 390),
 
             // Mode button constraints
             modeButton.topAnchor.constraint(
@@ -365,6 +412,72 @@ class ViewController: UIViewController {
                 constant: -10
             ),
             massScaleSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Particle count label constraints
+            particleCountLabel.topAnchor.constraint(
+                equalTo: massScaleSlider.bottomAnchor,
+                constant: 10
+            ),
+            particleCountLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            particleCountLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            particleCountLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // Particle count slider constraints
+            particleCountSlider.topAnchor.constraint(
+                equalTo: particleCountLabel.bottomAnchor,
+                constant: 5
+            ),
+            particleCountSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            particleCountSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            particleCountSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Grid size label constraints
+            gridSizeLabel.topAnchor.constraint(
+                equalTo: particleCountSlider.bottomAnchor,
+                constant: 10
+            ),
+            gridSizeLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            gridSizeLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            gridSizeLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // Grid size slider constraints
+            gridSizeSlider.topAnchor.constraint(
+                equalTo: gridSizeLabel.bottomAnchor,
+                constant: 5
+            ),
+            gridSizeSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            gridSizeSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            gridSizeSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Bottom constraint to define controlPanel height
+            controlPanel.bottomAnchor.constraint(
+                equalTo: gridSizeSlider.bottomAnchor,
+                constant: 10
+            ),
         ])
     }
     @objc private func particleSizeChanged(_ slider: UISlider) {
@@ -377,6 +490,18 @@ class ViewController: UIViewController {
         let scale = slider.value
         massScaleLabel.text = String(format: "Mass: %.1fx", scale)
         fluidRenderer.setMassScale(scale)
+    }
+    
+    @objc private func particleCountChanged(_ slider: UISlider) {
+        let count = Int(slider.value)
+        particleCountLabel.text = "Particles: \(count)"
+        fluidRenderer.setParticleCount(count)
+    }
+    
+    @objc private func gridSizeChanged(_ slider: UISlider) {
+        let size = Int(slider.value)
+        gridSizeLabel.text = "Grid: \(size)³"
+        fluidRenderer.setGridSize(size)
     }
     
     @objc private func toggleRenderMode() {
