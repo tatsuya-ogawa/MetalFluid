@@ -58,7 +58,7 @@ class ViewController: UIViewController {
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
     private var isRecording = false
-
+    private let meshLoader: MeshLoader = MeshLoader(scaleFactor: 100.0)
     override func viewDidLoad() {
         super.viewDidLoad()
         let env = ProcessInfo.processInfo.environment
@@ -113,13 +113,32 @@ class ViewController: UIViewController {
         // Load Stanford Bunny for collision detection
         setupCollisionMesh()
     }
+    // MARK: - Mesh Loading
+    /// Load Stanford Bunny asynchronously
+    private func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
+        meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if triangles.isEmpty {
+                print("No triangles loaded from Stanford Bunny")
+                completion(false)
+                return
+            }
+            
+            self.fluidRenderer.collisionManager?.processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            completion(true)
+        }
+    }
     
     private func setupCollisionMesh() {
         // Get grid boundary to position bunny correctly
         let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
         
         // Load Stanford Bunny asynchronously (with caching)
-        fluidRenderer.collisionManager?.loadStanfordBunnyAsync(
+        loadStanfordBunnyAsync(
             resolution: fluidRenderer.getGridRes(),
             fillMode: true,
             gridBoundaryMin: boundaryMin,

@@ -3,12 +3,6 @@ import Metal
 import MetalKit
 import simd
 
-struct Triangle {
-    var v0: SIMD3<Float>
-    var v1: SIMD3<Float>
-    var v2: SIMD3<Float>
-}
-
 class MeshLoader {
     private let scaleFactor: Float
     private let cacheDirectory: URL
@@ -162,24 +156,5 @@ class MeshLoader {
         }.resume()
     }
     
-    /// Calculate bounding box for given triangles
-    func calculateBoundingBox(triangles: [Triangle]) -> (min: SIMD3<Float>, max: SIMD3<Float>) {
-        guard !triangles.isEmpty else {
-            return (min: SIMD3<Float>(0, 0, 0), max: SIMD3<Float>(0, 0, 0))
-        }
-        
-        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
-        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
-        
-        for triangle in triangles {
-            minBounds = min(minBounds, triangle.v0)
-            minBounds = min(minBounds, triangle.v1)
-            minBounds = min(minBounds, triangle.v2)
-            maxBounds = max(maxBounds, triangle.v0)
-            maxBounds = max(maxBounds, triangle.v1)
-            maxBounds = max(maxBounds, triangle.v2)
-        }
-        
-        return (min: minBounds, max: maxBounds)
-    }
+    
 }

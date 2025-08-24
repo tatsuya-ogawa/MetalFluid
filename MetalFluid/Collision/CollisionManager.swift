@@ -2,13 +2,16 @@ import Foundation
 import Metal
 import MetalKit
 import simd
-
+struct Triangle {
+    var v0: SIMD3<Float>
+    var v1: SIMD3<Float>
+    var v2: SIMD3<Float>
+}
 class CollisionManager {
     private let device: MTLDevice
     
     // SDF generation and collision detection
     private var sdfGenerator: SDFGenerator
-    private var meshLoader: MeshLoader
     private var sdfTexture: MTLTexture?
     private var collisionUniformBuffer: MTLBuffer
     
@@ -21,7 +24,6 @@ class CollisionManager {
     init(device: MTLDevice) {
         self.device = device
         self.sdfGenerator = SDFGenerator(device: device)
-        self.meshLoader = MeshLoader(scaleFactor: 100.0)
         self.meshRenderer = CollisionMeshRenderer(device: device)
         
         // Create collision uniform buffer
@@ -85,12 +87,31 @@ class CollisionManager {
         
         return (transform, invTransform)
     }
-    
-    private func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, fillMode: Bool, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
+    /// Calculate bounding box for given triangles
+    func calculateBoundingBox(triangles: [Triangle]) -> (min: SIMD3<Float>, max: SIMD3<Float>) {
+        guard !triangles.isEmpty else {
+            return (min: SIMD3<Float>(0, 0, 0), max: SIMD3<Float>(0, 0, 0))
+        }
+        
+        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+        
+        for triangle in triangles {
+            minBounds = min(minBounds, triangle.v0)
+            minBounds = min(minBounds, triangle.v1)
+            minBounds = min(minBounds, triangle.v2)
+            maxBounds = max(maxBounds, triangle.v0)
+            maxBounds = max(maxBounds, triangle.v1)
+            maxBounds = max(maxBounds, triangle.v2)
+        }
+        
+        return (min: minBounds, max: maxBounds)
+    }
+    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, fillMode: Bool, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
         currentTriangles = triangles
         
         // Calculate bounding box using MeshLoader
-        let boundingBox = meshLoader.calculateBoundingBox(triangles: triangles)
+        let boundingBox = calculateBoundingBox(triangles: triangles)
         
         // Expand bounds slightly for safety
         let padding: Float = 2.0
@@ -150,42 +171,7 @@ class CollisionManager {
         }
     }
     
-    // MARK: - Mesh Loading
-    
-    /// Load Stanford Bunny asynchronously
-    func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
-        meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
-            guard let self = self else {
-                completion(false)
-                return
-            }
-            
-            if triangles.isEmpty {
-                print("No triangles loaded from Stanford Bunny")
-                completion(false)
-                return
-            }
-            
-            self.processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
-            completion(true)
-        }
-    }
-    
-    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil) {
-        // Load mesh triangles without offset (transform will be applied in shaders)
-        let triangles = meshLoader.loadOBJ(from: objURL, offsetToBottom: nil)
-        
-        if triangles.isEmpty {
-            print("No triangles loaded from OBJ file")
-            return
-        }
-        
-        processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
-    }
-    
-    
     // MARK: - Configuration
-    
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
             to: CollisionUniforms.self,
