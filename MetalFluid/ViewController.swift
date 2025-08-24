@@ -120,15 +120,10 @@ class ViewController: UIViewController {
             print("⚠️ bunny.obj not found in bundle. Collision detection disabled.")
             return
         }
-        
-        // Load collision mesh with default settings
-        let sdfResolution: Int32 = 64 // Adjust based on performance needs
-        let fillMode = false // Surface collision by default
-        
         fluidRenderer.collisionManager?.loadMesh(
             objURL: bunnyURL,
-            resolution: sdfResolution, 
-            fillMode: fillMode
+            resolution: fluidRenderer.getGridRes(),
+            fillMode: true
         )
         
         // Configure collision visualization
@@ -136,8 +131,6 @@ class ViewController: UIViewController {
         fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(0.8, 0.3, 0.3, 0.4)) // Semi-transparent red
         
         print("🐰 Stanford Bunny collision mesh loaded successfully!")
-        print("   Resolution: \(sdfResolution)x\(sdfResolution)x\(sdfResolution)")
-        print("   Mode: \(fillMode ? "Fill inside" : "Surface collision")")
     }
 
     private func setupGestures() {
@@ -745,6 +738,8 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
+        // Reload collision mesh after reset
+        setupCollisionMesh()
     }
     
     // MARK: - Collision Control Actions

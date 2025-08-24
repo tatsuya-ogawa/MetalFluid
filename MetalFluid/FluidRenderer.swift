@@ -409,6 +409,13 @@ class MPMFluidRenderer: NSObject {
     public var massScale: Float = 1.0
     
     // MLS-MPM parameters - Public for testing
+    public func getGridRes()->SIMD3<Int32>{
+        return SIMD3<Int32>(
+            Int32(gridSize),
+            Int32(Float(gridSize) * gridHeightMultiplier),
+            Int32(gridSize)
+        )
+    }
     public let particleMass: Float = 1
     public let restDensity: Float = 4.0
     let stiffness: Float = 3.0
@@ -420,9 +427,10 @@ class MPMFluidRenderer: NSObject {
     }
     internal var domainOrigin: SIMD3<Float>{
         get{
-            let domainExtentX: Float = Float(gridSize) * gridSpacing
-            let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
-            let domainExtentZ: Float = Float(gridSize) * gridSpacing
+            let gridRes = getGridRes()
+            let domainExtentX: Float = Float(gridRes.x) * gridSpacing
+            let domainExtentY: Float = Float(gridRes.y) * gridSpacing
+            let domainExtentZ: Float = Float(gridRes.z) * gridSpacing
             let originOffset:Float = 0.0
             return SIMD3<Float>(
                 originOffset * domainExtentX,
@@ -432,9 +440,10 @@ class MPMFluidRenderer: NSObject {
         }
     }
     public func getDomainOriginTranslation() -> SIMD3<Float> {
-        let domainExtentX: Float = Float(gridSize) * gridSpacing
-        let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
-        let domainExtentZ: Float = Float(gridSize) * gridSpacing
+        let gridRes = getGridRes()
+        let domainExtentX: Float = Float(gridRes.x) * gridSpacing
+        let domainExtentY: Float = Float(gridRes.y) * gridSpacing
+        let domainExtentZ: Float = Float(gridRes.z) * gridSpacing
         let originOffsetX: Float = -0.5
         let originOffsetZ: Float = -0.5
         // Auto-adjust Y offset based on height multiplier to keep fluid centered
@@ -450,11 +459,12 @@ class MPMFluidRenderer: NSObject {
 
     let pad: Float = 5.0
     internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
+        let gridRes = getGridRes()
         let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
         let boundaryMax = domainOrigin + SIMD3<Float>(
-            Float(gridSize) - pad,
-            Float(gridSize) * gridHeightMultiplier - pad,
-            Float(gridSize) - pad
+            Float(gridRes.x) - pad,
+            Float(gridRes.y) - pad,
+            Float(gridRes.z) - pad
         ) * gridSpacing
         return (boundaryMin, boundaryMax)
     }
@@ -567,11 +577,6 @@ class MPMFluidRenderer: NSObject {
     func update(deltaTime: Float, screenSize: SIMD2<Float>, mvpMatrix: float4x4, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
-        let gridRes = SIMD3<Int32>(
-            Int32(gridSize),
-            Int32(Float(gridSize) * gridHeightMultiplier),
-            Int32(gridSize)
-        )
         let nodeCount = UInt32(gridNodes)
         let (boundaryMin,boundaryMax) = getBoundaryMinMax()
         let currentTime = CACurrentMediaTime()
@@ -582,6 +587,7 @@ class MPMFluidRenderer: NSObject {
             to: ComputeShaderUniforms.self,
             capacity: 1
         )
+        let gridRes = getGridRes()
         computeUniformPointer[0] = ComputeShaderUniforms(
             deltaTime: timeStep,
             particleCount: UInt32(particleCount),

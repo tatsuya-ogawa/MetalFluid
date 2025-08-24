@@ -52,7 +52,7 @@ class CollisionManager {
     
     // MARK: - Mesh Loading
     
-    func loadMesh(objURL: URL, resolution: Int32 = 64, fillMode: Bool = false) {
+    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false) {
         let triangles = sdfGenerator.loadOBJ(from: objURL)
         
         if triangles.isEmpty {
@@ -81,7 +81,7 @@ class CollisionManager {
         maxBounds += SIMD3<Float>(padding, padding, padding)
         
         // Generate SDF texture with specified resolution using GPU
-        let sdfResolution = SIMD3<Int32>(resolution, resolution, resolution)
+        let sdfResolution = resolution
         print("🚀 Starting GPU SDF generation...")
         let startTime = CFAbsoluteTimeGetCurrent()
         
