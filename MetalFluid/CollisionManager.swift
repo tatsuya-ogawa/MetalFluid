@@ -47,7 +47,25 @@ class CollisionManager {
             collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
             collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
-            collisionOffset: 0.0 // Default offset
+            collisionOffset: SIMD3<Float>(0.0, 0.0, 0.0) // Default offset
+        )
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    private func calculateCollisionOffset(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>, 
+                                        gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?) -> SIMD3<Float> {
+        guard let gridMin = gridMin, let gridMax = gridMax else {
+            return SIMD3<Float>(0, 0, 0)
+        }
+        
+        let gridCenter = (gridMin + gridMax) * 0.5
+        let meshCenter = (meshMin + meshMax) * 0.5
+        
+        return SIMD3<Float>(
+            gridCenter.x - meshCenter.x,  // Center X
+            gridMin.y - meshMin.y,        // Align bottom Y
+            gridCenter.z - meshCenter.z   // Center Z
         )
     }
     
@@ -108,6 +126,14 @@ class CollisionManager {
         print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
         
         if sdfTexture != nil {
+            // Calculate collision offset to center the mesh in the grid
+            let collisionOffset = calculateCollisionOffset(
+                meshMin: minBounds,
+                meshMax: maxBounds,
+                gridMin: gridBoundaryMin,
+                gridMax: gridBoundaryMax
+            )
+            
             // Update collision uniforms
             let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
                 to: CollisionUniforms.self,
@@ -122,7 +148,7 @@ class CollisionManager {
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
                 enableCollision: 1,
                 collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
-                collisionOffset: 0.0 // Default offset
+                collisionOffset: collisionOffset // Calculated offset for centering
             )
             
             // Load mesh into renderer for visualization
@@ -138,6 +164,32 @@ class CollisionManager {
     }
     
     // MARK: - Configuration
+    
+    func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
+        guard sdfTexture != nil else { return }
+        
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        
+        // Get current collision bounds from the uniform
+        let minBounds = collisionUniformPointer[0].sdfOrigin
+        let maxBounds = collisionUniformPointer[0].sdfOrigin + collisionUniformPointer[0].sdfSize
+        
+        // Calculate collision offset using the helper method
+        let collisionOffset = calculateCollisionOffset(
+            meshMin: minBounds,
+            meshMax: maxBounds,
+            gridMin: gridBoundaryMin,
+            gridMax: gridBoundaryMax
+        )
+        
+        // Update the collision offset
+        collisionUniformPointer[0].collisionOffset = collisionOffset
+        
+        print("Updated collision offset for new grid boundaries: \(collisionOffset)")
+    }
     
     func setEnabled(_ enabled: Bool) {
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
