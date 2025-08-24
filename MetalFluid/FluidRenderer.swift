@@ -354,7 +354,8 @@ class MPMFluidRenderer: NSObject {
     // Performance settings - Public for testing
     public var particleCount: Int = 40000
     public var gridSize: Int = 64
-    public var gridNodes: Int { gridSize * gridSize * gridSize }
+    private let gridHeightMultiplier: Float = 1.1
+    public var gridNodes: Int { gridSize * Int(Float(gridSize) * gridHeightMultiplier) * gridSize }
     internal var frameIndex: Int = 0
     
     // Number of simulation substeps per frame
@@ -391,22 +392,26 @@ class MPMFluidRenderer: NSObject {
     }
     internal var domainOrigin: SIMD3<Float>{
         get{
-            let domainExtent: Float = Float(gridSize) * gridSpacing
+            let domainExtentX: Float = Float(gridSize) * gridSpacing
+            let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
+            let domainExtentZ: Float = Float(gridSize) * gridSpacing
             let originOffset:Float = 0.0
             return SIMD3<Float>(
-                originOffset * domainExtent,
-                originOffset * domainExtent,
-                originOffset * domainExtent
+                originOffset * domainExtentX,
+                originOffset * domainExtentY,
+                originOffset * domainExtentZ
             )
         }
     }
     public func getDomainOriginTranslation() -> SIMD3<Float> {
-        let domainExtent: Float = Float(gridSize) * gridSpacing
+        let domainExtentX: Float = Float(gridSize) * gridSpacing
+        let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
+        let domainExtentZ: Float = Float(gridSize) * gridSpacing
         let originOffset:Float = -0.5
         let renderOrigin = SIMD3<Float>(
-            originOffset * domainExtent,
-            originOffset * domainExtent,
-            originOffset * domainExtent
+            originOffset * domainExtentX,
+            originOffset * domainExtentY,
+            originOffset * domainExtentZ
         )
         return domainOrigin - renderOrigin
     }
@@ -416,7 +421,7 @@ class MPMFluidRenderer: NSObject {
         let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
         let boundaryMax = domainOrigin + SIMD3<Float>(
             Float(gridSize) - pad,
-            Float(gridSize) - pad,
+            Float(gridSize) * gridHeightMultiplier - pad,
             Float(gridSize) - pad
         ) * gridSpacing
         return (boundaryMin, boundaryMax)
@@ -524,7 +529,7 @@ class MPMFluidRenderer: NSObject {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
         let gridRes = SIMD3<Int32>(
             Int32(gridSize),
-            Int32(gridSize),
+            Int32(Float(gridSize) * gridHeightMultiplier),
             Int32(gridSize)
         )
         let nodeCount = UInt32(gridNodes)

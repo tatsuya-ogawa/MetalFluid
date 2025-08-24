@@ -219,7 +219,7 @@ class ViewController: UIViewController {
         // Particle count slider
         particleCountSlider = UISlider()
         particleCountSlider.minimumValue = 1000
-        particleCountSlider.maximumValue = 400000
+        particleCountSlider.maximumValue = 300000
         particleCountSlider.value = 40000
         particleCountSlider.addTarget(
             self,
@@ -237,7 +237,7 @@ class ViewController: UIViewController {
         // Grid size slider
         gridSizeSlider = UISlider()
         gridSizeSlider.minimumValue = 32
-        gridSizeSlider.maximumValue = 128
+        gridSizeSlider.maximumValue = 96
         gridSizeSlider.value = 64
         gridSizeSlider.addTarget(
             self,
