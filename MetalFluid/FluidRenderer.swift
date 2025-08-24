@@ -477,58 +477,6 @@ class MPMFluidRenderer: NSObject {
         waterRenderer = WaterRenderer(fluidRenderer: self)
     }
     
-    // MARK: - Collision Detection Interface
-    
-    public func loadCollisionMesh(objURL: URL, resolution: Int32 = 64, fillMode: Bool = false) {
-        collisionManager?.loadMesh(objURL: objURL, resolution: resolution, fillMode: fillMode)
-    }
-    
-    public func setCollisionEnabled(_ enabled: Bool) {
-        collisionManager?.setEnabled(enabled)
-    }
-    
-    public func isCollisionEnabled() -> Bool {
-        return collisionManager?.isEnabled() ?? false
-    }
-    
-    public func setFillMode(_ fillMode: Bool) {
-        collisionManager?.setFillMode(fillMode)
-    }
-    
-    public func getFillMode() -> Bool {
-        return collisionManager?.getFillMode() ?? false
-    }
-    
-    public func getCurrentSDFResolution() -> Int32? {
-        return collisionManager?.getCurrentSDFResolution()
-    }
-    
-    public func setCollisionStiffness(_ stiffness: Float) {
-        collisionManager?.setCollisionStiffness(stiffness)
-    }
-    
-    public func setCollisionDamping(_ damping: Float) {
-        collisionManager?.setCollisionDamping(damping)
-    }
-    
-    // MARK: - Collision Mesh Rendering Interface
-    
-    public func setCollisionMeshVisible(_ visible: Bool) {
-        collisionManager?.setMeshVisible(visible)
-    }
-    
-    public func isCollisionMeshVisible() -> Bool {
-        return collisionManager?.isMeshVisible() ?? false
-    }
-    
-    public func setCollisionMeshColor(_ color: SIMD4<Float>) {
-        collisionManager?.setMeshColor(color)
-    }
-    
-    public func setCollisionMeshWireframe(_ wireframe: Bool) {
-        collisionManager?.setMeshWireframe(wireframe)
-    }
-    
     internal func setupMetal() {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
