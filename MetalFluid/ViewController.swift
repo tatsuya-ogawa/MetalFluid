@@ -25,6 +25,11 @@ class ViewController: UIViewController {
     private var isAutoMode: Bool = true
     private var shouldStep: Bool = false
 
+    // Initial values (shared between sliders and FluidRenderer)
+    private let initialParticleCount: Float = 40000
+    private let initialGridSize: Float = 48
+    private let initialGridHeightMultiplier: Float = 1.1
+
     // UI Elements
     private var controlPanel: UIView!
     private var modeButton: UIButton!
@@ -87,7 +92,12 @@ class ViewController: UIViewController {
     }
 
     private func setupRenderer() {
-        fluidRenderer = MPMFluidRenderer(particleCount: 40000, gridSize: 64, gridHeightMultiplier: 1.1)
+        // Use predefined initial values for FluidRenderer constructor
+        fluidRenderer = MPMFluidRenderer(
+            particleCount: Int(initialParticleCount), 
+            gridSize: Int(initialGridSize), 
+            gridHeightMultiplier: initialGridHeightMultiplier
+        )
     }
 
     private func setupGestures() {
@@ -220,7 +230,7 @@ class ViewController: UIViewController {
         particleCountSlider = UISlider()
         particleCountSlider.minimumValue = 1000
         particleCountSlider.maximumValue = 300000
-        particleCountSlider.value = 40000
+        particleCountSlider.value = initialParticleCount
         particleCountSlider.addTarget(
             self,
             action: #selector(particleCountChanged),
@@ -238,7 +248,7 @@ class ViewController: UIViewController {
         gridSizeSlider = UISlider()
         gridSizeSlider.minimumValue = 32
         gridSizeSlider.maximumValue = 96
-        gridSizeSlider.value = 48
+        gridSizeSlider.value = initialGridSize
         gridSizeSlider.addTarget(
             self,
             action: #selector(gridSizeChanged),
