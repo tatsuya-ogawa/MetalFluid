@@ -454,13 +454,18 @@ kernel void gridToParticles(
     particles[id].C = unclampedC;
     particles[id].velocity = new_velocity;
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
-    
+
     // --- Velocity correction by wall repulsion force ---
     const float k = 3.0;
     const float wall_stiffness = 0.3;
     float3 wall_min = uniforms.boundaryMin + float3(1.0,1.0,1.0)*3.0 * uniforms.gridSpacing;
     float3 wall_max = uniforms.boundaryMax - float3(1.0,1.0,1.0)*4.0 * uniforms.gridSpacing;
     float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+
+    // Handle mesh collision detection (now safe from hanging)
+    handleCollision(particles[id].position, particles[id].velocity,
+                   particles[id].position, sdfTexture, collision);
+
     if (x_n.x < wall_min.x) {
         particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
     }
@@ -479,9 +484,6 @@ kernel void gridToParticles(
     if (x_n.z > wall_max.z) {
         particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
     }
-    // Handle mesh collision detection (now safe from hanging)
-    handleCollision(particles[id].position, particles[id].velocity, 
-                   particles[id].position, sdfTexture, collision);
     
     // Clamp position based on boundaries (direct clamp in world coordinates)
     particles[id].position = clamp(particles[id].position, uniforms.boundaryMin+1.0*uniforms.gridSpacing, uniforms.boundaryMax-2.0*uniforms.gridSpacing);
