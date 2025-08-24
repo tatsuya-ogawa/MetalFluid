@@ -43,9 +43,9 @@ extension MPMFluidRenderer {
             fatalError("Could not create pressure heatmap render pipeline state: \(error)")
         }
         
-        // Create depth stencil state for proper depth testing
+        // Create depth stencil state for fluid rendering
         let depthStencilDescriptor = MTLDepthStencilDescriptor()
-        depthStencilDescriptor.depthCompareFunction = .lessEqual  // More lenient than .less
+        depthStencilDescriptor.depthCompareFunction = .less
         depthStencilDescriptor.isDepthWriteEnabled = true
         depthStencilState = device.makeDepthStencilState(descriptor: depthStencilDescriptor)!
     }
@@ -56,8 +56,8 @@ extension MPMFluidRenderer {
         }
         
         // Depth rendering pipeline
-        guard let depthVertexFunction = library.makeFunction(name: "depthVertexShader"),
-              let depthFragmentFunction = library.makeFunction(name: "depthFragmentShader")
+        guard let depthVertexFunction = library.makeFunction(name: "vs_depth"),
+              let depthFragmentFunction = library.makeFunction(name: "fs_depth")
         else {
             fatalError("Could not find depth shader functions")
         }
@@ -77,20 +77,20 @@ extension MPMFluidRenderer {
         }
         
         // Depth filter pipeline
-        guard let filterVertexFunction = library.makeFunction(name: "depthFilterVertexShader"),
-              let filterFragmentFunction = library.makeFunction(name: "depthFilterFragmentShader")
+        guard let depthFilterVertexFunction = library.makeFunction(name: "vs_bilateral"),
+              let filterFragmentFunction = library.makeFunction(name: "fs_bilateral")
         else {
             fatalError("Could not find depth filter shader functions")
         }
         
-        let filterPipelineDescriptor = MTLRenderPipelineDescriptor()
-        filterPipelineDescriptor.vertexFunction = filterVertexFunction
-        filterPipelineDescriptor.fragmentFunction = filterFragmentFunction
-        filterPipelineDescriptor.colorAttachments[0].pixelFormat = .r32Float
+        let depthFilterPipelineDescriptor = MTLRenderPipelineDescriptor()
+        depthFilterPipelineDescriptor.vertexFunction = depthFilterVertexFunction
+        depthFilterPipelineDescriptor.fragmentFunction = filterFragmentFunction
+        depthFilterPipelineDescriptor.colorAttachments[0].pixelFormat = .r32Float
         
         do {
             depthFilterPipelineState = try device.makeRenderPipelineState(
-                descriptor: filterPipelineDescriptor
+                descriptor: depthFilterPipelineDescriptor
             )
         } catch {
             fatalError("Could not create depth filter pipeline state: \(error)")
@@ -103,8 +103,8 @@ extension MPMFluidRenderer {
         }
         
         // Thickness rendering pipeline
-        guard let thicknessVertexFunction = library.makeFunction(name: "thicknessVertexShader"),
-              let thicknessFragmentFunction = library.makeFunction(name: "thicknessFragmentShader")
+        guard let thicknessVertexFunction = library.makeFunction(name: "vs_thickness"),
+              let thicknessFragmentFunction = library.makeFunction(name: "fs_thickness")
         else {
             fatalError("Could not find thickness shader functions")
         }
@@ -112,7 +112,7 @@ extension MPMFluidRenderer {
         let thicknessPipelineDescriptor = MTLRenderPipelineDescriptor()
         thicknessPipelineDescriptor.vertexFunction = thicknessVertexFunction
         thicknessPipelineDescriptor.fragmentFunction = thicknessFragmentFunction
-        thicknessPipelineDescriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        thicknessPipelineDescriptor.colorAttachments[0].pixelFormat = .r16Float
         thicknessPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
         
         // Enable additive blending for thickness accumulation
@@ -133,8 +133,8 @@ extension MPMFluidRenderer {
         }
         
         // Gaussian filter pipeline
-        guard let gaussianVertexFunction = library.makeFunction(name: "depthFilterVertexShader"),
-              let gaussianFragmentFunction = library.makeFunction(name: "gaussianFilterFragmentShader")
+        guard let gaussianVertexFunction = library.makeFunction(name: "vs_bilateral"),
+              let gaussianFragmentFunction = library.makeFunction(name: "fs_gaussian")
         else {
             fatalError("Could not find Gaussian filter shader functions")
         }
@@ -142,7 +142,7 @@ extension MPMFluidRenderer {
         let gaussianPipelineDescriptor = MTLRenderPipelineDescriptor()
         gaussianPipelineDescriptor.vertexFunction = gaussianVertexFunction
         gaussianPipelineDescriptor.fragmentFunction = gaussianFragmentFunction
-        gaussianPipelineDescriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        gaussianPipelineDescriptor.colorAttachments[0].pixelFormat = .r16Float
         // Note: Gaussian filter doesn't need depth attachment since it's a full-screen quad
         
         do {
@@ -209,7 +209,7 @@ extension MPMFluidRenderer {
     internal func setupFluidTextures(screenSize: SIMD2<Float>) {
         // Thickness textures
         let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm,
+            pixelFormat: .r16Float,
             width: Int(screenSize.x),
             height: Int(screenSize.y),
             mipmapped: false
@@ -298,12 +298,17 @@ extension MPMFluidRenderer {
         }
         
         renderEncoder.setRenderPipelineState(depthRenderPipelineState)
+        renderEncoder.setDepthStencilState(depthStencilState)
         renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        renderEncoder.setFragmentBuffer(fluidRenderUniformBuffer, offset: 0, index: 1)
+        
+        // Draw billboard quads (6 vertices per instance)
         renderEncoder.drawPrimitives(
-            type: .point,
+            type: .triangle,
             vertexStart: 0,
-            vertexCount: particleCount
+            vertexCount: 6,
+            instanceCount: particleCount
         )
         renderEncoder.endEncoding()
     }
@@ -319,8 +324,9 @@ extension MPMFluidRenderer {
             capacity: 1
         )
         
-        // Calculate parameters like WebGPU
-        let radius: Float = 0.1 // particle radius
+        // Calculate parameters like WebGPU - use dynamic particle size
+        let baseRadius: Float = 0.1 // base particle radius
+        let radius = baseRadius * particleSizeMultiplier // scale with slider
         let blurdDepthScale: Float = 10.0
         let maxFilterSize: Float = 100.0
         let blurFilterSize: Float = 12.0
@@ -408,10 +414,13 @@ extension MPMFluidRenderer {
         renderEncoder.setRenderPipelineState(thicknessRenderPipelineState)
         renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        
+        // Draw billboard quads (6 vertices per instance)
         renderEncoder.drawPrimitives(
-            type: .point,
+            type: .triangle,
             vertexStart: 0,
-            vertexCount: particleCount
+            vertexCount: 6,
+            instanceCount: particleCount
         )
         renderEncoder.endEncoding()
     }

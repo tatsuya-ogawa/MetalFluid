@@ -46,10 +46,11 @@ struct VertexShaderUniforms {
     var projectionMatrix: float4x4
     var viewMatrix: float4x4
     var gridSpacing: Float
-    var domainOrigin: SIMD3<Float>
+    var physicalDomainOrigin: SIMD3<Float>   // For physics calculations
     var gridResolution: SIMD3<Int32>
     var rest_density: Float
     var particleSizeMultiplier: Float
+    var sphere_size: Float
 }
 
 
@@ -218,7 +219,7 @@ class WaterRenderer: ModeRenderer {
         // Step 1: Render depth map
         renderer.renderDepthMap(commandBuffer: commandBuffer)
         
-        // Step 2: Apply bilateral filter to depth (4 iterations as per WebGPU-Ocean)
+        // Step 2: Apply bilateral filter to depth (4 iterations)
         for _ in 0..<4 {
             renderer.applyDepthFilter(
                 commandBuffer: commandBuffer,
@@ -230,7 +231,7 @@ class WaterRenderer: ModeRenderer {
         // Step 3: Render thickness map
         renderer.renderThicknessMap(commandBuffer: commandBuffer)
         
-        // Step 4: Apply Gaussian filter to thickness (1 iteration as per WebGPU-Ocean)
+        // Step 4: Apply Gaussian filter to thickness (1 iteration)
         renderer.applyThicknessFilter(commandBuffer: commandBuffer, filterRadius: 4)
         
         // Step 5: Render final fluid surface
@@ -270,38 +271,6 @@ class WaterRenderer: ModeRenderer {
 }
 
 class MPMFluidRenderer: NSObject {
-    internal var domainOrigin: SIMD3<Float>{
-        get{
-            let domainExtent: Float = Float(gridSize) * gridSpacing
-            let originOffset:Float = 0.0
-            return SIMD3<Float>(
-                originOffset * domainExtent,
-                originOffset * domainExtent,
-                originOffset * domainExtent
-            )
-        }
-    }
-    public func getDomainOriginTranslation() -> SIMD3<Float> {
-        let domainExtent: Float = Float(gridSize) * gridSpacing
-        let originOffset:Float = -0.5
-        let renderOrigin = SIMD3<Float>(
-            originOffset * domainExtent,
-            originOffset * domainExtent,
-            originOffset * domainExtent
-        )
-        return domainOrigin - renderOrigin
-    }
-    internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
-        let pad: Float = 15.0
-        let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
-        let boundaryMax = domainOrigin + SIMD3<Float>(
-            Float(gridSize) - pad,
-            Float(gridSize) - pad,
-            Float(gridSize) - pad
-        ) * gridSpacing
-        return (boundaryMin, boundaryMax)
-    }
-    
     // Public for testing
     public var device: MTLDevice!
     public var commandQueue: MTLCommandQueue!
@@ -363,6 +332,9 @@ class MPMFluidRenderer: NSObject {
     internal var gaussianUniformBuffer: MTLBuffer!
     internal var environmentTexture: MTLTexture!
     
+    // Cube index buffer for instanced rendering
+    internal var cubeIndexBuffer: MTLBuffer?
+    
     // Screen size for depth filtering
     internal var screenSize: SIMD2<Float> = SIMD2<Float>(800, 600)
     
@@ -379,13 +351,14 @@ class MPMFluidRenderer: NSObject {
     // Sort constants
     internal var maxThreadsPerGroup: Int = 256
     
-    // Constants - WebGPU-Ocean inspired performance settings - Public for testing
-    public let particleCount: Int = 40000
-    public let gridSize: Int = 64
-    public var gridNodes: Int { gridSize * gridSize * gridSize }
+    // Performance settings - Public for testing
+    public var particleCount: Int
+    public var gridSize: Int
+    private let gridHeightMultiplier: Float
+    public var gridNodes: Int { gridSize * Int(Float(gridSize) * gridHeightMultiplier) * gridSize }
     internal var frameIndex: Int = 0
     
-    // Number of simulation substeps per frame (matches WebGPU‑Ocean default)
+    // Number of simulation substeps per frame
     public var simulationSubsteps: Int = 2
     
     // Particle sorting configuration
@@ -415,15 +388,59 @@ class MPMFluidRenderer: NSObject {
     public let gravity: Float = -2.5 //-9.81
     public let gridSpacing: Float = 1.0
     func getRenderScale(scale:Float) -> Float{
-        return scale * 0.03 / gridSpacing * pow(64.0 / Float(gridSize),2)
+        return scale / gridSpacing / Float(gridSize) * 2
+    }
+    internal var domainOrigin: SIMD3<Float>{
+        get{
+            let domainExtentX: Float = Float(gridSize) * gridSpacing
+            let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
+            let domainExtentZ: Float = Float(gridSize) * gridSpacing
+            let originOffset:Float = 0.0
+            return SIMD3<Float>(
+                originOffset * domainExtentX,
+                originOffset * domainExtentY,
+                originOffset * domainExtentZ
+            )
+        }
+    }
+    public func getDomainOriginTranslation() -> SIMD3<Float> {
+        let domainExtentX: Float = Float(gridSize) * gridSpacing
+        let domainExtentY: Float = Float(gridSize) * gridHeightMultiplier * gridSpacing
+        let domainExtentZ: Float = Float(gridSize) * gridSpacing
+        let originOffsetX: Float = -0.5
+        let originOffsetZ: Float = -0.5
+        // Auto-adjust Y offset based on height multiplier to keep fluid centered
+        // Higher multiplier needs more negative offset to center properly
+        let originOffsetY: Float = -0.5 + (2.0 - gridHeightMultiplier) * 0.2
+        let renderOrigin = SIMD3<Float>(
+            originOffsetX * domainExtentX,
+            originOffsetY * domainExtentY,
+            originOffsetZ * domainExtentZ
+        )
+        return domainOrigin - renderOrigin
+    }
+
+    let pad: Float = 5.0
+    internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
+        let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
+        let boundaryMax = domainOrigin + SIMD3<Float>(
+            Float(gridSize) - pad,
+            Float(gridSize) * gridHeightMultiplier - pad,
+            Float(gridSize) - pad
+        ) * gridSpacing
+        return (boundaryMin, boundaryMax)
     }
     
     // Uniform data for MLS-MPM - Structs defined by typealias above
     
-    override init() {
+    init(particleCount: Int, gridSize: Int, gridHeightMultiplier: Float) {
+        self.particleCount = particleCount
+        self.gridSize = gridSize
+        self.gridHeightMultiplier = gridHeightMultiplier
         super.init()
         setupMetal()
         setupParticles()
+        frameIndex = 0
         setupModeRenderers()
     }
     
@@ -513,24 +530,14 @@ class MPMFluidRenderer: NSObject {
             length: gaussianUniformSize,
             options: .storageModeShared
         )!
-        
-        // Debug logging
-        print("🔍 Buffer sizes:")
-        print("   Particle buffer: \(particleBufferSize) bytes (\(MemoryLayout<MPMParticle>.stride) per particle)")
-        print("   Grid buffer: \(gridBufferSize) bytes (\(MemoryLayout<MPMGridNode>.stride) per node)")
-        print("   Grid nodes: \(gridNodes)")
-        print("   Particle count: \(particleCount)")
-        print("   Compute uniform buffer: \(computeUniformBufferSize) bytes")
-        print("   Vertex uniform buffer: \(vertexUniformBufferSize) bytes")
-        print("   Filter uniform buffer: \(filterUniformSize) bytes")
     }
-        
+            
     func update(deltaTime: Float, screenSize: SIMD2<Float>, mvpMatrix: float4x4, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
         let gridRes = SIMD3<Int32>(
             Int32(gridSize),
-            Int32(gridSize),
+            Int32(Float(gridSize) * gridHeightMultiplier),
             Int32(gridSize)
         )
         let nodeCount = UInt32(gridNodes)
@@ -565,15 +572,30 @@ class MPMFluidRenderer: NSObject {
             to: VertexShaderUniforms.self,
             capacity: 1
         )
+        
+        // Apply render offset to mvpMatrix with appropriate scaling
+        let renderOffset = getDomainOriginTranslation()
+        let renderScale: Float = getRenderScale(scale: 1.0) // Use existing render scale function
+        let scaledOffset = renderOffset * renderScale / 400
+        
+        let translationMatrix = float4x4(
+            [1, 0, 0, scaledOffset.x],
+            [0, 1, 0, scaledOffset.y],
+            [0, 0, 1, scaledOffset.z],
+            [0, 0, 0, 1]
+        )
+        let adjustedMvpMatrix = mvpMatrix * translationMatrix
+        
         vertexUniformPointer[0] = VertexShaderUniforms(
-            mvpMatrix: mvpMatrix,
+            mvpMatrix: adjustedMvpMatrix,
             projectionMatrix: projectionMatrix,
             viewMatrix: viewMatrix,
             gridSpacing: gridSpacing,
-            domainOrigin: domainOrigin,
+            physicalDomainOrigin: domainOrigin,
             gridResolution: gridRes,
             rest_density: restDensity,
-            particleSizeMultiplier: particleSizeMultiplier
+            particleSizeMultiplier: particleSizeMultiplier,
+            sphere_size: 0.025 * particleSizeMultiplier  // Same calculation as WebGPU
         )
         
         frameIndex += 1
@@ -605,8 +627,6 @@ class MPMFluidRenderer: NSObject {
         frameIndex = 0
     }
     
-    // Flag for dump reservation
-    internal var shouldCopyGridForDebug: Bool = false
     // --- Add grid debug buffer and methods ---
     public var debugGridBuffer: MTLBuffer!
     
@@ -618,5 +638,27 @@ class MPMFluidRenderer: NSObject {
     public func setMassScale(_ scale: Float) {
         massScale = scale
         print("⚖️ Mass scale set to: \(scale)")
+    }
+    
+    public func setParticleCount(_ count: Int) {
+        if count != particleCount {
+            particleCount = count
+            print("🔢 Particle count set to: \(particleCount)")
+            // Reinitialize simulation with new particle count
+            setupMetal()
+            setupParticles()
+            setupModeRenderers()
+        }
+    }
+    
+    public func setGridSize(_ size: Int) {
+        if size != gridSize {
+            gridSize = size
+            print("📐 Grid size set to: \(gridSize)")
+            // Reinitialize simulation with new grid size
+            setupMetal()
+            setupParticles()
+            setupModeRenderers()
+        }
     }
 }

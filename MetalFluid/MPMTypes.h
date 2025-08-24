@@ -61,10 +61,21 @@ typedef struct {
     simd_float4x4 projectionMatrix;
     simd_float4x4 viewMatrix;
     float gridSpacing;
-    simd_float3 domainOrigin;
+    simd_float3 physicalDomainOrigin;   // For physics calculations
     simd_int3 gridResolution;
     float rest_density;    // For pressure heatmap calculation
     float particleSizeMultiplier; // For dynamic particle size scaling
+    float sphere_size;     // Sphere size for billboard rendering (same as WebGPU-Ocean)
 } VertexShaderUniforms;
+
+// Fluid rendering uniforms (same as WebGPU-Ocean)
+typedef struct {
+    simd_float2 texelSize;
+    float sphereSize;
+    simd_float4x4 invProjectionMatrix;
+    simd_float4x4 projectionMatrix;
+    simd_float4x4 viewMatrix;
+    simd_float4x4 invViewMatrix;
+} FluidRenderUniforms;
 
 #endif /* MPMTypes_h */

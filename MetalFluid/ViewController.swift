@@ -1,8 +1,10 @@
 import MetalKit
 import UIKit
 import simd
+import ReplayKit
 
 class ViewController: UIViewController {
+    private let recordKey = "r"
     // For 10fps control
     private var lastComputeTime: CFTimeInterval = 0
 
@@ -24,17 +26,29 @@ class ViewController: UIViewController {
     private var isAutoMode: Bool = true
     private var shouldStep: Bool = false
 
+    // Initial values (shared between sliders and FluidRenderer)
+    private let initialParticleCount: Float = 40000
+    private let initialGridSize: Float = 48
+    private let initialGridHeightMultiplier: Float = 1.5
+
     // UI Elements
     private var controlPanel: UIView!
     private var modeButton: UIButton!
     private var stepButton: UIButton!
     private var resetButton: UIButton!
-    private var dumpButton: UIButton!
     private var renderModeButton: UIButton!
     private var particleSizeSlider: UISlider!
     private var particleSizeLabel: UILabel!
     private var massScaleSlider: UISlider!
     private var massScaleLabel: UILabel!
+    private var particleCountSlider: UISlider!
+    private var particleCountLabel: UILabel!
+    private var gridSizeSlider: UISlider!
+    private var gridSizeLabel: UILabel!
+    
+    // ReplayKit recording
+    private let screenRecorder = RPScreenRecorder.shared()
+    private var isRecording = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -47,6 +61,7 @@ class ViewController: UIViewController {
         setupRenderer()
         setupGestures()
         setupControlPanel()
+        setupKeyboardHandling()
     }
 
     private func setupMetalView() {
@@ -78,7 +93,12 @@ class ViewController: UIViewController {
     }
 
     private func setupRenderer() {
-        fluidRenderer = MPMFluidRenderer()
+        // Use predefined initial values for FluidRenderer constructor
+        fluidRenderer = MPMFluidRenderer(
+            particleCount: Int(initialParticleCount), 
+            gridSize: Int(initialGridSize), 
+            gridHeightMultiplier: initialGridHeightMultiplier
+        )
     }
 
     private func setupGestures() {
@@ -159,18 +179,6 @@ class ViewController: UIViewController {
             for: .touchUpInside
         )
 
-        // Dump button
-        dumpButton = UIButton(type: .system)
-        dumpButton.setTitle("Dump", for: .normal)
-        dumpButton.setTitleColor(.white, for: .normal)
-        dumpButton.backgroundColor = UIColor.systemCyan.withAlphaComponent(0.8)
-        dumpButton.layer.cornerRadius = 8
-        dumpButton.addTarget(
-            self,
-            action: #selector(dumpParticles),
-            for: .touchUpInside
-        )
-        
         // Render mode button
         renderModeButton = UIButton(type: .system)
         renderModeButton.setTitle("Particles", for: .normal)
@@ -218,29 +226,71 @@ class ViewController: UIViewController {
         massScaleLabel.textColor = .white
         massScaleLabel.font = UIFont.systemFont(ofSize: 14)
         massScaleLabel.textAlignment = .center
+        
+        // Particle count slider
+        particleCountSlider = UISlider()
+        particleCountSlider.minimumValue = 1000
+        particleCountSlider.maximumValue = 300000
+        particleCountSlider.value = initialParticleCount
+        particleCountSlider.addTarget(
+            self,
+            action: #selector(particleCountChanged),
+            for: .valueChanged
+        )
+        
+        // Particle count label
+        particleCountLabel = UILabel()
+        particleCountLabel.text = "Particles: \(particleCountSlider.value)"
+        particleCountLabel.textColor = .white
+        particleCountLabel.font = UIFont.systemFont(ofSize: 14)
+        particleCountLabel.textAlignment = .center
+        
+        // Grid size slider
+        gridSizeSlider = UISlider()
+        gridSizeSlider.minimumValue = 32
+        gridSizeSlider.maximumValue = 128
+        gridSizeSlider.value = initialGridSize
+        gridSizeSlider.addTarget(
+            self,
+            action: #selector(gridSizeChanged),
+            for: .valueChanged
+        )
+        
+        // Grid size label
+        gridSizeLabel = UILabel()
+        gridSizeLabel.text = "Grid: \(gridSizeSlider.value)³"
+        gridSizeLabel.textColor = .white
+        gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
+        gridSizeLabel.textAlignment = .center
 
         // Add buttons to control panel
         controlPanel.addSubview(modeButton)
         controlPanel.addSubview(stepButton)
         controlPanel.addSubview(resetButton)
-        controlPanel.addSubview(dumpButton)
         controlPanel.addSubview(renderModeButton)
         controlPanel.addSubview(particleSizeSlider)
         controlPanel.addSubview(particleSizeLabel)
         controlPanel.addSubview(massScaleSlider)
         controlPanel.addSubview(massScaleLabel)
+        controlPanel.addSubview(particleCountSlider)
+        controlPanel.addSubview(particleCountLabel)
+        controlPanel.addSubview(gridSizeSlider)
+        controlPanel.addSubview(gridSizeLabel)
 
         // Setup constraints
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
         modeButton.translatesAutoresizingMaskIntoConstraints = false
         stepButton.translatesAutoresizingMaskIntoConstraints = false
         resetButton.translatesAutoresizingMaskIntoConstraints = false
-        dumpButton.translatesAutoresizingMaskIntoConstraints = false
         renderModeButton.translatesAutoresizingMaskIntoConstraints = false
         particleSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
         massScaleSlider.translatesAutoresizingMaskIntoConstraints = false
         massScaleLabel.translatesAutoresizingMaskIntoConstraints = false
+        particleCountSlider.translatesAutoresizingMaskIntoConstraints = false
+        particleCountLabel.translatesAutoresizingMaskIntoConstraints = false
+        gridSizeSlider.translatesAutoresizingMaskIntoConstraints = false
+        gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // Control panel constraints
@@ -253,7 +303,6 @@ class ViewController: UIViewController {
                 constant: 20
             ),
             controlPanel.widthAnchor.constraint(equalToConstant: 200),
-            controlPanel.heightAnchor.constraint(equalToConstant: 390),
 
             // Mode button constraints
             modeButton.topAnchor.constraint(
@@ -299,24 +348,10 @@ class ViewController: UIViewController {
                 constant: -10
             ),
             resetButton.heightAnchor.constraint(equalToConstant: 40),
-            // Dump button constraints
-            dumpButton.topAnchor.constraint(
-                equalTo: resetButton.bottomAnchor,
-                constant: 10
-            ),
-            dumpButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            dumpButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
-            dumpButton.heightAnchor.constraint(equalToConstant: 40),
             
             // Render mode button constraints
             renderModeButton.topAnchor.constraint(
-                equalTo: dumpButton.bottomAnchor,
+                equalTo: resetButton.bottomAnchor,
                 constant: 10
             ),
             renderModeButton.leadingAnchor.constraint(
@@ -388,13 +423,74 @@ class ViewController: UIViewController {
                 constant: -10
             ),
             massScaleSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Particle count label constraints
+            particleCountLabel.topAnchor.constraint(
+                equalTo: massScaleSlider.bottomAnchor,
+                constant: 10
+            ),
+            particleCountLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            particleCountLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            particleCountLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // Particle count slider constraints
+            particleCountSlider.topAnchor.constraint(
+                equalTo: particleCountLabel.bottomAnchor,
+                constant: 5
+            ),
+            particleCountSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            particleCountSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            particleCountSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Grid size label constraints
+            gridSizeLabel.topAnchor.constraint(
+                equalTo: particleCountSlider.bottomAnchor,
+                constant: 10
+            ),
+            gridSizeLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            gridSizeLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            gridSizeLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // Grid size slider constraints
+            gridSizeSlider.topAnchor.constraint(
+                equalTo: gridSizeLabel.bottomAnchor,
+                constant: 5
+            ),
+            gridSizeSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            gridSizeSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            gridSizeSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // Bottom constraint to define controlPanel height
+            controlPanel.bottomAnchor.constraint(
+                equalTo: gridSizeSlider.bottomAnchor,
+                constant: 10
+            ),
         ])
     }
-    @objc private func dumpParticles() {
-        guard let renderer = fluidRenderer else { return }
-        renderer.requestDebugDump()
-    }
-    
     @objc private func particleSizeChanged(_ slider: UISlider) {
         let size = slider.value
         particleSizeLabel.text = String(format: "Size: %.1fx", size)
@@ -405,6 +501,18 @@ class ViewController: UIViewController {
         let scale = slider.value
         massScaleLabel.text = String(format: "Mass: %.1fx", scale)
         fluidRenderer.setMassScale(scale)
+    }
+    
+    @objc private func particleCountChanged(_ slider: UISlider) {
+        let count = Int(slider.value)
+        particleCountLabel.text = "Particles: \(count)"
+        fluidRenderer.setParticleCount(count)
+    }
+    
+    @objc private func gridSizeChanged(_ slider: UISlider) {
+        let size = Int(slider.value)
+        gridSizeLabel.text = "Grid: \(size)³"
+        fluidRenderer.setGridSize(size)
     }
     
     @objc private func toggleRenderMode() {
@@ -449,10 +557,6 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
-        // Reset camera position for better overview
-        cameraDistance = 5.0
-        cameraAngleX = 0.2
-        cameraAngleY = 0.3
     }
 
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
@@ -662,4 +766,98 @@ func perspective(fovy: Float, aspect: Float, nearZ: Float, farZ: Float)
         SIMD4<Float>(0, 0, zScale, -1),
         SIMD4<Float>(0, 0, wzScale, 0)
     )
+}
+
+// MARK: - Keyboard Handling and ReplayKit Recording
+extension ViewController {
+    
+    private func setupKeyboardHandling() {
+        // Make the view controller first responder to receive key events
+        view.becomeFirstResponder()
+    }
+    
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+    
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            
+            // Check for Shift+G
+            if key.charactersIgnoringModifiers == recordKey && key.modifierFlags.contains(.shift) {
+                toggleRecording()
+                return
+            }
+        }
+        
+        super.pressesBegan(presses, with: event)
+    }
+    
+    private func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+    
+    private func startRecording() {
+        guard !isRecording else { return }
+        fluidRenderer.reset()
+        screenRecorder.startRecording { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Failed to start recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error", 
+                                   message: "Failed to start screen recording: \(error.localizedDescription)")
+                } else {
+                    self?.isRecording = true
+                    print("🎥 Screen recording started - Press Shift+G to stop")
+                }
+            }
+        }
+    }
+    
+    private func stopRecording() {
+        guard isRecording else { return }
+        
+        screenRecorder.stopRecording { [weak self] previewController, error in
+            DispatchQueue.main.async {
+                self?.isRecording = false
+                
+                if let error = error {
+                    print("Failed to stop recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error", 
+                                   message: "Failed to stop recording: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let previewController = previewController else {
+                    print("No preview controller available")
+                    return
+                }
+                
+                previewController.previewControllerDelegate = self
+                self?.present(previewController, animated: true) {
+                    print("🎥 Screen recording stopped - Preview presented")
+                }
+            }
+        }
+    }
+    
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+// MARK: - RPPreviewViewControllerDelegate
+extension ViewController: RPPreviewViewControllerDelegate {
+    func previewControllerDidFinish(_ previewController: RPPreviewViewController) {
+        previewController.dismiss(animated: true) {
+            print("📱 Recording preview dismissed")
+        }
+    }
 }

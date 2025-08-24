@@ -1,6 +1,11 @@
 #include <metal_stdlib>
 #include "MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
+
+// Grid index calculation function (same as in ComputeShaders.metal)
+inline uint gridIndex(uint x, uint y, uint z, int3 res) {
+    return x * (res.z * res.y) + y * res.z + z;
+}
 // MLS-MPM rendering shaders
 struct VertexOut {
     float4 position [[position]];
@@ -34,7 +39,8 @@ vertex VertexOut pressureHeatmapVertexShader(
     out.position = uniforms.mvpMatrix * worldPos;
     
     // Sample grid data at particle position for pressure-based coloring
-    float3 gridPos = (particles[id].position - uniforms.domainOrigin) / uniforms.gridSpacing;
+    // Use physicalDomainOrigin for grid calculations (same coordinate system as compute shaders)
+    float3 gridPos = (particles[id].position - uniforms.physicalDomainOrigin) / uniforms.gridSpacing;
     int3 baseCell = int3(floor(gridPos - 0.5));
     
     // Sample grid mass (density/pressure) using B-spline interpolation
@@ -55,8 +61,7 @@ vertex VertexOut pressureHeatmapVertexShader(
                     cellIdx.y >= 0 && cellIdx.y < uniforms.gridResolution.y &&
                     cellIdx.z >= 0 && cellIdx.z < uniforms.gridResolution.z) {
                     
-                    uint gridIdx = cellIdx.x * (uniforms.gridResolution.z * uniforms.gridResolution.y) + 
-                                   cellIdx.y * uniforms.gridResolution.z + cellIdx.z;
+                    uint gridIdx = gridIndex(cellIdx.x, cellIdx.y, cellIdx.z, uniforms.gridResolution);
                     
                     float weight = weights[gx].x * weights[gy].y * weights[gz].z;
                     gridMass += grid[gridIdx].mass * weight;
@@ -116,67 +121,78 @@ fragment float4 pressureHeatmapFragmentShader(VertexOut in [[stage_in]],
 }
 
 
+// Billboard quad vertex data for particle rendering
+constant float2 cornerPositions[6] = {
+    float2( 0.5,  0.5),
+    float2( 0.5, -0.5),
+    float2(-0.5, -0.5),
+    float2( 0.5,  0.5),
+    float2(-0.5, -0.5),
+    float2(-0.5,  0.5)
+};
+
 // Depth generation shaders
 struct DepthVertexOut {
     float4 position [[position]];
-    float pointSize [[point_size]];
-    float depth;
+    float2 uv;
     float3 view_position;
-    float sphere_radius;
+    float sphere_size;
 };
 
-vertex DepthVertexOut depthVertexShader(
+vertex DepthVertexOut vs_depth(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
-    uint id [[vertex_id]]
+    uint vertex_id [[vertex_id]],
+    uint instance_id [[instance_id]]
 ) {
     DepthVertexOut out;
     
-    // Transform particle position to clip space
-    float4 worldPos = float4(particles[id].position, 1.0);
-    out.position = uniforms.mvpMatrix * worldPos;
+    // Get corner position for billboard quad
+    float2 corner_pos = cornerPositions[vertex_id];
+    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    out.uv = corner_pos + 0.5;
     
-    // Calculate view space position for sphere depth calculation
-    float4 viewPos = uniforms.viewMatrix * worldPos;
+    // Get particle data
+    float3 real_position = particles[instance_id].position;
+    float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
+    out.view_position = view_position;
+    out.sphere_size = uniforms.sphere_size;
     
-    // Store view space position for sphere depth calculation
-    out.view_position = viewPos.xyz;
-    
-    // Store normalized depth value (0 to 1)
-    out.depth = (out.position.z / out.position.w + 1.0) * 0.5;
-    
-    // Calculate sphere radius based on particle size
-    float distance = length(viewPos.xyz);
-    float baseSize = getBaseSize(distance);
-    out.pointSize = baseSize * uniforms.particleSizeMultiplier;
-    out.sphere_radius = out.pointSize * 0.5;
+    // Billboard positioning: add corner in view space, then project
+    float4 view_pos_with_corner = float4(view_position + corner, 1.0);
+    out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
     return out;
 }
 
-fragment float depthFragmentShader(
+struct FragmentOutput {
+    float4 frag_color [[color(0)]];
+    float frag_depth [[depth(any)]];
+};
+
+fragment FragmentOutput fs_depth(
     DepthVertexOut in [[stage_in]],
-    float2 pointCoord [[point_coord]]
+    constant FluidRenderUniforms& uniforms [[buffer(1)]]
 ) {
-    // Calculate normalized coordinates for sphere surface
-    float2 normalxy = pointCoord * 2.0 - 1.0;
+    FragmentOutput out;
+    
+    // Calculate surface normal and depth
+    float2 normalxy = in.uv * 2.0 - 1.0;
     float r2 = dot(normalxy, normalxy);
     if (r2 > 1.0) {
         discard_fragment();
     }
-    
-    // Calculate z component of sphere normal
     float normalz = sqrt(1.0 - r2);
+    float3 normal = float3(normalxy, normalz);
     
-    // Calculate sphere radius in world units  
-    float radius = in.sphere_radius * 0.01;
-    float view_z_offset = normalz * radius;
+    // Calculate sphere radius and real view position
+    float radius = in.sphere_size / 2.0;
+    float4 real_view_pos = float4(in.view_position + normal * radius, 1.0);
+    float4 clip_space_pos = uniforms.projectionMatrix * real_view_pos;
+    out.frag_depth = clip_space_pos.z / clip_space_pos.w;
     
-    // Apply depth offset in view space (same as WebGPU)
-    float real_view_z = in.view_position.z - view_z_offset;
-    
-    // Return view space z directly (like WebGPU implementation)
-    return abs(real_view_z);
+    out.frag_color = float4(real_view_pos.z, 0.0, 0.0, 1.0);
+    return out;
 }
 
 // Bilateral depth filter shaders
@@ -195,7 +211,7 @@ struct QuadVertexOut {
 };
 
 // Full-screen quad vertex shader for depth filtering
-vertex QuadVertexOut depthFilterVertexShader(uint vid [[vertex_id]]) {
+vertex QuadVertexOut vs_bilateral(uint vid [[vertex_id]]) {
     QuadVertexOut out;
     
     // Generate full-screen quad
@@ -220,25 +236,24 @@ vertex QuadVertexOut depthFilterVertexShader(uint vid [[vertex_id]]) {
 }
 
 // Bilateral depth filter fragment shader
-fragment float depthFilterFragmentShader(
+fragment float fs_bilateral(
     QuadVertexOut in [[stage_in]],
     texture2d<float> depthTexture [[texture(0)]],
     constant FilterUniforms& filterUniforms [[buffer(0)]]
 ) {
-    float2 texelSize = 1.0 / filterUniforms.screenSize;
     float2 iuv = in.texCoord * filterUniforms.screenSize;
     float centerDepth = abs(depthTexture.read(uint2(iuv)).r);
     
-    // Skip filtering for background pixels (same as WebGPU)
+    // Skip filtering for background pixels
     if (centerDepth >= 1e4 || centerDepth <= 0.0) {
         return centerDepth;
     }
     
-    // Adaptive filter size calculation (same as WebGPU)
+    // Adaptive filter size calculation
     int filterSize = min(int(filterUniforms.maxFilterSize), 
                         int(ceil(filterUniforms.projectedParticleConstant / centerDepth)));
     
-    // Filter parameters (same as WebGPU)
+    // Filter parameters
     float sigma = float(filterSize) / 3.0;
     float twoSigma = 2.0 * sigma * sigma;
     float sigmaDepth = filterUniforms.depthThreshold / 3.0;
@@ -247,7 +262,7 @@ fragment float depthFilterFragmentShader(
     float sum = 0.0;
     float wsum = 0.0;
     
-    // Bilateral filter kernel (same range as WebGPU)
+    // Bilateral filter kernel
     for (int x = -filterSize; x <= filterSize; x++) {
         float2 coords = float2(float(x));
         float2 samplePos = iuv + coords * filterUniforms.direction;
@@ -275,16 +290,6 @@ fragment float depthFilterFragmentShader(
     return sum / wsum;
 }
 
-// Fluid surface rendering uniforms
-struct FluidRenderUniforms {
-    float2 texelSize;
-    float sphereSize;
-    float4x4 invProjectionMatrix;
-    float4x4 projectionMatrix;
-    float4x4 viewMatrix;
-    float4x4 invViewMatrix;
-};
-
 struct FluidFragmentInput {
     float4 position [[position]];
     float2 uv;
@@ -296,7 +301,7 @@ float3 computeViewPosFromUVDepth(float2 texCoord, float depth, constant FluidRen
     // Convert screen coordinates to normalized device coordinates
     float4 ndc = float4(texCoord.x * 2.0 - 1.0, 1.0 - 2.0 * texCoord.y, 0.0, 1.0);
     
-    // Calculate the z component based on projection matrix (same as WebGPU)
+    // Calculate the z component based on projection matrix
     ndc.z = -uniforms.projectionMatrix[2].z + uniforms.projectionMatrix[3].z / depth;
     ndc.w = 1.0;
     
@@ -412,48 +417,46 @@ fragment float4 fluidFragmentShader(
 // Thickness rendering shaders
 struct ThicknessVertexOut {
     float4 position [[position]];
-    float pointSize [[point_size]];
-    float4 color;
+    float2 uv;
 };
 
-vertex ThicknessVertexOut thicknessVertexShader(
+vertex ThicknessVertexOut vs_thickness(
     const device MPMParticle* particles [[buffer(0)]],
     constant VertexShaderUniforms& uniforms [[buffer(1)]],
-    uint id [[vertex_id]]
+    uint vertex_id [[vertex_id]],
+    uint instance_id [[instance_id]]
 ) {
     ThicknessVertexOut out;
     
-    // Transform particle position to clip space
-    float4 worldPos = float4(particles[id].position, 1.0);
-    out.position = uniforms.mvpMatrix * worldPos;
+    // Get corner position for billboard quad
+    float2 corner_pos = cornerPositions[vertex_id];
+    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    out.uv = corner_pos + 0.5;
     
-    // Larger particle size for thickness rendering - even larger
-    float distance = length(out.position.xyz);
-    float baseSize = getBaseSize(distance);
-    out.pointSize = baseSize * uniforms.particleSizeMultiplier;
+    // Get particle data
+    float3 real_position = particles[instance_id].position;
+    float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
     
-    // Set color for thickness rendering
-    out.color = float4(1.0, 1.0, 1.0, 1.0);
+    // Billboard positioning: add corner in view space, then project
+    float4 view_pos_with_corner = float4(view_position + corner, 1.0);
+    out.position = uniforms.projectionMatrix * view_pos_with_corner;
     
     return out;
 }
 
-fragment float4 thicknessFragmentShader(
-    ThicknessVertexOut in [[stage_in]],
-    float2 pointCoord [[point_coord]]
+fragment float fs_thickness(
+    ThicknessVertexOut in [[stage_in]]
 ) {
-    // Convert point coordinates to normalized coordinates (-1 to 1)
-    float2 coord = pointCoord * 2.0 - 1.0;
-    float r2 = dot(coord, coord);
-    
-    // Discard fragments outside unit circle
-    if (r2 > 1.0) discard_fragment();
-    
-    // Calculate thickness based on sphere geometry
+    // Calculate thickness contribution
+    float2 normalxy = in.uv * 2.0 - 1.0;
+    float r2 = dot(normalxy, normalxy);
+    if (r2 > 1.0) {
+        discard_fragment();
+    }
     float thickness = sqrt(1.0 - r2);
-    float particleAlpha = 0.05; // Same as WebGPU
+    float particle_alpha = 0.05;
     
-    return float4(float3(particleAlpha * thickness), 1.0);
+    return particle_alpha * thickness;
 }
 
 // Gaussian filter shaders for thickness texture
@@ -463,8 +466,8 @@ struct GaussianUniforms {
     int filterRadius;     // Filter kernel radius
 };
 
-// Gaussian filter fragment shader (same as WebGPU)
-fragment float4 gaussianFilterFragmentShader(
+// Gaussian filter fragment shader
+fragment float fs_gaussian(
     QuadVertexOut in [[stage_in]],
     texture2d<float> inputTexture [[texture(0)]],
     constant GaussianUniforms& gaussianUniforms [[buffer(0)]]
@@ -473,10 +476,10 @@ fragment float4 gaussianFilterFragmentShader(
     float thickness = inputTexture.read(uint2(iuv)).r;
     
     if (thickness == 0.0) {
-        return float4(0.0, 0.0, 0.0, 1.0);
+        return 0.0;
     }
     
-    // Fixed filter size like WebGPU
+    // Fixed filter size
     int filterSize = 30;
     float sigma = float(filterSize) / 3.0;
     float twoSigma = 2.0 * sigma * sigma;
@@ -484,7 +487,7 @@ fragment float4 gaussianFilterFragmentShader(
     float sum = 0.0;
     float wsum = 0.0;
     
-    // Apply 1D Gaussian blur (same as WebGPU)
+    // Apply 1D Gaussian blur
     for (int x = -filterSize; x <= filterSize; x++) {
         float2 coords = float2(float(x));
         float2 samplePos = iuv + gaussianUniforms.direction * coords;
@@ -505,5 +508,5 @@ fragment float4 gaussianFilterFragmentShader(
     
     sum /= wsum;
     
-    return float4(sum, 0.0, 0.0, 1.0);
+    return sum;
 }

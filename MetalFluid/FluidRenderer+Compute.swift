@@ -217,8 +217,7 @@ extension MPMFluidRenderer {
             depth: 1
         )
 
-        // WebGPU‑Ocean uses two simulation substeps per frame for stability when volume is recomputed each step.
-        // Mirror that here by default.
+        // Use multiple simulation substeps per frame for better stability.
         let substeps = max(1, simulationSubsteps)
 
         for _ in 0..<substeps {
@@ -290,13 +289,6 @@ extension MPMFluidRenderer {
                     threadsPerThreadgroup: particleThreadsPerThreadgroup
                 )
                 computeEncoder.endEncoding()
-            }
-            // If dump is reserved, copy before clear; if print is reserved, print
-            if shouldCopyGridForDebug {
-                copyGridForDebug()
-                dumpParticlePositions()
-                dumpGridNodes()
-                shouldCopyGridForDebug = false
             }
         }
     }
