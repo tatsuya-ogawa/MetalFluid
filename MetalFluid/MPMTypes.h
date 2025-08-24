@@ -68,7 +68,6 @@ typedef struct {
 
 // Vertex shader specific uniforms
 typedef struct {
-    simd_float4x4 mvpMatrix;
     simd_float4x4 projectionMatrix;
     simd_float4x4 viewMatrix;
     float gridSpacing;

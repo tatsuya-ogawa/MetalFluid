@@ -52,7 +52,6 @@ struct CollisionUniforms {
 
 // Vertex shader specific uniforms
 struct VertexShaderUniforms {
-    var mvpMatrix: float4x4
     var projectionMatrix: float4x4
     var viewMatrix: float4x4
     var gridSpacing: Float
@@ -572,7 +571,7 @@ class MPMFluidRenderer: NSObject {
         )!
     }
             
-    func update(deltaTime: Float, screenSize: SIMD2<Float>, mvpMatrix: float4x4, projectionMatrix: float4x4, viewMatrix: float4x4)
+    func update(deltaTime: Float, screenSize: SIMD2<Float>, projectionMatrix: float4x4, viewMatrix: float4x4)
     {
         let timeStep:Float = 0.1//min(deltaTime, 0.2)
         let nodeCount = UInt32(gridNodes)
@@ -608,22 +607,7 @@ class MPMFluidRenderer: NSObject {
             to: VertexShaderUniforms.self,
             capacity: 1
         )
-        
-        // Apply render offset to mvpMatrix with appropriate scaling
-        let renderOffset = getDomainOriginTranslation()
-        let renderScale: Float = getRenderScale(scale: 1.0) // Use existing render scale function
-        let scaledOffset = renderOffset * renderScale / 400
-        
-        let translationMatrix = float4x4(
-            [1, 0, 0, scaledOffset.x],
-            [0, 1, 0, scaledOffset.y],
-            [0, 0, 1, scaledOffset.z],
-            [0, 0, 0, 1]
-        )
-        let adjustedMvpMatrix = mvpMatrix * translationMatrix
-        
         vertexUniformPointer[0] = VertexShaderUniforms(
-            mvpMatrix: adjustedMvpMatrix,
             projectionMatrix: projectionMatrix,
             viewMatrix: viewMatrix,
             gridSpacing: gridSpacing,

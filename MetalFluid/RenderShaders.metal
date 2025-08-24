@@ -37,7 +37,7 @@ vertex VertexOut pressureHeatmapVertexShader(
     float4 worldPos = float4(particles[id].position, 1.0);
     
     // Apply MVP transformation
-    out.position = uniforms.mvpMatrix * worldPos;
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
     
     // Sample grid data at particle position for pressure-based coloring
     // Use physicalDomainOrigin for grid calculations (same coordinate system as compute shaders)

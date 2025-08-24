@@ -949,14 +949,11 @@ extension ViewController: MTKViewDelegate {
         
         // Complete view matrix including scale and translation
         let viewMatrix = baseViewMatrix * scaleMatrix * translateMatrix
-        let mvpMatrix = projectionMatrix * viewMatrix
-
         // Update simulation based on mode
         if performStep {
             fluidRenderer.update(
                 deltaTime: deltaTime,
                 screenSize: screenSize,
-                mvpMatrix: mvpMatrix,
                 projectionMatrix: projectionMatrix,
                 viewMatrix: viewMatrix
             )
