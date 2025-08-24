@@ -286,7 +286,7 @@ extension MPMFluidRenderer {
                 computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                 
                 // Set collision resources if available
-                if let collisionManager = collisionManager {
+                if let collisionManager {
                     computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
                     
                     if let sdfTexture = collisionManager.getSDFTexture() {

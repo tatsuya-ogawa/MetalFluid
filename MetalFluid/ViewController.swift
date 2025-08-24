@@ -25,6 +25,9 @@ class ViewController: UIViewController {
     // Simulation control
     private var isAutoMode: Bool = true
     private var shouldStep: Bool = false
+    
+    // Wireframe state tracking
+    private var isWireframeMode: Bool = false
 
     // Initial values (shared between sliders and FluidRenderer)
     private let initialParticleCount: Float = 40000
@@ -46,6 +49,13 @@ class ViewController: UIViewController {
     private var gridSizeSlider: UISlider!
     private var gridSizeLabel: UILabel!
     
+    // Collision controls panel (right side)
+    private var collisionPanel: UIView!
+    private var collisionToggleButton: UIButton!
+    private var fillModeButton: UIButton!
+    private var meshVisibilityButton: UIButton!
+    private var wireframeButton: UIButton!
+    
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
     private var isRecording = false
@@ -61,6 +71,7 @@ class ViewController: UIViewController {
         setupRenderer()
         setupGestures()
         setupControlPanel()
+        setupCollisionPanel()
         setupKeyboardHandling()
     }
 
@@ -99,6 +110,34 @@ class ViewController: UIViewController {
             gridSize: Int(initialGridSize), 
             gridHeightMultiplier: initialGridHeightMultiplier
         )
+        
+        // Load Stanford Bunny for collision detection
+        setupCollisionMesh()
+    }
+    
+    private func setupCollisionMesh() {
+        guard let bunnyURL = Bundle.main.url(forResource: "bunny", withExtension: "obj") else {
+            print("⚠️ bunny.obj not found in bundle. Collision detection disabled.")
+            return
+        }
+        
+        // Load collision mesh with default settings
+        let sdfResolution: Int32 = 64 // Adjust based on performance needs
+        let fillMode = false // Surface collision by default
+        
+        fluidRenderer.collisionManager?.loadMesh(
+            objURL: bunnyURL,
+            resolution: sdfResolution, 
+            fillMode: fillMode
+        )
+        
+        // Configure collision visualization
+        fluidRenderer.collisionManager?.setMeshVisible(true)
+        fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(0.8, 0.3, 0.3, 0.4)) // Semi-transparent red
+        
+        print("🐰 Stanford Bunny collision mesh loaded successfully!")
+        print("   Resolution: \(sdfResolution)x\(sdfResolution)x\(sdfResolution)")
+        print("   Mode: \(fillMode ? "Fill inside" : "Surface collision")")
     }
 
     private func setupGestures() {
@@ -491,6 +530,155 @@ class ViewController: UIViewController {
             ),
         ])
     }
+    
+    private func setupCollisionPanel() {
+        // Create collision control panel (right side)
+        collisionPanel = UIView()
+        collisionPanel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        collisionPanel.layer.cornerRadius = 10
+        view.addSubview(collisionPanel)
+        
+        // Collision toggle button
+        collisionToggleButton = UIButton(type: .system)
+        collisionToggleButton.setTitle("Collision: ON", for: .normal)
+        collisionToggleButton.setTitleColor(.white, for: .normal)
+        collisionToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        collisionToggleButton.layer.cornerRadius = 8
+        collisionToggleButton.addTarget(
+            self,
+            action: #selector(toggleCollision),
+            for: .touchUpInside
+        )
+        
+        // Fill mode button
+        fillModeButton = UIButton(type: .system)
+        fillModeButton.setTitle("Surface", for: .normal)
+        fillModeButton.setTitleColor(.white, for: .normal)
+        fillModeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        fillModeButton.layer.cornerRadius = 8
+        fillModeButton.addTarget(
+            self,
+            action: #selector(toggleFillMode),
+            for: .touchUpInside
+        )
+        
+        // Mesh visibility button
+        meshVisibilityButton = UIButton(type: .system)
+        meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
+        meshVisibilityButton.setTitleColor(.white, for: .normal)
+        meshVisibilityButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        meshVisibilityButton.layer.cornerRadius = 8
+        meshVisibilityButton.addTarget(
+            self,
+            action: #selector(toggleMeshVisibility),
+            for: .touchUpInside
+        )
+        
+        // Wireframe toggle button
+        wireframeButton = UIButton(type: .system)
+        wireframeButton.setTitle("Wireframe", for: .normal)
+        wireframeButton.setTitleColor(.white, for: .normal)
+        wireframeButton.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.8)
+        wireframeButton.layer.cornerRadius = 8
+        wireframeButton.addTarget(
+            self,
+            action: #selector(toggleWireframe),
+            for: .touchUpInside
+        )
+        
+        // Add buttons to collision panel
+        collisionPanel.addSubview(collisionToggleButton)
+        collisionPanel.addSubview(fillModeButton)
+        collisionPanel.addSubview(meshVisibilityButton)
+        collisionPanel.addSubview(wireframeButton)
+        
+        // Setup constraints
+        collisionPanel.translatesAutoresizingMaskIntoConstraints = false
+        collisionToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        fillModeButton.translatesAutoresizingMaskIntoConstraints = false
+        meshVisibilityButton.translatesAutoresizingMaskIntoConstraints = false
+        wireframeButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            // Collision panel constraints (right side)
+            collisionPanel.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 20
+            ),
+            collisionPanel.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -20
+            ),
+            collisionPanel.widthAnchor.constraint(equalToConstant: 200),
+            
+            // Collision toggle button constraints
+            collisionToggleButton.topAnchor.constraint(
+                equalTo: collisionPanel.topAnchor,
+                constant: 10
+            ),
+            collisionToggleButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            collisionToggleButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            collisionToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Fill mode button constraints
+            fillModeButton.topAnchor.constraint(
+                equalTo: collisionToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            fillModeButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            fillModeButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            fillModeButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Mesh visibility button constraints
+            meshVisibilityButton.topAnchor.constraint(
+                equalTo: fillModeButton.bottomAnchor,
+                constant: 10
+            ),
+            meshVisibilityButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            meshVisibilityButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            meshVisibilityButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Wireframe button constraints
+            wireframeButton.topAnchor.constraint(
+                equalTo: meshVisibilityButton.bottomAnchor,
+                constant: 10
+            ),
+            wireframeButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            wireframeButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            wireframeButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Bottom constraint to define collision panel height
+            collisionPanel.bottomAnchor.constraint(
+                equalTo: wireframeButton.bottomAnchor,
+                constant: 10
+            ),
+        ])
+    }
+    
     @objc private func particleSizeChanged(_ slider: UISlider) {
         let size = slider.value
         particleSizeLabel.text = String(format: "Size: %.1fx", size)
@@ -557,6 +745,67 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
+    }
+    
+    // MARK: - Collision Control Actions
+    
+    @objc private func toggleCollision() {
+        guard let isEnabled = fluidRenderer.collisionManager?.isEnabled() else {
+            return
+        }
+        fluidRenderer.collisionManager?.setEnabled(!isEnabled)
+        
+        if !isEnabled{
+            collisionToggleButton.setTitle("Collision: ON", for: .normal)
+            collisionToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        } else {
+            collisionToggleButton.setTitle("Collision: OFF", for: .normal)
+            collisionToggleButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.8)
+        }
+    }
+    
+    @objc private func toggleFillMode() {
+        guard let isFillMode = fluidRenderer.collisionManager?.getFillMode() else {
+            return
+        }
+        fluidRenderer.collisionManager?.setFillMode(!isFillMode)
+        if !isFillMode {
+            fillModeButton.setTitle("Fill Inside", for: .normal)
+            fillModeButton.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.8)
+        } else {
+            fillModeButton.setTitle("Surface", for: .normal)
+            fillModeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        }
+    }
+    
+    @objc private func toggleMeshVisibility() {
+        guard let isVisible = fluidRenderer.collisionManager?.isMeshVisible() else {
+            return
+        }
+        fluidRenderer.collisionManager?.setMeshVisible(!isVisible)
+        
+        if !isVisible {
+            meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
+            meshVisibilityButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        } else {
+            meshVisibilityButton.setTitle("Mesh: OFF", for: .normal)
+            meshVisibilityButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+    }
+    
+    @objc private func toggleWireframe() {
+        // Toggle between wireframe and solid rendering
+        isWireframeMode.toggle()
+        
+        fluidRenderer.collisionManager?.setMeshWireframe(isWireframeMode)
+        
+        if isWireframeMode {
+            wireframeButton.setTitle("Solid", for: .normal)
+            wireframeButton.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.8)
+        } else {
+            wireframeButton.setTitle("Wireframe", for: .normal)
+            wireframeButton.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.8)
+        }
     }
 
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
