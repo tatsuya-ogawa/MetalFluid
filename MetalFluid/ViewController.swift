@@ -742,8 +742,6 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
-        // Reload collision mesh after reset
-        setupCollisionMesh()
     }
     
     // MARK: - Collision Control Actions

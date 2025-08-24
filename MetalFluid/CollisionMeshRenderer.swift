@@ -204,6 +204,41 @@ class CollisionMeshRenderer {
         renderEncoder.endEncoding()
     }
     
+    // Render within an existing render encoder (doesn't create or end encoding)
+    func renderInEncoder(renderEncoder: MTLRenderCommandEncoder,
+                        vertexUniformBuffer: MTLBuffer) {
+        
+        guard isVisible,
+              let depthStencilState = depthStencilState,
+              let meshBuffer = meshBuffer,
+              let meshIndexBuffer = meshIndexBuffer,
+              indexCount > 0 else {
+            return
+        }
+        
+        // Select pipeline based on mode
+        let pipelineState = wireframeMode ? wireframePipelineState : solidPipelineState
+        guard let pipeline = pipelineState else {
+            return
+        }
+        
+        renderEncoder.setRenderPipelineState(pipeline)
+        renderEncoder.setDepthStencilState(depthStencilState)
+        
+        // Set vertex buffer and uniforms
+        renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
+        renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        
+        // Draw triangles
+        renderEncoder.drawIndexedPrimitives(
+            type: .triangle,
+            indexCount: indexCount,
+            indexType: .uint32,
+            indexBuffer: meshIndexBuffer,
+            indexBufferOffset: 0
+        )
+    }
+    
     // Utility methods
     func setColor(_ color: SIMD4<Float>) {
         meshColor = color

@@ -165,11 +165,11 @@ class ParticleRenderer: ModeRenderer {
             renderPassDescriptor.depthAttachment.storeAction = .dontCare
         }
         
-        // Render particles
+        // Render particles and collision mesh in the same render encoder
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(
             descriptor: renderPassDescriptor
         ) {
-            // Select pipeline based on particle render mode
+            // Render particles first
             guard let pipelineState = renderer.pressureHeatmapPipelineState else{
                 fatalError("Unable to select pipeline state")
             }
@@ -189,15 +189,12 @@ class ParticleRenderer: ModeRenderer {
                 vertexStart: 0,
                 vertexCount: renderer.particleCount
             )
+            
+            // Render collision mesh in the same encoder
+            renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+            
             renderEncoder.endEncoding()
         }
-        
-        // Render collision mesh if available
-        renderer.collisionManager?.renderMesh(
-            renderPassDescriptor: renderPassDescriptor,
-            commandBuffer: commandBuffer,
-            vertexUniformBuffer: renderer.vertexUniformBuffer
-        )
         
         commandBuffer.commit()
     }
@@ -282,14 +279,11 @@ class WaterRenderer: ModeRenderer {
         renderEncoder.setFragmentTexture(renderer.environmentTexture, index: 2)
         renderEncoder.setFragmentBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        renderEncoder.endEncoding()
         
-        // Render collision mesh if available
-        renderer.collisionManager?.renderMesh(
-            renderPassDescriptor: renderPassDescriptor,
-            commandBuffer: commandBuffer,
-            vertexUniformBuffer: renderer.vertexUniformBuffer
-        )
+        // Render collision mesh in the same encoder
+        renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+        
+        renderEncoder.endEncoding()
         
         commandBuffer.commit()
     }
@@ -663,6 +657,20 @@ class MPMFluidRenderer: NSObject {
     func reset() {
         setupParticles()
         frameIndex = 0
+    }
+    
+    // Helper method to render collision mesh within an existing render encoder
+    internal func renderCollisionMeshInEncoder(renderEncoder: MTLRenderCommandEncoder) {
+        guard let collisionManager = collisionManager,
+              collisionManager.isMeshVisible() else {
+            return
+        }
+        
+        // Render collision mesh using the existing encoder
+        collisionManager.renderMeshInEncoder(
+            renderEncoder: renderEncoder,
+            vertexUniformBuffer: vertexUniformBuffer
+        )
     }
     
     // --- Add grid debug buffer and methods ---

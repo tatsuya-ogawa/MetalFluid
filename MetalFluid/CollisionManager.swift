@@ -237,4 +237,13 @@ class CollisionManager {
             vertexUniformBuffer: vertexUniformBuffer
         )
     }
+    
+    // New method to render within an existing render encoder
+    internal func renderMeshInEncoder(renderEncoder: MTLRenderCommandEncoder,
+                                    vertexUniformBuffer: MTLBuffer) {
+        meshRenderer.renderInEncoder(
+            renderEncoder: renderEncoder,
+            vertexUniformBuffer: vertexUniformBuffer
+        )
+    }
 }
