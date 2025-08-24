@@ -854,11 +854,53 @@ class ViewController: UIViewController {
         )
     }
 }
-// Translation matrix extension
+// Matrix extension for collision transforms
 extension float4x4 {
     init(translation t: SIMD3<Float>) {
         self = matrix_identity_float4x4
         columns.3 = SIMD4<Float>(t.x, t.y, t.z, 1)
+    }
+    
+    init(scaling scale: SIMD3<Float>) {
+        self.init(
+            SIMD4<Float>(scale.x, 0, 0, 0),
+            SIMD4<Float>(0, scale.y, 0, 0),
+            SIMD4<Float>(0, 0, scale.z, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationX angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(1, 0, 0, 0),
+            SIMD4<Float>(0, c, s, 0),
+            SIMD4<Float>(0, -s, c, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationY angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(c, 0, -s, 0),
+            SIMD4<Float>(0, 1, 0, 0),
+            SIMD4<Float>(s, 0, c, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationZ angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(c, s, 0, 0),
+            SIMD4<Float>(-s, c, 0, 0),
+            SIMD4<Float>(0, 0, 1, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
     }
 }
 

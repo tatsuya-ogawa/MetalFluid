@@ -63,8 +63,8 @@ typedef struct {
     float collisionStiffness;     // Collision response strength
     float collisionDamping;       // Velocity damping on collision
     uint32_t enableCollision;     // Enable/disable collision detection
-    simd_float3 collisionScale;   // Scale factor for collision geometry
-    simd_float3 collisionOffset;  // Offset for collision geometry positioning
+    simd_float4x4 collisionTransform;  // Transform matrix (scale, rotation, translation)
+    simd_float4x4 collisionInvTransform; // Inverse transform matrix for world->mesh space
 } CollisionUniforms;
 
 // Vertex shader specific uniforms

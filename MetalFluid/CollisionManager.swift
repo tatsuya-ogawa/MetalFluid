@@ -46,27 +46,42 @@ class CollisionManager {
             collisionStiffness: 1.0,  // Not used in velocity-based approach
             collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
-            collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
-            collisionOffset: SIMD3<Float>(0.0, 0.0, 0.0) // Default offset
+            collisionTransform: matrix_identity_float4x4, // Default identity transform
+            collisionInvTransform: matrix_identity_float4x4 // Default identity inverse transform
         )
     }
     
     // MARK: - Private Helper Methods
     
-    private func calculateCollisionOffset(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>, 
-                                        gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?) -> SIMD3<Float> {
+    private func calculateCollisionTransform(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>, 
+                                           gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?, 
+                                           scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1),
+                                           rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) -> (float4x4, float4x4) {
         guard let gridMin = gridMin, let gridMax = gridMax else {
-            return SIMD3<Float>(0, 0, 0)
+            return (matrix_identity_float4x4, matrix_identity_float4x4)
         }
         
         let gridCenter = (gridMin + gridMax) * 0.5
         let meshCenter = (meshMin + meshMax) * 0.5
         
-        return SIMD3<Float>(
+        // Calculate translation to center mesh in grid (XZ) and align bottom (Y)
+        let translation = SIMD3<Float>(
             gridCenter.x - meshCenter.x,  // Center X
             gridMin.y - meshMin.y,        // Align bottom Y
             gridCenter.z - meshCenter.z   // Center Z
         )
+        
+        // Create transform matrix: T * R * S (applied in reverse order)
+        let scaleMatrix = float4x4(scaling: scale)
+        let rotationMatrix = float4x4(rotationX: rotation.x) * 
+                            float4x4(rotationY: rotation.y) * 
+                            float4x4(rotationZ: rotation.z)
+        let translationMatrix = float4x4(translation: translation)
+        
+        let transform = translationMatrix * rotationMatrix * scaleMatrix
+        let invTransform = transform.inverse
+        
+        return (transform, invTransform)
     }
     
     // MARK: - Mesh Loading
@@ -126,8 +141,8 @@ class CollisionManager {
         print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
         
         if sdfTexture != nil {
-            // Calculate collision offset to center the mesh in the grid
-            let collisionOffset = calculateCollisionOffset(
+            // Calculate collision transform to center the mesh in the grid
+            let (transform, invTransform) = calculateCollisionTransform(
                 meshMin: minBounds,
                 meshMax: maxBounds,
                 gridMin: gridBoundaryMin,
@@ -147,8 +162,8 @@ class CollisionManager {
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
                 enableCollision: 1,
-                collisionScale: SIMD3<Float>(1.0, 1.0, 1.0), // Default scale
-                collisionOffset: collisionOffset // Calculated offset for centering
+                collisionTransform: transform,
+                collisionInvTransform: invTransform
             )
             
             // Load mesh into renderer for visualization
@@ -175,18 +190,19 @@ class CollisionManager {
         let minBounds = collisionUniformPointer[0].sdfOrigin
         let maxBounds = collisionUniformPointer[0].sdfOrigin + collisionUniformPointer[0].sdfSize
         
-        // Calculate collision offset using the helper method
-        let collisionOffset = calculateCollisionOffset(
+        // Calculate collision transform using the helper method
+        let (transform, invTransform) = calculateCollisionTransform(
             meshMin: minBounds,
             meshMax: maxBounds,
             gridMin: gridBoundaryMin,
             gridMax: gridBoundaryMax
         )
         
-        // Update the collision offset
-        collisionUniformPointer[0].collisionOffset = collisionOffset
+        // Update the collision transforms
+        collisionUniformPointer[0].collisionTransform = transform
+        collisionUniformPointer[0].collisionInvTransform = invTransform
         
-        print("Updated collision offset for new grid boundaries: \(collisionOffset)")
+        print("Updated collision transform for new grid boundaries")
     }
     
     func setEnabled(_ enabled: Bool) {

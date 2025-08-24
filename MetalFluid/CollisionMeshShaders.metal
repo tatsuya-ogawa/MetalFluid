@@ -25,8 +25,10 @@ vertex CollisionVertexOut collisionMeshVertexShader(
 ) {
     CollisionVertexOut out;
     
-    // Apply collision offset and scale to vertex position
-    float3 worldPos = (vertices[vertexID].position + collisionUniforms.collisionOffset) * collisionUniforms.collisionScale;
+    // Apply collision transform to vertex position
+    float4 meshPos4 = float4(vertices[vertexID].position, 1.0);
+    float4 worldPos4 = collisionUniforms.collisionTransform * meshPos4;
+    float3 worldPos = worldPos4.xyz;
     out.worldPosition = worldPos;
     out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;
@@ -61,8 +63,10 @@ vertex CollisionVertexOut collisionMeshWireframeVertexShader(
 ) {
     CollisionVertexOut out;
     
-    // Apply collision offset and scale to vertex position
-    float3 worldPos = (vertices[vertexID].position + collisionUniforms.collisionOffset) * collisionUniforms.collisionScale;
+    // Apply collision transform to vertex position
+    float4 meshPos4 = float4(vertices[vertexID].position, 1.0);
+    float4 worldPos4 = collisionUniforms.collisionTransform * meshPos4;
+    float3 worldPos = worldPos4.xyz;
     out.worldPosition = worldPos;
     out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;

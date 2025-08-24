@@ -35,9 +35,10 @@ inline float3x3 clampAffineC(float3x3 C) {
 
 // --- SDF Collision Detection Utilities ---
 inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    // Apply collision scale and offset to world position (translate from mesh space to world space)
-    float3 meshSpacePos = worldPos - collision.collisionOffset;
-    meshSpacePos = meshSpacePos / collision.collisionScale;
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
     
     // Convert mesh space position to SDF texture coordinates
     float3 texCoord = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
@@ -78,9 +79,10 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
                            constant CollisionUniforms &collision) {
     if (!collision.enableCollision) return;
     
-    // Apply collision scale and offset to world position (translate from mesh space to world space)
-    float3 meshSpacePos = worldPos - collision.collisionOffset;
-    meshSpacePos = meshSpacePos / collision.collisionScale;
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
     
     // Check if mesh space position is within reasonable bounds to avoid sampling issues
     float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
