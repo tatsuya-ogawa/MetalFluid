@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"
+#include "../MPMTypes.h"
 using namespace metal;
 
 // Triangle structure for SDF generation

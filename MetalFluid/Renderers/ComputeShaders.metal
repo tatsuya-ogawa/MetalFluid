@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"  // Get struct definitions from shared header file
+#include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
 // --- Utility: clamp velocity to avoid NaN/Inf and large values ---
 inline float3 clampVelocity(float3 v) {

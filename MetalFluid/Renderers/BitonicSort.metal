@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"  // Get struct definitions from shared header file
+#include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
 
 // ===== BITONIC SORT IMPLEMENTATION =====
