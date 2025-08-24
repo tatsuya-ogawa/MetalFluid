@@ -8,6 +8,11 @@ struct CollisionVertex {
     var normal: SIMD3<Float>
 }
 
+// Collision mesh uniforms structure (matching Metal shader)
+struct CollisionMeshUniforms {
+    var meshColor: simd_float4
+}
+
 class CollisionMeshRenderer {
     private let device: MTLDevice
     
@@ -26,12 +31,21 @@ class CollisionMeshRenderer {
     // Settings
     public var isVisible: Bool = true
     public var wireframeMode: Bool = false
-    public var meshColor: SIMD4<Float> = SIMD4<Float>(0.8, 0.3, 0.3, 0.4) // Semi-transparent red
+    public var meshColor: SIMD4<Float> = SIMD4<Float>(1.0, 1.0, 1.0, 0.8) // Semi-transparent red
+    
+    // Mesh color uniforms buffer
+    private var meshUniformsBuffer: MTLBuffer?
     
     init(device: MTLDevice) {
         self.device = device
         setupPipelines()
         setupDepthStencil()
+        setupMeshUniforms()
+    }
+    
+    private func setupMeshUniforms() {
+        let uniformsSize = MemoryLayout<CollisionMeshUniforms>.stride
+        meshUniformsBuffer = device.makeBuffer(length: uniformsSize, options: .storageModeShared)
     }
     
     private func setupPipelines() {
@@ -162,6 +176,15 @@ class CollisionMeshRenderer {
         print("Generated collision mesh with \(vertexCount) vertices, \(indexCount/3) triangles")
     }
     
+    private func updateMeshUniforms() {
+        guard let meshUniformsBuffer = meshUniformsBuffer else { return }
+        
+        let uniforms = CollisionMeshUniforms(meshColor: meshColor)
+        
+        let pointer = meshUniformsBuffer.contents().bindMemory(to: CollisionMeshUniforms.self, capacity: 1)
+        pointer.pointee = uniforms
+    }
+    
     func render(renderPassDescriptor: MTLRenderPassDescriptor,
                 commandBuffer: MTLCommandBuffer,
                 vertexUniformBuffer: MTLBuffer) {
@@ -170,9 +193,13 @@ class CollisionMeshRenderer {
               let depthStencilState = depthStencilState,
               let meshBuffer = meshBuffer,
               let meshIndexBuffer = meshIndexBuffer,
+              let meshUniformsBuffer = meshUniformsBuffer,
               indexCount > 0 else {
             return
         }
+        
+        // Update mesh uniforms
+        updateMeshUniforms()
         
         // Select pipeline based on mode
         let pipelineState = wireframeMode ? wireframePipelineState : solidPipelineState
@@ -191,6 +218,7 @@ class CollisionMeshRenderer {
         // Set vertex buffer and uniforms
         renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
         
         // Draw triangles
         renderEncoder.drawIndexedPrimitives(
@@ -212,9 +240,13 @@ class CollisionMeshRenderer {
               let depthStencilState = depthStencilState,
               let meshBuffer = meshBuffer,
               let meshIndexBuffer = meshIndexBuffer,
+              let meshUniformsBuffer = meshUniformsBuffer,
               indexCount > 0 else {
             return
         }
+        
+        // Update mesh uniforms
+        updateMeshUniforms()
         
         // Select pipeline based on mode
         let pipelineState = wireframeMode ? wireframePipelineState : solidPipelineState
@@ -228,6 +260,7 @@ class CollisionMeshRenderer {
         // Set vertex buffer and uniforms
         renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
+        renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
         
         // Draw triangles
         renderEncoder.drawIndexedPrimitives(

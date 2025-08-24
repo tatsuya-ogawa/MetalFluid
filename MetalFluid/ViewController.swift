@@ -132,7 +132,7 @@ class ViewController: UIViewController {
         
         // Configure collision visualization
         fluidRenderer.collisionManager?.setMeshVisible(true)
-        fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(0.8, 0.3, 0.3, 0.4)) // Semi-transparent red
+        fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent red
         
         print("🐰 Stanford Bunny collision mesh loaded successfully!")
     }

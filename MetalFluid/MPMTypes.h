@@ -87,4 +87,9 @@ typedef struct {
     simd_float4x4 invViewMatrix;
 } FluidRenderUniforms;
 
+// Collision mesh rendering uniforms
+typedef struct {
+    simd_float4 meshColor;
+} CollisionMeshUniforms;
+
 #endif /* MPMTypes_h */

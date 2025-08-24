@@ -18,18 +18,19 @@ struct CollisionVertexOut {
 // Collision mesh vertex shader
 vertex CollisionVertexOut collisionMeshVertexShader(
     const device CollisionVertex* vertices [[buffer(0)]],
-    constant VertexShaderUniforms& uniforms [[buffer(1)]],
+    constant VertexShaderUniforms& vertexUniforms [[buffer(1)]],
+    constant CollisionMeshUniforms& meshUniforms [[buffer(2)]],
     uint vertexID [[vertex_id]]
 ) {
     CollisionVertexOut out;
     
     float3 worldPos = vertices[vertexID].position;
     out.worldPosition = worldPos;
-    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * float4(worldPos, 1.0);
+    out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;
     
-    // Semi-transparent collision mesh color
-    out.color = float4(0.8, 0.3, 0.3, 0.4); // Red with transparency
+    // Use mesh color from uniforms
+    out.color = meshUniforms.meshColor;
     
     return out;
 }
@@ -51,18 +52,19 @@ fragment float4 collisionMeshFragmentShader(
 // Wireframe vertex shader (for debugging)
 vertex CollisionVertexOut collisionMeshWireframeVertexShader(
     const device CollisionVertex* vertices [[buffer(0)]],
-    constant VertexShaderUniforms& uniforms [[buffer(1)]],
+    constant VertexShaderUniforms& vertexUniforms [[buffer(1)]],
+    constant CollisionMeshUniforms& meshUniforms [[buffer(2)]],
     uint vertexID [[vertex_id]]
 ) {
     CollisionVertexOut out;
     
     float3 worldPos = vertices[vertexID].position;
     out.worldPosition = worldPos;
-    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * float4(worldPos, 1.0);
+    out.position = vertexUniforms.projectionMatrix * vertexUniforms.viewMatrix * float4(worldPos, 1.0);
     out.normal = vertices[vertexID].normal;
     
-    // Wireframe color - more opaque
-    out.color = float4(0.9, 0.1, 0.1, 0.8); // Bright red wireframe
+    // Use mesh color from uniforms with higher opacity for wireframe
+    out.color = float4(meshUniforms.meshColor.rgb, max(meshUniforms.meshColor.a, 0.8));
     
     return out;
 }
