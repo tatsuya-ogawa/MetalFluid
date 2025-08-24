@@ -50,7 +50,7 @@ class SDFGenerator {
         }
     }
     
-    func loadOBJ(from url: URL) -> [Triangle] {
+    func loadOBJ(from url: URL,scaleFactor:Float=100) -> [Triangle] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             print("Failed to load OBJ file")
             return []
@@ -92,7 +92,28 @@ class SDFGenerator {
             }
         }
         
-        return triangles
+        // Scale the triangles to a reasonable size for the simulation
+        // The bunny model is very small (around 0.1 units), so scale it up
+        let scaledTriangles = triangles.map { triangle in
+            Triangle(
+                v0: triangle.v0 * scaleFactor,
+                v1: triangle.v1 * scaleFactor,
+                v2: triangle.v2 * scaleFactor
+            )
+        }
+        
+        print("🔧 Scaled triangles by factor of \(scaleFactor)")
+        if !scaledTriangles.isEmpty {
+            let minBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
+                min(min(min(result, triangle.v0), triangle.v1), triangle.v2)
+            }
+            let maxBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
+                max(max(max(result, triangle.v0), triangle.v1), triangle.v2)
+            }
+            print("🔧 Scaled bounds: min=\(minBounds), max=\(maxBounds), size=\(maxBounds - minBounds)")
+        }
+        
+        return scaledTriangles
     }
     
     func generateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, boundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)) -> MTLTexture? {
