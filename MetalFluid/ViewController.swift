@@ -229,7 +229,7 @@ class ViewController: UIViewController {
         
         // Particle count label
         particleCountLabel = UILabel()
-        particleCountLabel.text = "Particles: 40000"
+        particleCountLabel.text = "Particles: \(particleCountSlider.value)"
         particleCountLabel.textColor = .white
         particleCountLabel.font = UIFont.systemFont(ofSize: 14)
         particleCountLabel.textAlignment = .center
@@ -238,7 +238,7 @@ class ViewController: UIViewController {
         gridSizeSlider = UISlider()
         gridSizeSlider.minimumValue = 32
         gridSizeSlider.maximumValue = 96
-        gridSizeSlider.value = 64
+        gridSizeSlider.value = 48
         gridSizeSlider.addTarget(
             self,
             action: #selector(gridSizeChanged),
@@ -247,7 +247,7 @@ class ViewController: UIViewController {
         
         // Grid size label
         gridSizeLabel = UILabel()
-        gridSizeLabel.text = "Grid: 64³"
+        gridSizeLabel.text = "Grid: \(gridSizeSlider.value)³"
         gridSizeLabel.textColor = .white
         gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
         gridSizeLabel.textAlignment = .center
