@@ -120,10 +120,14 @@ class ViewController: UIViewController {
             print("⚠️ bunny.obj not found in bundle. Collision detection disabled.")
             return
         }
+        // Get grid boundary to position bunny correctly
+        let (boundaryMin, _) = fluidRenderer.getBoundaryMinMax()
+        
         fluidRenderer.collisionManager?.loadMesh(
             objURL: bunnyURL,
             resolution: fluidRenderer.getGridRes(),
-            fillMode: true
+            fillMode: true,
+            gridBoundaryMin: boundaryMin
         )
         
         // Configure collision visualization

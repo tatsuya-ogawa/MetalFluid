@@ -50,7 +50,7 @@ class SDFGenerator {
         }
     }
     
-    func loadOBJ(from url: URL,scaleFactor:Float=100) -> [Triangle] {
+    func loadOBJ(from url: URL, scaleFactor: Float = 100, offsetToBottom: SIMD3<Float>? = nil) -> [Triangle] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             print("Failed to load OBJ file")
             return []
@@ -94,7 +94,7 @@ class SDFGenerator {
         
         // Scale the triangles to a reasonable size for the simulation
         // The bunny model is very small (around 0.1 units), so scale it up
-        let scaledTriangles = triangles.map { triangle in
+        var scaledTriangles = triangles.map { triangle in
             Triangle(
                 v0: triangle.v0 * scaleFactor,
                 v1: triangle.v1 * scaleFactor,
@@ -103,14 +103,46 @@ class SDFGenerator {
         }
         
         print("🔧 Scaled triangles by factor of \(scaleFactor)")
-        if !scaledTriangles.isEmpty {
-            let minBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
-                min(min(min(result, triangle.v0), triangle.v1), triangle.v2)
+        
+        // Apply position offset if provided (to align with grid bounds)
+        if let offsetToBottom = offsetToBottom {
+            // Calculate current bounding box
+            if !scaledTriangles.isEmpty {
+                var minBounds = scaledTriangles[0].v0
+                var maxBounds = scaledTriangles[0].v0
+                
+                for triangle in scaledTriangles {
+                    minBounds = min(min(min(minBounds, triangle.v0), triangle.v1), triangle.v2)
+                    maxBounds = max(max(max(maxBounds, triangle.v0), triangle.v1), triangle.v2)
+                }
+                
+                // Calculate offset to move bottom of mesh to desired position
+                let currentBottom = minBounds.y
+                let desiredBottom = offsetToBottom.y
+                let yOffset = desiredBottom - currentBottom
+                let totalOffset = SIMD3<Float>(offsetToBottom.x, yOffset, offsetToBottom.z)
+                
+                // Apply offset
+                scaledTriangles = scaledTriangles.map { triangle in
+                    Triangle(
+                        v0: triangle.v0 + totalOffset,
+                        v1: triangle.v1 + totalOffset,
+                        v2: triangle.v2 + totalOffset
+                    )
+                }
+                
+                print("🔧 Applied offset: \(totalOffset)")
+                print("🔧 Original bottom: \(currentBottom), new bottom: \(desiredBottom)")
+                
+                // Print final bounds
+                let finalMinBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
+                    min(min(min(result, triangle.v0), triangle.v1), triangle.v2)
+                }
+                let finalMaxBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
+                    max(max(max(result, triangle.v0), triangle.v1), triangle.v2)
+                }
+                print("🔧 Final bounds: min=\(finalMinBounds), max=\(finalMaxBounds)")
             }
-            let maxBounds = scaledTriangles.reduce(scaledTriangles[0].v0) { result, triangle in
-                max(max(max(result, triangle.v0), triangle.v1), triangle.v2)
-            }
-            print("🔧 Scaled bounds: min=\(minBounds), max=\(maxBounds), size=\(maxBounds - minBounds)")
         }
         
         return scaledTriangles

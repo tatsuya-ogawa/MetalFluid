@@ -458,7 +458,7 @@ class MPMFluidRenderer: NSObject {
     }
 
     let pad: Float = 5.0
-    internal func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
+    public func getBoundaryMinMax()->(SIMD3<Float>,SIMD3<Float>) {
         let gridRes = getGridRes()
         let boundaryMin = domainOrigin + SIMD3<Float>(pad, pad, pad) * gridSpacing
         let boundaryMax = domainOrigin + SIMD3<Float>(

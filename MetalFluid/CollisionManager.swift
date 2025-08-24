@@ -52,8 +52,15 @@ class CollisionManager {
     
     // MARK: - Mesh Loading
     
-    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false) {
-        let triangles = sdfGenerator.loadOBJ(from: objURL)
+    func loadMesh(objURL: URL, resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil) {
+        // Calculate offset position for bunny (align bottom with grid boundary)
+        var offsetToBottom: SIMD3<Float>? = nil
+        if let gridMin = gridBoundaryMin {
+            // Position bunny at the bottom center of the grid
+            offsetToBottom = SIMD3<Float>(0, gridMin.y, 0) // Center X and Z, bottom Y
+        }
+        
+        let triangles = sdfGenerator.loadOBJ(from: objURL, offsetToBottom: offsetToBottom)
         
         if triangles.isEmpty {
             print("No triangles loaded from OBJ file")
