@@ -87,41 +87,54 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
         return; // Invalid SDF value, skip collision
     }
     
-    const float minPenetration = 0.001; // Minimum penetration to handle
-    const float maxCorrection = 1.0;    // Maximum position correction per frame
+    const float minPenetration = 0.2;   // Detection threshold
+    const float restitution = 0.8;      // Bounce coefficient (0 = no bounce, 1 = perfect bounce)
+    const float friction = 0.1;         // Surface friction
     
     if (collision.fillMode == 1) {
         // Fill mode: Keep particles inside, push out particles outside
         if (sdfValue > minPenetration) { // Outside the mesh, push back in
             float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
             
-            // Limit penetration correction
-            float penetrationDepth = min(sdfValue, maxCorrection);
-            float correctionStrength = collision.collisionStiffness * 0.1; // Reduced strength
-            position -= normal * penetrationDepth * correctionStrength;
+            // Minimal position correction to prevent deep penetration
+            float penetrationDepth = min(sdfValue, 1.0);
+            position -= normal * penetrationDepth * 0.1;
             
-            // Reverse velocity toward surface with damping
+            // Velocity-based reflection (inward direction)
             float normalVelocity = dot(velocity, normal);
-            if (normalVelocity > 0.0) { // Moving away from surface
-                float dampingFactor = collision.collisionDamping * 0.5; // Reduced damping
-                velocity -= normal * normalVelocity * dampingFactor;
+            if (normalVelocity > 0.0) { // Moving away from surface, redirect inward
+                // Reflect velocity toward the surface with bounce
+                velocity -= normal * normalVelocity * (1.0 + restitution);
+                
+                // Add friction to tangential velocity
+                float3 tangentialVelocity = velocity - normal * dot(velocity, normal);
+                velocity -= tangentialVelocity * friction;
             }
         }
     } else {
-        // Surface collision mode: Push particles outside
+        // Surface collision mode: Push particles outside (most common case)
         if (sdfValue < -minPenetration) { // Inside the mesh, push out
             float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
             
-            // Limit penetration correction
-            float penetrationDepth = min(-sdfValue, maxCorrection);
-            float correctionStrength = collision.collisionStiffness * 0.1; // Reduced strength
-            position += normal * penetrationDepth * correctionStrength;
+            // Minimal position correction to prevent deep penetration
+            float penetrationDepth = min(-sdfValue, 1.0);
+            position += normal * penetrationDepth * 0.2;
             
-            // Reflect velocity with damping
+            // Velocity-based reflection (primary collision response)
             float normalVelocity = dot(velocity, normal);
             if (normalVelocity < 0.0) { // Moving into the surface
-                float dampingFactor = collision.collisionDamping * 0.5; // Reduced damping
-                velocity -= normal * normalVelocity * dampingFactor;
+                // Perfect reflection with restitution
+                velocity -= normal * normalVelocity * (1.0 + restitution);
+                
+                // Apply friction to tangential component
+                float3 tangentialVelocity = velocity - normal * dot(velocity, normal);
+                velocity -= tangentialVelocity * friction;
+                
+                // Scale up velocity to ensure visible bouncing
+                float velocityMagnitude = length(velocity);
+                if (velocityMagnitude > 0.01) {
+                    velocity = normalize(velocity) * max(velocityMagnitude, 2.0);
+                }
             }
         }
     }

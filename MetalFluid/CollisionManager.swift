@@ -43,8 +43,8 @@ class CollisionManager {
             sdfOrigin: SIMD3<Float>(0, 0, 0),
             sdfSize: SIMD3<Float>(1, 1, 1),
             sdfResolution: SIMD3<Int32>(64, 64, 64),
-            collisionStiffness: 1.0,
-            collisionDamping: 0.8,
+            collisionStiffness: 1.0,  // Not used in velocity-based approach
+            collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
             fillMode: 0 // Surface collision by default
         )
@@ -117,8 +117,8 @@ class CollisionManager {
                 sdfOrigin: minBounds,
                 sdfSize: maxBounds - minBounds,
                 sdfResolution: sdfResolution,
-                collisionStiffness: 1.0,
-                collisionDamping: 0.8,
+                collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
+                collisionDamping: 0.8,    // Not directly used in new velocity-based approach
                 enableCollision: 1,
                 fillMode: fillMode ? 1 : 0
             )
