@@ -52,7 +52,6 @@ class ViewController: UIViewController {
     // Collision controls panel (right side)
     private var collisionPanel: UIView!
     private var collisionToggleButton: UIButton!
-    private var fillModeButton: UIButton!
     private var meshVisibilityButton: UIButton!
     private var wireframeButton: UIButton!
     
@@ -547,19 +546,7 @@ class ViewController: UIViewController {
             action: #selector(toggleCollision),
             for: .touchUpInside
         )
-        
-        // Fill mode button
-        fillModeButton = UIButton(type: .system)
-        fillModeButton.setTitle("Surface", for: .normal)
-        fillModeButton.setTitleColor(.white, for: .normal)
-        fillModeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
-        fillModeButton.layer.cornerRadius = 8
-        fillModeButton.addTarget(
-            self,
-            action: #selector(toggleFillMode),
-            for: .touchUpInside
-        )
-        
+                
         // Mesh visibility button
         meshVisibilityButton = UIButton(type: .system)
         meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
@@ -586,14 +573,12 @@ class ViewController: UIViewController {
         
         // Add buttons to collision panel
         collisionPanel.addSubview(collisionToggleButton)
-        collisionPanel.addSubview(fillModeButton)
         collisionPanel.addSubview(meshVisibilityButton)
         collisionPanel.addSubview(wireframeButton)
         
         // Setup constraints
         collisionPanel.translatesAutoresizingMaskIntoConstraints = false
         collisionToggleButton.translatesAutoresizingMaskIntoConstraints = false
-        fillModeButton.translatesAutoresizingMaskIntoConstraints = false
         meshVisibilityButton.translatesAutoresizingMaskIntoConstraints = false
         wireframeButton.translatesAutoresizingMaskIntoConstraints = false
         
@@ -624,24 +609,9 @@ class ViewController: UIViewController {
             ),
             collisionToggleButton.heightAnchor.constraint(equalToConstant: 40),
             
-            // Fill mode button constraints
-            fillModeButton.topAnchor.constraint(
-                equalTo: collisionToggleButton.bottomAnchor,
-                constant: 10
-            ),
-            fillModeButton.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            fillModeButton.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
-            fillModeButton.heightAnchor.constraint(equalToConstant: 40),
-            
             // Mesh visibility button constraints
             meshVisibilityButton.topAnchor.constraint(
-                equalTo: fillModeButton.bottomAnchor,
+                equalTo: collisionToggleButton.bottomAnchor,
                 constant: 10
             ),
             meshVisibilityButton.leadingAnchor.constraint(
@@ -761,21 +731,7 @@ class ViewController: UIViewController {
             collisionToggleButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.8)
         }
     }
-    
-    @objc private func toggleFillMode() {
-        guard let isFillMode = fluidRenderer.collisionManager?.getFillMode() else {
-            return
-        }
-        fluidRenderer.collisionManager?.setFillMode(!isFillMode)
-        if !isFillMode {
-            fillModeButton.setTitle("Fill Inside", for: .normal)
-            fillModeButton.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.8)
-        } else {
-            fillModeButton.setTitle("Surface", for: .normal)
-            fillModeButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
-        }
-    }
-    
+        
     @objc private func toggleMeshVisibility() {
         guard let isVisible = fluidRenderer.collisionManager?.isMeshVisible() else {
             return

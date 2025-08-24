@@ -46,7 +46,6 @@ class CollisionManager {
             collisionStiffness: 1.0,  // Not used in velocity-based approach
             collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
-            fillMode: 0 // Surface collision by default
         )
     }
     
@@ -119,8 +118,7 @@ class CollisionManager {
                 sdfResolution: sdfResolution,
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
-                enableCollision: 1,
-                fillMode: fillMode ? 1 : 0
+                enableCollision: 1
             )
             
             // Load mesh into renderer for visualization
@@ -152,32 +150,7 @@ class CollisionManager {
         )
         return collisionUniformPointer[0].enableCollision == 1
     }
-    
-    func setFillMode(_ fillMode: Bool) {
-        guard sdfTexture != nil else {
-            print("No collision mesh loaded")
-            return
-        }
         
-        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
-            to: CollisionUniforms.self,
-            capacity: 1
-        )
-        collisionUniformPointer[0].fillMode = fillMode ? 1 : 0
-        
-        print("Fill mode set to: \(fillMode ? "Inside fill" : "Surface collision")")
-    }
-    
-    func getFillMode() -> Bool {
-        guard sdfTexture != nil else { return false }
-        
-        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
-            to: CollisionUniforms.self,
-            capacity: 1
-        )
-        return collisionUniformPointer[0].fillMode == 1
-    }
-    
     func getCurrentSDFResolution() -> Int32? {
         guard sdfTexture != nil else { return nil }
         

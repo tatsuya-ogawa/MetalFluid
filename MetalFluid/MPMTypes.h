@@ -63,7 +63,6 @@ typedef struct {
     float collisionStiffness;     // Collision response strength
     float collisionDamping;       // Velocity damping on collision
     uint32_t enableCollision;     // Enable/disable collision detection
-    uint32_t fillMode;            // 0: surface collision, 1: fill inside
 } CollisionUniforms;
 
 // Vertex shader specific uniforms

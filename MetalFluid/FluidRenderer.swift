@@ -47,7 +47,6 @@ struct CollisionUniforms {
     var collisionStiffness: Float
     var collisionDamping: Float
     var enableCollision: UInt32
-    var fillMode: UInt32  // 0: surface collision, 1: fill inside
 }
 
 // Vertex shader specific uniforms
