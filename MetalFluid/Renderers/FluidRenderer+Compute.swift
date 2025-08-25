@@ -143,6 +143,84 @@ extension MPMFluidRenderer {
         let (boundaryMin, boundaryMax) = getBoundaryMinMax()
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
+        
+        if currentMaterialMode == .neoHookeanElastic {
+            // Dense cube formation for elastic materials
+            setupElasticCube(particlePointer: particlePointer, center: center, range: range)
+        } else {
+            // Original spherical distribution for fluid
+            setupFluidSphere(particlePointer: particlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
+        }
+    }
+    
+    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>) {
+        // Calculate cube dimensions based on particle count
+        let particlesPerDim = Int(ceil(pow(Float(particleCount), 1.0/3.0)))
+        
+        // Cube size - make it smaller than the boundary to leave space
+        let cubeSize = min(range.x, range.y, range.z) * 0.6  // 60% of available space
+        let spacing = cubeSize / Float(particlesPerDim - 1)
+        
+        // Calculate cube origin (bottom-left-back corner)
+        let cubeOrigin = center - SIMD3<Float>(cubeSize * 0.5, cubeSize * 0.5, cubeSize * 0.5)
+        
+        var particleIndex = 0
+        
+        for x in 0..<particlesPerDim {
+            for y in 0..<particlesPerDim {
+                for z in 0..<particlesPerDim {
+                    if particleIndex >= particleCount { break }
+                    
+                    // Calculate position in the dense cube
+                    let pos = cubeOrigin + SIMD3<Float>(
+                        Float(x) * spacing,
+                        Float(y) * spacing,
+                        Float(z) * spacing
+                    )
+                    
+                    // Add very small random offset for numerical stability
+                    let randomOffset = SIMD3<Float>(
+                        Float.random(in: -0.001...0.001),
+                        Float.random(in: -0.001...0.001),
+                        Float.random(in: -0.001...0.001)
+                    )
+                    
+                    particlePointer[particleIndex] = MPMParticle(
+                        position: pos + randomOffset,
+                        velocity: SIMD3<Float>(0.0, 0.0, 0.0),
+                        C: simd_float3x3(0.0),  // Affine momentum matrix initialization
+                        mass: particleMass
+                    )
+                    
+                    particleIndex += 1
+                }
+                if particleIndex >= particleCount { break }
+            }
+            if particleIndex >= particleCount { break }
+        }
+        
+        // Fill remaining particles with random positions within cube if needed
+        while particleIndex < particleCount {
+            let pos = cubeOrigin + SIMD3<Float>(
+                Float.random(in: 0...cubeSize),
+                Float.random(in: 0...cubeSize),
+                Float.random(in: 0...cubeSize)
+            )
+            
+            particlePointer[particleIndex] = MPMParticle(
+                position: pos,
+                velocity: SIMD3<Float>(0.0, 0.0, 0.0),
+                C: simd_float3x3(0.0),
+                mass: particleMass
+            )
+            
+            particleIndex += 1
+        }
+        
+        print("🟦 Created elastic cube: \(particlesPerDim)³ lattice, spacing: \(spacing)")
+    }
+    
+    private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>) {
         let maxRadius = min(range.x, range.y, range.z)
         
         func randn() -> Float {
@@ -180,18 +258,15 @@ extension MPMFluidRenderer {
             )
             let finalPos = simd_clamp(pos + randomOffset, boundaryMin, boundaryMax)
             
-            // Note: Particle color is now handled by shaders
-            
             particlePointer[i] = MPMParticle(
                 position: finalPos,
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
                 C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                mass: particleMass,
-                //                volume: particleMass / restDensity,
-                //                Jp: 1.0,  // Plastic deformation initial value
-                //                color: particleColor
+                mass: particleMass
             )
         }
+        
+        print("🌊 Created fluid sphere: radius \(maxRadius)")
     }
     
     // MARK: - Main Compute Function

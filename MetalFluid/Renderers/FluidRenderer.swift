@@ -467,7 +467,16 @@ class MPMFluidRenderer: NSObject {
     public let restDensity: Float = 4.0
     let stiffness: Float = 3.0
     let dynamic_viscosity: Float = 0.1
-    public let gravity: Float = -2.5 //-9.81
+    public var gravity: Float {
+        get{
+            switch currentMaterialMode{
+            case .fluid:
+                return  -2.5 //-9.81
+            case .neoHookeanElastic:
+                return -0.1
+            }
+        }
+    }
     public let gridSpacing: Float = 1.0
     func getRenderScale(scale:Float) -> Float{
         return scale / gridSpacing / Float(gridSize) * 2
