@@ -291,6 +291,9 @@ class WaterRenderer: ModeRenderer {
             renderPassDescriptor.depthAttachment.storeAction = .store
         }
         
+        // Set background color for water renderer
+        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
+        
         guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             return
         }

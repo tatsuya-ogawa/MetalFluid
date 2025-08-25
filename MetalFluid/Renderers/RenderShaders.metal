@@ -362,17 +362,18 @@ fragment FluidFragmentOutput fluidFragmentShader(
     texture2d<float> depthTexture [[texture(0)]],
     texture2d<float> thicknessTexture [[texture(1)]],
     texturecube<float> envmapTexture [[texture(2)]],
-    constant FluidRenderUniforms& uniforms [[buffer(0)]]
+    constant FluidRenderUniforms& uniforms [[buffer(0)]],
+    float4 currentColor [[color(0)]]  // Framebuffer fetch - existing color
 ) {
     constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
     
     float depth = abs(depthTexture.read(uint2(input.iuv)).r);
     
-    float3 bgColor = float3(0.8, 0.8, 0.8);
+    float3 bgColor = currentColor.rgb;  // Use existing rendered color (mesh)
     
     if (depth >= 1e4 || depth <= 0.0) {
         FluidFragmentOutput output;
-        output.color = float4(bgColor, 1.0);
+        output.color = currentColor;  // Return existing color unchanged
         output.depth = 1.0;  // Far depth for background
         return output;
     }
