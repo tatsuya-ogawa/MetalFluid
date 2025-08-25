@@ -148,7 +148,7 @@ inline uint3 gridXYZ(uint id,constant ComputeShaderUniforms &uniforms){
 
 // Manual 3x3 matrix inverse function for Metal
 inline float3x3 inverse3x3(float3x3 m) {
-//    float det = determinant(m);
+    float det = determinant(m);
     if (abs(det) < 1e-12) {
         // Return identity matrix if determinant is too small
         return float3x3(1.0);
@@ -181,7 +181,7 @@ inline float2 computeLameParameters(float E, float nu) {
 
 // Neo-Hookean energy density derivative (P = dΨ/dF)
 inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
-    float J = determinant(F);
+    float J = clamp(determinant(F),1e-6,10.0);
     float3x3 F_inv_T = transpose(inverse3x3(F));
     
     // Neo-Hookean model: P = μ(F - F^-T) + λ*ln(J)*F^-T
