@@ -2,10 +2,19 @@ import Foundation
 import Metal
 import MetalKit
 import simd
+
 struct Triangle {
     var v0: SIMD3<Float>
     var v1: SIMD3<Float>
     var v2: SIMD3<Float>
+}
+
+// Structure to track collision forces for mesh deformation
+struct CollisionForce {
+    var position: SIMD3<Float>  // World space collision point
+    var force: SIMD3<Float>     // Force vector applied to mesh
+    var timestamp: Float        // Time when force was applied
+    var intensity: Float        // Force magnitude for influence calculation
 }
 class CollisionManager {
     private let device: MTLDevice
@@ -20,6 +29,12 @@ class CollisionManager {
     
     // Current mesh data
     private var currentTriangles: [Triangle] = []
+    
+    // Collision force accumulation for mesh deformation
+    private var accumulatedForces: [CollisionForce] = []
+    private var maxStoredForces: Int = 100  // Limit memory usage
+    private var forceDecayRate: Float = 0.95  // Force decay per frame
+    private var forceInfluenceRadius: Float = 0.3  // Spatial influence radius
     
     init(device: MTLDevice) {
         self.device = device
@@ -286,5 +301,76 @@ class CollisionManager {
             vertexUniformBuffer: vertexUniformBuffer,
             collisionUniformBuffer: collisionUniformBuffer
         )
+    }
+    
+    // MARK: - Collision Force Management
+    
+    /// Add a collision force for mesh deformation
+    func addCollisionForce(at position: SIMD3<Float>, force: SIMD3<Float>) {
+        let currentTime = Float(CACurrentMediaTime())
+        let intensity = length(force)
+        
+        let collisionForce = CollisionForce(
+            position: position,
+            force: force,
+            timestamp: currentTime,
+            intensity: intensity
+        )
+        
+        accumulatedForces.append(collisionForce)
+        
+        // Limit memory usage
+        if accumulatedForces.count > maxStoredForces {
+            accumulatedForces.removeFirst()
+        }
+    }
+    
+    /// Update force decay and remove old forces
+    func updateForceDecay() {
+        let currentTime = Float(CACurrentMediaTime())
+        let maxAge: Float = 2.0  // Forces older than 2 seconds are removed
+        
+        // Apply decay and remove old forces
+        accumulatedForces = accumulatedForces.compactMap { force in
+            let age = currentTime - force.timestamp
+            if age > maxAge {
+                return nil  // Remove old force
+            }
+            
+            // Apply exponential decay
+            let decayFactor = pow(forceDecayRate, age)
+            var decayedForce = force
+            decayedForce.force *= decayFactor
+            decayedForce.intensity *= decayFactor
+            
+            return decayedForce
+        }
+    }
+    
+    /// Get current accumulated forces for deformation calculation
+    func getAccumulatedForces() -> [CollisionForce] {
+        return accumulatedForces
+    }
+    
+    /// Clear all accumulated forces
+    func clearAccumulatedForces() {
+        accumulatedForces.removeAll()
+    }
+    
+    /// Set deformation parameters
+    func setDeformationParameters(decayRate: Float, influenceRadius: Float, maxForces: Int) {
+        forceDecayRate = decayRate
+        forceInfluenceRadius = influenceRadius
+        maxStoredForces = maxForces
+    }
+    
+    /// Apply accumulated forces to mesh for deformation
+    func applyMeshDeformation(commandBuffer: MTLCommandBuffer) {
+        updateForceDecay()
+        let forces = getAccumulatedForces()
+        
+        if !forces.isEmpty {
+            meshRenderer.applyDeformation(commandBuffer: commandBuffer, collisionForces: forces)
+        }
     }
 }

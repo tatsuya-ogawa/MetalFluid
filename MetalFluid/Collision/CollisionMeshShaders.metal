@@ -83,3 +83,71 @@ fragment float4 collisionMeshWireframeFragmentShader(
 ) {
     return in.color; // Flat color for wireframe
 }
+
+// MARK: - Mesh Deformation
+
+// Deformation parameters
+struct DeformationUniforms {
+    uint forceCount;
+    uint vertexCount;
+    float influenceRadius;
+    float deformationStrength;
+    float currentTime;
+};
+
+// GPU-friendly collision force structure
+struct GPUCollisionForce {
+    float3 position;
+    float3 force;
+    float intensity;
+    float timestamp;
+};
+
+// Compute shader for mesh vertex deformation
+kernel void deformMeshVertices(
+    const device float3* originalVertices [[buffer(0)]],
+    device float3* deformedVertices [[buffer(1)]],
+    const device GPUCollisionForce* collisionForces [[buffer(2)]],
+    constant DeformationUniforms& uniforms [[buffer(3)]],
+    uint index [[thread_position_in_grid]]
+) {
+    if (index >= uniforms.vertexCount) {
+        return;
+    }
+    
+    float3 originalVertex = originalVertices[index];
+    float3 deformedVertex = originalVertex;
+    
+    // Apply deformation from each collision force
+    for (uint i = 0; i < uniforms.forceCount; i++) {
+        GPUCollisionForce force = collisionForces[i];
+        
+        // Skip if force is too weak
+        if (force.intensity <= 0.001) {
+            continue;
+        }
+        
+        float distance = length(originalVertex - force.position);
+        
+        // Skip if vertex is outside influence radius
+        if (distance > uniforms.influenceRadius) {
+            continue;
+        }
+        
+        // Calculate Gaussian influence based on distance
+        float radiusSquared = uniforms.influenceRadius * uniforms.influenceRadius;
+        float influence = exp(-(distance * distance) / (2.0 * radiusSquared));
+        
+        // Apply time-based decay
+        float age = uniforms.currentTime - force.timestamp;
+        float timeFactor = exp(-age * 0.5); // Exponential decay over time
+        
+        // Apply force-based deformation
+        float3 forceDirection = normalize(force.force);
+        float deformationAmount = force.intensity * influence * uniforms.deformationStrength * timeFactor;
+        
+        deformedVertex += forceDirection * deformationAmount;
+    }
+    
+    deformedVertices[index] = deformedVertex;
+}

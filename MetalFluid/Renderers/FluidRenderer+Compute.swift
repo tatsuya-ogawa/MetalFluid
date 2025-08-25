@@ -294,11 +294,62 @@ extension MPMFluidRenderer {
                     }
                 }
                 
+                // Clear collision force counter
+                let forceCountPointer = forceCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
+                forceCountPointer[0] = 0
+                
+                // Set collision force collection buffers
+                computeEncoder.setBuffer(collisionForceBuffer, offset: 0, index: 4)
+                computeEncoder.setBuffer(forceCountBuffer, offset: 0, index: 5)
+                computeEncoder.setBytes([UInt32(maxCollisionForces)], length: MemoryLayout<UInt32>.size, index: 6)
+                
                 computeEncoder.dispatchThreadgroups(
                     particleThreadgroups,
                     threadsPerThreadgroup: particleThreadsPerThreadgroup
                 )
                 computeEncoder.endEncoding()
+            }
+        }
+        
+        // Collect collision forces and apply to mesh deformation
+        collectAndApplyCollisionForces(commandBuffer: commandBuffer)
+    }
+    
+    private func collectAndApplyCollisionForces(commandBuffer: MTLCommandBuffer) {
+        // Read collision force count
+        let forceCountPointer = forceCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
+        let forceCount = Int(forceCountPointer[0])
+        
+        if forceCount > 0 {
+            // Read collision force data
+            let forceDataPointer = collisionForceBuffer.contents().bindMemory(
+                to: CollisionForceData.self, capacity: maxCollisionForces
+            )
+            
+            // Convert to CollisionForce array for CollisionManager
+            var collisionForces: [CollisionForce] = []
+            let currentTime = Float(CACurrentMediaTime())
+            
+            for i in 0..<min(forceCount, maxCollisionForces) {
+                let forceData = forceDataPointer[i]
+                
+                let collisionForce = CollisionForce(
+                    position: forceData.position,
+                    force: forceData.force,
+                    timestamp: currentTime,
+                    intensity: forceData.intensity
+                )
+                collisionForces.append(collisionForce)
+            }
+            
+            // Send forces to collision manager for mesh deformation
+            if let collisionManager = collisionManager {
+                for force in collisionForces {
+                    collisionManager.addCollisionForce(at: force.position, force: force.force)
+                }
+                
+                // Apply deformation
+                collisionManager.applyMeshDeformation(commandBuffer: commandBuffer)
             }
         }
     }

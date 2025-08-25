@@ -1,6 +1,14 @@
 #include <metal_stdlib>
 #include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
+
+// Structure to collect collision force data from compute shader
+struct CollisionForceData {
+    float3 position;        // World space collision point
+    float3 force;          // Force applied to particle (reaction force applied to mesh)
+    uint particleID;       // Particle that caused the collision
+    float intensity;       // Force magnitude
+};
 // --- Utility: clamp velocity to avoid NaN/Inf and large values ---
 inline float3 clampVelocity(float3 v) {
     return v;
@@ -76,7 +84,11 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
 
 inline void handleCollision(device float3 &position, device float3 &velocity, 
                            float3 worldPos, texture3d<float> sdfTexture, 
-                           constant CollisionUniforms &collision) {
+                           constant CollisionUniforms &collision, 
+                           device CollisionForceData* collisionForces,
+                           device atomic<uint>& forceCount,
+                           uint particleID,
+                           uint maxForces) {
     if (!collision.enableCollision) return;
     
     // Transform world position to mesh space using inverse transform
@@ -126,7 +138,27 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
         }
         
         // Recombine velocity components
-        velocity = normal * vn + vt;
+        float3 newVelocity = normal * vn + vt;
+        
+        // Calculate force applied to particle (reaction force goes to mesh)
+        float3 deltaVelocity = newVelocity - velocity;
+        float3 collisionForce = deltaVelocity * 100.0; // Convert velocity change to force (mass assumed 1.0)
+        float forceIntensity = length(collisionForce);
+        
+        // Record collision force for mesh deformation
+        if (forceIntensity > 0.01 && collisionForces != nullptr) {
+            uint forceIndex = atomic_fetch_add_explicit(&forceCount, 1, memory_order_relaxed);
+            if (forceIndex < maxForces) {
+                collisionForces[forceIndex] = CollisionForceData {
+                    .position = worldPos,
+                    .force = -collisionForce,  // Reaction force applied to mesh
+                    .particleID = particleID,
+                    .intensity = forceIntensity
+                };
+            }
+        }
+        
+        velocity = newVelocity;
     }
 }
 
@@ -392,6 +424,9 @@ kernel void gridToParticles(
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
                             texture3d<float> sdfTexture [[texture(0)]],
                             constant CollisionUniforms& collision [[buffer(3)]],
+                            device CollisionForceData* collisionForces [[buffer(4)]],
+                            device atomic<uint>* forceCount [[buffer(5)]],
+                            constant uint& maxCollisionForces [[buffer(6)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -454,7 +489,8 @@ kernel void gridToParticles(
 
     // Handle mesh collision detection (now safe from hanging)
     handleCollision(particles[id].position, particles[id].velocity,
-                   particles[id].position, sdfTexture, collision);
+                   particles[id].position, sdfTexture, collision, 
+                    collisionForces, *forceCount, id, maxCollisionForces);
 
     if (x_n.x < wall_min.x) {
         particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);

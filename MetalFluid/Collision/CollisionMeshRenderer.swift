@@ -36,11 +36,22 @@ class CollisionMeshRenderer {
     // Mesh color uniforms buffer
     private var meshUniformsBuffer: MTLBuffer?
     
+    // Deformation system
+    private var meshDeformation: MeshDeformation?
+    private var originalVertexBuffer: MTLBuffer?
+    private var deformedVertexBuffer: MTLBuffer?
+    private var enableDeformation: Bool = true
+    
     init(device: MTLDevice) {
         self.device = device
         setupPipelines()
         setupDepthStencil()
         setupMeshUniforms()
+        setupDeformation()
+    }
+    
+    private func setupDeformation() {
+        meshDeformation = MeshDeformation(device: device)
     }
     
     private func setupMeshUniforms() {
@@ -161,7 +172,24 @@ class CollisionMeshRenderer {
         let indexBufferSize = MemoryLayout<UInt32>.stride * indexCount
         meshIndexBuffer = device.makeBuffer(bytes: indices, length: indexBufferSize, options: .storageModeShared)
         
+        // Create deformation buffers
+        if enableDeformation {
+            setupDeformationBuffers(vertices: vertices)
+        }
+        
         print("Generated collision mesh with \(vertexCount) vertices, \(indexCount/3) triangles")
+    }
+    
+    private func setupDeformationBuffers(vertices: [CollisionVertex]) {
+        // Extract just positions for deformation computation
+        let positions = vertices.map { $0.position }
+        let positionBufferSize = MemoryLayout<SIMD3<Float>>.stride * vertexCount
+        
+        // Create original vertex position buffer
+        originalVertexBuffer = device.makeBuffer(bytes: positions, length: positionBufferSize, options: .storageModeShared)
+        
+        // Create deformed vertex position buffer (initially same as original)
+        deformedVertexBuffer = device.makeBuffer(bytes: positions, length: positionBufferSize, options: .storageModeShared)
     }
     
     private func updateMeshUniforms() {
@@ -273,5 +301,30 @@ class CollisionMeshRenderer {
     func setWireframeMode(_ enabled: Bool) {
         wireframeMode = enabled
         print("Collision mesh wireframe mode: \(enabled ? "ON" : "OFF")")
+    }
+    
+    // MARK: - Deformation
+    
+    func applyDeformation(commandBuffer: MTLCommandBuffer, collisionForces: [CollisionForce]) {
+        guard enableDeformation,
+              let meshDeformation = meshDeformation,
+              let originalBuffer = originalVertexBuffer,
+              let deformedBuffer = deformedVertexBuffer else { return }
+        
+        meshDeformation.applyDeformationGPU(
+            commandBuffer: commandBuffer,
+            originalVertexBuffer: originalBuffer,
+            deformedVertexBuffer: deformedBuffer,
+            vertexCount: vertexCount,
+            collisionForces: collisionForces
+        )
+    }
+    
+    func setDeformationEnabled(_ enabled: Bool) {
+        enableDeformation = enabled
+    }
+    
+    func setDeformationParameters(influenceRadius: Float, strength: Float) {
+        meshDeformation?.setParameters(influenceRadius: influenceRadius, deformationStrength: strength)
     }
 }

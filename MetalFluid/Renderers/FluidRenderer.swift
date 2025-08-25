@@ -93,6 +93,14 @@ struct SortKey {
     var value: UInt32    // Original particle index
 }
 
+// Collision force data structure (matching Metal shader)
+struct CollisionForceData {
+    var position: SIMD3<Float>  // World space collision point
+    var force: SIMD3<Float>     // Force applied to particle (reaction force applied to mesh)
+    var particleID: UInt32      // Particle that caused the collision
+    var intensity: Float        // Force magnitude
+}
+
 enum RenderMode {
     case particles
     case water
@@ -407,6 +415,11 @@ class MPMFluidRenderer: NSObject {
     // Collision detection
     internal var collisionManager: CollisionManager?
     
+    // Collision force collection
+    internal var collisionForceBuffer: MTLBuffer!
+    internal var forceCountBuffer: MTLBuffer!
+    internal var maxCollisionForces: Int = 1000
+    
     // Performance settings - Public for testing
     public var particleCount: Int
     public var gridSize: Int
@@ -602,6 +615,19 @@ class MPMFluidRenderer: NSObject {
         let gaussianUniformSize = MemoryLayout<GaussianUniforms>.stride
         gaussianUniformBuffer = device.makeBuffer(
             length: gaussianUniformSize,
+            options: .storageModeShared
+        )!
+        
+        // Collision force collection buffers
+        let collisionForceBufferSize = MemoryLayout<CollisionForceData>.stride * maxCollisionForces
+        collisionForceBuffer = device.makeBuffer(
+            length: collisionForceBufferSize,
+            options: .storageModeShared
+        )!
+        
+        let forceCountBufferSize = MemoryLayout<UInt32>.stride
+        forceCountBuffer = device.makeBuffer(
+            length: forceCountBufferSize,
             options: .storageModeShared
         )!
     }
