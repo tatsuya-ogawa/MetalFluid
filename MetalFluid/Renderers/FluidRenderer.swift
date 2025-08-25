@@ -442,8 +442,8 @@ class MPMFluidRenderer: NSObject {
     
     // Material mode state
     public var currentMaterialMode: MaterialMode = .neoHookeanElastic
-    public var youngsModulus: Float = 1e6  // Young's modulus (Pa)
-    public var poissonsRatio: Float = 0.3  // Poisson's ratio
+    public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
+    public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
     
     // Mode-specific renderers
     internal var particleRenderer: ParticleRenderer!
@@ -473,7 +473,7 @@ class MPMFluidRenderer: NSObject {
             case .fluid:
                 return  -2.5 //-9.81
             case .neoHookeanElastic:
-                return -0.1
+                return -1.0
             }
         }
     }

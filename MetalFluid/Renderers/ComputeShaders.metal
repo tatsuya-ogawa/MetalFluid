@@ -188,11 +188,12 @@ inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
     float3x3 deformTensor = F * F_transpose - float3x3(1.0);
     float3x3 volumeTensor = log(J) * float3x3(1.0);
     
-    // Stress calculation with simplified coefficients
-    float3x3 P = mu * deformTensor + lambda * volumeTensor;
+    // Significantly increased stiffness for gravity resistance
+    float stiffness_multiplier = 1.0;  // Much stronger to resist gravity
+    float3x3 P = stiffness_multiplier * (mu * deformTensor + lambda * volumeTensor);
     
-    // Conservative clamping to prevent explosion
-    const float max_stress = 50.0;  // Much more conservative
+    // Allow higher stress to resist gravity
+    const float max_stress = 300.0;  // Increased to allow strong elastic forces
     P[0] = clamp(P[0], float3(-max_stress), float3(max_stress));
     P[1] = clamp(P[1], float3(-max_stress), float3(max_stress));  
     P[2] = clamp(P[2], float3(-max_stress), float3(max_stress));
@@ -474,6 +475,11 @@ kernel void particlesToGridElastic(
                     
                     // Elastic force contribution: -volume * P * grad_w * dt
                     float3 force = -volume * (P * cell_dist) * uniforms.deltaTime * weight;
+                    
+//                    // Allow strong elastic forces to resist gravity
+//                    const float max_force = 200.0;  // Much higher to combat gravity effectively
+//                    force = clamp(force, float3(-max_force), float3(max_force));
+                    
                     atomicAddWithUniform(&grid[cell_index].velocity_x, force.x, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_y, force.y, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_z, force.z, uniforms);
@@ -699,6 +705,17 @@ kernel void gridToParticlesElastic(
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
+//    // Add center-seeking force for elastic materials to resist gravity collapse
+//    float3 center = (uniforms.boundaryMin + uniforms.boundaryMax) * 0.5;
+//    float3 displacement = particles[id].position - center;
+//    float distance = length(displacement);
+//    
+//    // Apply gentle center-seeking force to maintain structure
+//    if (distance > 0.1) {
+//        float3 restoreForce = -displacement * 0.02;  // Gentle restoration
+//        particles[id].velocity += restoreForce;
+//    }
+    
     // Boundary conditions for elastic materials - Essential for stability
     const float k = 3.0;
     const float wall_stiffness = 0.3;
@@ -735,8 +752,8 @@ kernel void gridToParticlesElastic(
                                   uniforms.boundaryMin + uniforms.gridSpacing, 
                                   uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
     
-    // Velocity clamping to prevent extreme values
-    const float max_velocity = 15.0;
+    // Velocity clamping to prevent extreme values while allowing strong elastic motion
+    const float max_velocity = 35.0;  // Higher limit for strong elastic response
     particles[id].velocity = clamp(particles[id].velocity, 
                                   float3(-max_velocity), 
                                   float3(max_velocity));
