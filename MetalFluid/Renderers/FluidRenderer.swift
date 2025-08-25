@@ -352,10 +352,10 @@ class MPMFluidRenderer: NSObject {
     
     // MLS-MPM Compute pipeline states - Public for testing
     public var clearGridPipelineState: MTLComputePipelineState!
-    public var particlesToGridFluidPipelineState: MTLComputePipelineState!
-    public var particlesToGrid2PipelineState: MTLComputePipelineState!
+    public var particlesToGridFluid1PipelineState: MTLComputePipelineState!
+    public var particlesToGridFluid2PipelineState: MTLComputePipelineState!
     public var updateGridVelocityPipelineState: MTLComputePipelineState!
-    public var gridToParticlesFluidPipelineState: MTLComputePipelineState!
+    public var gridToParticlesFluid1PipelineState: MTLComputePipelineState!
     
     // Elastic material compute pipeline states
     public var particlesToGridElasticPipelineState: MTLComputePipelineState!

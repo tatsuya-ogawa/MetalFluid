@@ -281,7 +281,7 @@ kernel void clearGrid(
 // MLS-MPM Particle to Grid (P2G) Phase - With volume recalculation
 
 // P2G1: Mass and momentum transfer from particles to grid (APIC/affine terms only)
-kernel void particlesToGridFluid(
+kernel void particlesToGridFluid1(
                              device const MPMParticle* particles [[buffer(0)]],
                              constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                              device MPMGridNode* grid [[buffer(2)]],
@@ -325,7 +325,7 @@ kernel void particlesToGridFluid(
 }
 
 // P2G2: Add volume and stress-based momentum from particles to grid
-kernel void particlesToGrid2(
+kernel void particlesToGridFluid2(
                              device const MPMParticle* particles [[buffer(0)]],
                              constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                              device MPMGridNode* grid [[buffer(2)]],
@@ -509,7 +509,7 @@ kernel void updateGridVelocity(
 }
 
 // MLS-MPM Grid to Particle (G2P) Phase - Volume recalculation version
-kernel void gridToParticlesFluid(
+kernel void gridToParticlesFluid1(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
