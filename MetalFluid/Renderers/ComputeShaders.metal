@@ -179,13 +179,23 @@ inline float2 computeLameParameters(float E, float nu) {
     return float2(lambda, mu);
 }
 
-// Neo-Hookean energy density derivative (P = dΨ/dF)
+// Simplified Neo-Hookean stress based on working sample approach
 inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
-    float J = clamp(determinant(F),1e-6,10.0);
-    float3x3 F_inv_T = transpose(inverse3x3(F));
+    float J = clamp(determinant(F), 0.1, 10.0);  // More conservative bounds
     
-    // Neo-Hookean model: P = μ(F - F^-T) + λ*ln(J)*F^-T
-    float3x3 P = mu * (F - F_inv_T) + lambda * log(J) * F_inv_T;
+    // Simplified approach from working sample: (F*F^T - I) + log(J)*I  
+    float3x3 F_transpose = transpose(F);
+    float3x3 deformTensor = F * F_transpose - float3x3(1.0);
+    float3x3 volumeTensor = log(J) * float3x3(1.0);
+    
+    // Stress calculation with simplified coefficients
+    float3x3 P = mu * deformTensor + lambda * volumeTensor;
+    
+    // Conservative clamping to prevent explosion
+    const float max_stress = 50.0;  // Much more conservative
+    P[0] = clamp(P[0], float3(-max_stress), float3(max_stress));
+    P[1] = clamp(P[1], float3(-max_stress), float3(max_stress));  
+    P[2] = clamp(P[2], float3(-max_stress), float3(max_stress));
     
     return P;
 }
@@ -665,46 +675,69 @@ kernel void gridToParticlesElastic(
     // Update particle velocity
     particles[id].velocity = new_velocity;
     
-    // Update affine momentum matrix (stores velocity gradient information)
-    // For elastic materials, this represents the local deformation rate
-    particles[id].C = B * 4.0; // Scale factor for grid spacing
+    // Update deformation gradient using stable approach from working sample
+    float3x3 velocityGradient = B * 4.0; // Scale factor for grid spacing
+    
+    // Get current deformation gradient from C matrix  
+    float3x3 currentDeform = float3x3(1.0) + particles[id].C * uniforms.deltaTime;
+    
+    // Update deformation gradient: F_new = F + velocity_gradient * F * dt
+    float3x3 newDeform = currentDeform + velocityGradient * currentDeform * uniforms.deltaTime;
+    
+    // Check jacobian stability like in the working sample
+    float newJacobian = determinant(newDeform);
+    if (newJacobian < 0.05 || newJacobian > 20.0) {
+        // Reset to identity if deformation becomes too extreme - critical for stability
+        newJacobian = 1.0;
+        newDeform = float3x3(1.0);
+        velocityGradient = float3x3(0.0);
+    }
+    
+    // Convert back to C matrix: C = (F - I) / dt
+    particles[id].C = (newDeform - float3x3(1.0)) / uniforms.deltaTime;
     
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
-    // Boundary conditions for elastic materials
-//    const float k = 3.0;
-//    const float wall_stiffness = 0.3;
-//    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
-//    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
-//    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+    // Boundary conditions for elastic materials - Essential for stability
+    const float k = 3.0;
+    const float wall_stiffness = 0.3;
+    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
+    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
+    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
     
     // Handle mesh collision detection
     handleCollision(particles[id].position, particles[id].velocity,
                    particles[id].position, sdfTexture, collision);
     
-    // Wall collisions
-//    if (x_n.x < wall_min.x) {
-//        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-//    }
-//    if (x_n.x > wall_max.x) {
-//        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-//    }
-//    if (x_n.y < wall_min.y) {
-//        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-//    }
-//    if (x_n.y > wall_max.y) {
-//        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-//    }
-//    if (x_n.z < wall_min.z) {
-//        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-//    }
-//    if (x_n.z > wall_max.z) {
-//        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
-//    }
-//    
-//    // Position clamping
-//    particles[id].position = clamp(particles[id].position, 
-//                                  uniforms.boundaryMin + uniforms.gridSpacing, 
-//                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+    // Wall collisions - Critical for preventing divergence
+    if (x_n.x < wall_min.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
+    }
+    if (x_n.x > wall_max.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
+    }
+    if (x_n.y < wall_min.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
+    }
+    if (x_n.y > wall_max.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
+    }
+    if (x_n.z < wall_min.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
+    }
+    if (x_n.z > wall_max.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+    }
+    
+    // Position clamping - Essential safety net like in working sample
+    particles[id].position = clamp(particles[id].position, 
+                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+    
+    // Velocity clamping to prevent extreme values
+    const float max_velocity = 15.0;
+    particles[id].velocity = clamp(particles[id].velocity, 
+                                  float3(-max_velocity), 
+                                  float3(max_velocity));
 }
