@@ -673,38 +673,38 @@ kernel void gridToParticlesElastic(
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
     // Boundary conditions for elastic materials
-    const float k = 3.0;
-    const float wall_stiffness = 0.3;
-    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
-    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
-    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+//    const float k = 3.0;
+//    const float wall_stiffness = 0.3;
+//    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
+//    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
+//    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
     
     // Handle mesh collision detection
     handleCollision(particles[id].position, particles[id].velocity,
                    particles[id].position, sdfTexture, collision);
     
     // Wall collisions
-    if (x_n.x < wall_min.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-    }
-    if (x_n.x > wall_max.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-    }
-    if (x_n.y < wall_min.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-    }
-    if (x_n.y > wall_max.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-    }
-    if (x_n.z < wall_min.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-    }
-    if (x_n.z > wall_max.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
-    }
-    
-    // Position clamping
-    particles[id].position = clamp(particles[id].position, 
-                                  uniforms.boundaryMin + uniforms.gridSpacing, 
-                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+//    if (x_n.x < wall_min.x) {
+//        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
+//    }
+//    if (x_n.x > wall_max.x) {
+//        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
+//    }
+//    if (x_n.y < wall_min.y) {
+//        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
+//    }
+//    if (x_n.y > wall_max.y) {
+//        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
+//    }
+//    if (x_n.z < wall_min.z) {
+//        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
+//    }
+//    if (x_n.z > wall_max.z) {
+//        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+//    }
+//    
+//    // Position clamping
+//    particles[id].position = clamp(particles[id].position, 
+//                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+//                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
 }

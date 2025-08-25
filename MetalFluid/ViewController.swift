@@ -30,7 +30,7 @@ class ViewController: UIViewController {
     private var isWireframeMode: Bool = false
 
     // Initial values (shared between sliders and FluidRenderer)
-    private let initialParticleCount: Float = 80000
+    private let initialParticleCount: Float = 1000
     private let initialGridSize: Float = 64
     private let initialGridHeightMultiplier: Float = 1.5
 

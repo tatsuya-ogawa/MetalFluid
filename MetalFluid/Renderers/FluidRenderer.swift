@@ -426,8 +426,11 @@ class MPMFluidRenderer: NSObject {
     internal var frameIndex: Int = 0
     
     // Number of simulation substeps per frame
-    public var simulationSubsteps: Int = 2
-    
+    public var simulationSubsteps: Int {
+        get{
+            return currentMaterialMode == .fluid ? 2 : 1
+        }
+    }
     // Particle sorting configuration
     public var enableParticleSorting: Bool = false
     public var sortingFrequency: Int = 4  // Sort every N frames
@@ -438,7 +441,7 @@ class MPMFluidRenderer: NSObject {
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
     
     // Material mode state
-    public var currentMaterialMode: MaterialMode = .fluid
+    public var currentMaterialMode: MaterialMode = .neoHookeanElastic
     public var youngsModulus: Float = 1e6  // Young's modulus (Pa)
     public var poissonsRatio: Float = 0.3  // Poisson's ratio
     
