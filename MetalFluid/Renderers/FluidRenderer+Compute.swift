@@ -96,6 +96,41 @@ extension MPMFluidRenderer {
                 "Could not create grid to particles pipeline state: \(error)"
             )
         }
+        
+        // Elastic material pipeline states
+        guard
+            let particlesToGridElasticFunction = library.makeFunction(
+                name: "particlesToGridElastic"
+            )
+        else {
+            fatalError("Could not find function 'particlesToGridElastic'")
+        }
+        do {
+            particlesToGridElasticPipelineState = try device.makeComputePipelineState(
+                function: particlesToGridElasticFunction
+            )
+        } catch {
+            fatalError(
+                "Could not create particlesToGridElastic pipeline state: \(error)"
+            )
+        }
+        
+        guard
+            let gridToParticlesElasticFunction = library.makeFunction(
+                name: "gridToParticlesElastic"
+            )
+        else {
+            fatalError("Could not find function 'gridToParticlesElastic'")
+        }
+        do {
+            gridToParticlesElasticPipelineState = try device.makeComputePipelineState(
+                function: gridToParticlesElasticFunction
+            )
+        } catch {
+            fatalError(
+                "Could not create gridToParticlesElastic pipeline state: \(error)"
+            )
+        }
     }
     
     internal func setupParticles() {
@@ -233,33 +268,51 @@ extension MPMFluidRenderer {
                 computeEncoder.endEncoding()
             }
 
-            // 2. Particle to Grid 1 (P2G1) - Transfer mass and momentum from particles to grid
-            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                computeEncoder.setComputePipelineState(
-                    particlesToGrid1PipelineState
-                )
-                computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
-                computeEncoder.dispatchThreadgroups(
-                    particleThreadgroups,
-                    threadsPerThreadgroup: particleThreadsPerThreadgroup
-                )
-                computeEncoder.endEncoding()
-            }
-            // 2.5. Particle to Grid 2 (P2G2) - Add volume and stress-based momentum from particles to grid
-            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                computeEncoder.setComputePipelineState(
-                    particlesToGrid2PipelineState
-                )
-                computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
-                computeEncoder.dispatchThreadgroups(
-                    particleThreadgroups,
-                    threadsPerThreadgroup: particleThreadsPerThreadgroup
-                )
-                computeEncoder.endEncoding()
+            // 2. Particle to Grid (P2G) - Material-dependent transfer
+            if currentMaterialMode == .fluid {
+                // Fluid P2G Phase 1: Transfer mass and momentum from particles to grid
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        particlesToGrid1PipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
+                // Fluid P2G Phase 2: Add volume and stress-based momentum from particles to grid
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        particlesToGrid2PipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
+            } else {
+                // Elastic P2G: Neo-Hookean elastic material transfer
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        particlesToGridElasticPipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
             }
 
             // 3. Update grid velocity - Grid velocity update and boundary condition application
@@ -276,29 +329,57 @@ extension MPMFluidRenderer {
                 computeEncoder.endEncoding()
             }
 
-            // 4. Grid to Particles (G2P) - Transfer velocity and affine momentum from grid to particles
-            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                computeEncoder.setComputePipelineState(
-                    gridToParticlesPipelineState
-                )
-                computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
-                
-                // Set collision resources if available
-                if let collisionManager {
-                    computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+            // 4. Grid to Particles (G2P) - Material-dependent transfer
+            if currentMaterialMode == .fluid {
+                // Fluid G2P: Transfer velocity and affine momentum from grid to particles
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        gridToParticlesPipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     
-                    if let sdfTexture = collisionManager.getSDFTexture() {
-                        computeEncoder.setTexture(sdfTexture, index: 0)
+                    // Set collision resources if available
+                    if let collisionManager {
+                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        
+                        if let sdfTexture = collisionManager.getSDFTexture() {
+                            computeEncoder.setTexture(sdfTexture, index: 0)
+                        }
                     }
+                    
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
                 }
-                
-                computeEncoder.dispatchThreadgroups(
-                    particleThreadgroups,
-                    threadsPerThreadgroup: particleThreadsPerThreadgroup
-                )
-                computeEncoder.endEncoding()
+            } else {
+                // Elastic G2P: Neo-Hookean elastic material transfer
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        gridToParticlesElasticPipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    
+                    // Set collision resources if available
+                    if let collisionManager {
+                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        
+                        if let sdfTexture = collisionManager.getSDFTexture() {
+                            computeEncoder.setTexture(sdfTexture, index: 0)
+                        }
+                    }
+                    
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
             }
         }
     }

@@ -144,6 +144,58 @@ inline uint3 gridXYZ(uint id,constant ComputeShaderUniforms &uniforms){
     return uint3(x,y,z);
 }
 
+// MARK: - Neo-Hookean Elastic Material Functions
+
+// Manual 3x3 matrix inverse function for Metal
+inline float3x3 inverse3x3(float3x3 m,float det) {
+//    float det = determinant(m);
+    if (abs(det) < 1e-12) {
+        // Return identity matrix if determinant is too small
+        return float3x3(1.0);
+    }
+    
+    float inv_det = 1.0 / det;
+    
+    float3x3 inv_m;
+    inv_m[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det;
+    inv_m[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det;
+    inv_m[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det;
+    
+    inv_m[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det;
+    inv_m[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det;
+    inv_m[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det;
+    
+    inv_m[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det;
+    inv_m[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det;
+    inv_m[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det;
+    
+    return inv_m;
+}
+
+// Convert Young's modulus and Poisson's ratio to Lamé parameters
+inline float2 computeLameParameters(float E, float nu) {
+    float lambda = (E * nu) / ((1.0 + nu) * (1.0 - 2.0 * nu));  // First Lamé parameter
+    float mu = E / (2.0 * (1.0 + nu));                           // Shear modulus (second Lamé parameter)
+    return float2(lambda, mu);
+}
+
+// Neo-Hookean energy density derivative (P = dΨ/dF)
+inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
+    float J = determinant(F);
+    float3x3 F_inv_T = transpose(inverse3x3(F,J));
+    
+    // Neo-Hookean model: P = μ(F - F^-T) + λ*ln(J)*F^-T
+    float3x3 P = mu * (F - F_inv_T) + lambda * log(J) * F_inv_T;
+    
+    return P;
+}
+
+// Compute deformation gradient from affine momentum matrix
+inline float3x3 computeDeformationGradient(float3x3 C, float dt) {
+    float3x3 I = float3x3(1.0);  // Identity matrix
+    return I + dt * C;  // F = I + dt * C
+}
+
 // --- Utility: Convert particle position to grid coordinates ---
 inline float3 particleToGridPosition(float3 particlePos, constant ComputeShaderUniforms &uniforms) {
     return (particlePos - uniforms.domainOrigin) / uniforms.gridSpacing;
@@ -350,6 +402,77 @@ kernel void particlesToGrid2(
     }
 }
 
+// Neo-Hookean Elastic Particle to Grid Transfer (P2G)
+kernel void particlesToGridElastic(
+                                 device MPMParticle* particles [[buffer(0)]],
+                                 constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+                                 device MPMGridNode* grid [[buffer(2)]],
+                                 uint id [[thread_position_in_grid]]
+                                 ) {
+    if (id >= uniforms.particleCount) return;
+    
+    MPMParticle particle = particles[id];
+    float3 particlePosition = particle.position;
+    float3 velocity = particle.velocity;
+    float3x3 C = particle.C;
+    
+    // Convert particle position to grid coordinates
+    float3 position, cell_diff;
+    int3 cell_ids;
+    particleToGridCoords(particlePosition, uniforms, position, cell_ids, cell_diff);
+    
+    // Quadratic B-spline weights (shared helper)
+    float3 weights[3];
+    bsplineWeights(cell_diff, weights);
+    
+    // Get Lamé parameters from material properties
+    float2 lame = computeLameParameters(uniforms.youngsModulus, uniforms.poissonsRatio);
+    float lambda = lame.x;
+    float mu = lame.y;
+    
+    // Compute deformation gradient
+    float3x3 F = computeDeformationGradient(C, uniforms.deltaTime);
+    
+    // Compute Neo-Hookean stress
+    float3x3 P = neoHookeanStress(F, lambda, mu);
+    
+    // Particle volume (constant for elastic materials)
+    float volume = uniforms.massScale / uniforms.rest_density;
+    
+    // Transfer to grid nodes
+    for (int gx = 0; gx < 3; gx++) {
+        for (int gy = 0; gy < 3; gy++) {
+            for (int gz = 0; gz < 3; gz++) {
+                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
+                if (cell_idx.x >= 0 && cell_idx.x < uniforms.gridResolution.x &&
+                    cell_idx.y >= 0 && cell_idx.y < uniforms.gridResolution.y &&
+                    cell_idx.z >= 0 && cell_idx.z < uniforms.gridResolution.z) {
+                    uint cell_index = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
+                    
+                    float3 cell_dist = (float3(cell_idx) + 0.5) - position;
+                    float weight = weights[gx].x * weights[gy].y * weights[gz].z;
+                    
+                    // Mass contribution
+                    float mass_contrib = weight * uniforms.massScale;
+                    atomicAddWithUniform(&grid[cell_index].mass, mass_contrib, uniforms);
+                    
+                    // Momentum contribution (mass * velocity)
+                    float3 momentum = mass_contrib * velocity;
+                    atomicAddWithUniform(&grid[cell_index].velocity_x, momentum.x, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_y, momentum.y, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_z, momentum.z, uniforms);
+                    
+                    // Elastic force contribution: -volume * P * grad_w * dt
+                    float3 force = -volume * (P * cell_dist) * uniforms.deltaTime * weight;
+                    atomicAddWithUniform(&grid[cell_index].velocity_x, force.x, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_y, force.y, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_z, force.z, uniforms);
+                }
+            }
+        }
+    }
+}
+
 // MLS-MPM Grid velocity update and boundary conditions
 kernel void updateGridVelocity(
                                device NonAtomicMPMGridNode* grid [[buffer(0)]],
@@ -477,4 +600,111 @@ kernel void gridToParticles(
     
     // Clamp position based on boundaries (direct clamp in world coordinates)
     particles[id].position = clamp(particles[id].position, uniforms.boundaryMin+1.0*uniforms.gridSpacing, uniforms.boundaryMax-2.0*uniforms.gridSpacing);
+}
+
+// Neo-Hookean Elastic Grid to Particle Transfer (G2P)
+kernel void gridToParticlesElastic(
+                                  device MPMParticle* particles [[buffer(0)]],
+                                  constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+                                  device const NonAtomicMPMGridNode* grid [[buffer(2)]],
+                                  texture3d<float> sdfTexture [[texture(0)]],
+                                  constant CollisionUniforms& collision [[buffer(3)]],
+                                  uint id [[thread_position_in_grid]]
+                                  ) {
+    if (id >= uniforms.particleCount) return;
+    
+    MPMParticle p = particles[id];
+    
+    // Convert particle position to grid coordinates
+    float3 position, cell_diff;
+    int3 cell_ids;
+    particleToGridCoords(p.position, uniforms, position, cell_ids, cell_diff);
+    
+    // Quadratic B-spline weights
+    float3 weights[3];
+    bsplineWeights(cell_diff, weights);
+    
+    float3 new_velocity = float3(0.0);
+    float3x3 B = float3x3(0.0); // Velocity gradient for affine momentum
+    
+    // Interpolate from surrounding grid nodes
+    for (int gx = 0; gx < 3; gx++) {
+        for (int gy = 0; gy < 3; gy++) {
+            for (int gz = 0; gz < 3; gz++) {
+                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
+                
+                if (cell_idx.x < 0 || cell_idx.x >= uniforms.gridResolution.x ||
+                    cell_idx.y < 0 || cell_idx.y >= uniforms.gridResolution.y ||
+                    cell_idx.z < 0 || cell_idx.z >= uniforms.gridResolution.z) continue;
+                
+                float weight = weights[gx].x * weights[gy].y * weights[gz].z;
+                uint gridIdx = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
+                
+                float3 grid_velocity = float3(
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_x, uniforms),
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_y, uniforms),
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_z, uniforms)
+                );
+                
+                float3 cell_dist = (float3(cell_idx) + 0.5) - position;
+                
+                new_velocity += weight * grid_velocity;
+                
+                // For elastic materials, we update the deformation gradient instead of traditional APIC
+                // B = sum(w_ip * v_i * x_ip^T) where x_ip is the distance to grid node
+                float3x3 outer_prod = float3x3(
+                    grid_velocity * cell_dist.x,
+                    grid_velocity * cell_dist.y,
+                    grid_velocity * cell_dist.z
+                );
+                B += weight * outer_prod;
+            }
+        }
+    }
+    
+    // Update particle velocity
+    particles[id].velocity = new_velocity;
+    
+    // Update affine momentum matrix (stores velocity gradient information)
+    // For elastic materials, this represents the local deformation rate
+    particles[id].C = B * 4.0; // Scale factor for grid spacing
+    
+    // Update particle position
+    particles[id].position += particles[id].velocity * uniforms.deltaTime;
+    
+    // Boundary conditions for elastic materials
+    const float k = 3.0;
+    const float wall_stiffness = 0.3;
+    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
+    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
+    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+    
+    // Handle mesh collision detection
+    handleCollision(particles[id].position, particles[id].velocity,
+                   particles[id].position, sdfTexture, collision);
+    
+    // Wall collisions
+    if (x_n.x < wall_min.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
+    }
+    if (x_n.x > wall_max.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
+    }
+    if (x_n.y < wall_min.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
+    }
+    if (x_n.y > wall_max.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
+    }
+    if (x_n.z < wall_min.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
+    }
+    if (x_n.z > wall_max.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+    }
+    
+    // Position clamping
+    particles[id].position = clamp(particles[id].position, 
+                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
 }

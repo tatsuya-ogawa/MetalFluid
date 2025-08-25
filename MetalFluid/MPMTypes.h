@@ -53,6 +53,9 @@ typedef struct {
     float dynamic_viscosity; // Dynamic viscosity parameter
     float massScale;       // Mass scaling factor for particles
     uint32_t timeSalt;
+    uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic
+    float youngsModulus;       // Young's modulus for elastic material
+    float poissonsRatio;       // Poisson's ratio for elastic material
 } ComputeShaderUniforms;
 
 // Collision detection uniforms

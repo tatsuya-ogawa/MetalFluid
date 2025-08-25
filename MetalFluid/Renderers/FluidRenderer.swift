@@ -38,6 +38,9 @@ struct ComputeShaderUniforms {
     var dynamic_viscosity: Float
     var massScale: Float
     var timeSalt: UInt32
+    var materialMode: UInt32  // 0: fluid, 1: neo-hookean elastic
+    var youngsModulus: Float  // Young's modulus for elastic material
+    var poissonsRatio: Float  // Poisson's ratio for elastic material
 }
 
 struct CollisionUniforms {
@@ -98,6 +101,10 @@ enum RenderMode {
     case water
 }
 
+enum MaterialMode {
+    case fluid
+    case neoHookeanElastic
+}
 
 enum ParticleRenderMode {
     case pressureHeatmap
@@ -350,6 +357,10 @@ class MPMFluidRenderer: NSObject {
     public var updateGridVelocityPipelineState: MTLComputePipelineState!
     public var gridToParticlesPipelineState: MTLComputePipelineState!
     
+    // Elastic material compute pipeline states
+    public var particlesToGridElasticPipelineState: MTLComputePipelineState!
+    public var gridToParticlesElasticPipelineState: MTLComputePipelineState!
+    
     // Bitonic sort pipeline states
     internal var extractSortKeysPipelineState: MTLComputePipelineState!
     internal var bitonicSortPipelineState: MTLComputePipelineState!
@@ -425,6 +436,11 @@ class MPMFluidRenderer: NSObject {
     // Render mode state
     public var currentRenderMode: RenderMode = .particles
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
+    
+    // Material mode state
+    public var currentMaterialMode: MaterialMode = .fluid
+    public var youngsModulus: Float = 1e6  // Young's modulus (Pa)
+    public var poissonsRatio: Float = 0.3  // Poisson's ratio
     
     // Mode-specific renderers
     internal var particleRenderer: ParticleRenderer!
@@ -722,7 +738,10 @@ class MPMFluidRenderer: NSObject {
             rest_density: restDensity,
             dynamic_viscosity: dynamic_viscosity,
             massScale: massScale,
-            timeSalt: timeSalt
+            timeSalt: timeSalt,
+            materialMode: currentMaterialMode == .fluid ? 0 : 1,  // 0: fluid, 1: neo-hookean elastic
+            youngsModulus: youngsModulus,
+            poissonsRatio: poissonsRatio
         )
     }
     
