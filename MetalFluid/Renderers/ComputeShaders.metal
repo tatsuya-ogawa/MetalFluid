@@ -189,7 +189,7 @@ inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
     float3x3 volumeTensor = log(J) * float3x3(1.0);
     
     // Significantly increased stiffness for gravity resistance
-    float stiffness_multiplier = 1.0;  // Much stronger to resist gravity
+    float stiffness_multiplier = 2.0;  // Much stronger to resist gravity
     float3x3 P = stiffness_multiplier * (mu * deformTensor + lambda * volumeTensor);
     
     // Allow higher stress to resist gravity
