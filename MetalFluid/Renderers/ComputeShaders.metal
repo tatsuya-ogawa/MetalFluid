@@ -144,6 +144,19 @@ inline uint3 gridXYZ(uint id,constant ComputeShaderUniforms &uniforms){
     return uint3(x,y,z);
 }
 
+// MARK: - Rigid Body Material Functions
+
+// Rigid body constraint forces to maintain shape
+inline float3x3 rigidBodyConstraintForce(float3x3 F) {
+    // For rigid body, F should remain close to identity (no deformation)
+    float3x3 I = float3x3(1.0);
+    float3x3 deviation = F - I;
+    
+    // Strong restoring force to maintain rigidity
+    float constraint_strength = 1000.0;  // Very high to enforce rigidity
+    return -constraint_strength * deviation;
+}
+
 // MARK: - Neo-Hookean Elastic Material Functions
 
 // Manual 3x3 matrix inverse function for Metal
@@ -407,6 +420,77 @@ kernel void particlesToGridFluid2(
                     atomicAddWithUniform(&grid[cell_index].velocity_x, momentum.x, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_y, momentum.y, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_z, momentum.z, uniforms);
+                }
+            }
+        }
+    }
+}
+
+// Rigid Body Particle to Grid Transfer (P2G)
+kernel void particlesToGridRigid(
+                                device MPMParticle* particles [[buffer(0)]],
+                                constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+                                device MPMGridNode* grid [[buffer(2)]],
+                                uint id [[thread_position_in_grid]]
+                                ) {
+    if (id >= uniforms.particleCount) return;
+    
+    MPMParticle particle = particles[id];
+    float3 particlePosition = particle.position;
+    float3 velocity = particle.velocity;
+    float3x3 C = particle.C;
+    
+    // Convert particle position to grid coordinates
+    float3 position, cell_diff;
+    int3 cell_ids;
+    particleToGridCoords(particlePosition, uniforms, position, cell_ids, cell_diff);
+    
+    // Quadratic B-spline weights
+    float3 weights[3];
+    bsplineWeights(cell_diff, weights);
+    
+    // Compute deformation gradient
+    float3x3 F = computeDeformationGradient(C, uniforms.deltaTime);
+    
+    // Apply rigid body constraints (very strong forces to prevent deformation)
+    float3x3 P = rigidBodyConstraintForce(F);
+    
+    // Particle volume (constant for rigid body)
+    float volume = uniforms.massScale / uniforms.rest_density;
+    
+    // Transfer to grid nodes
+    for (int gx = 0; gx < 3; gx++) {
+        for (int gy = 0; gy < 3; gy++) {
+            for (int gz = 0; gz < 3; gz++) {
+                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
+                if (cell_idx.x >= 0 && cell_idx.x < uniforms.gridResolution.x &&
+                    cell_idx.y >= 0 && cell_idx.y < uniforms.gridResolution.y &&
+                    cell_idx.z >= 0 && cell_idx.z < uniforms.gridResolution.z) {
+                    uint cell_index = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
+                    
+                    float3 cell_dist = (float3(cell_idx) + 0.5) - position;
+                    float weight = weights[gx].x * weights[gy].y * weights[gz].z;
+                    
+                    // Mass contribution
+                    float mass_contrib = weight * uniforms.massScale;
+                    atomicAddWithUniform(&grid[cell_index].mass, mass_contrib, uniforms);
+                    
+                    // Momentum contribution (mass * velocity)
+                    float3 momentum = mass_contrib * velocity;
+                    atomicAddWithUniform(&grid[cell_index].velocity_x, momentum.x, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_y, momentum.y, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_z, momentum.z, uniforms);
+                    
+                    // Rigid body constraint force: -volume * P * grad_w * dt
+                    float3 force = -volume * (P * cell_dist) * uniforms.deltaTime * weight;
+                    
+                    // Allow very strong forces for rigidity enforcement
+                    const float max_force = 1000.0;  // Very high for rigid body constraints
+                    force = clamp(force, float3(-max_force), float3(max_force));
+                    
+                    atomicAddWithUniform(&grid[cell_index].velocity_x, force.x, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_y, force.y, uniforms);
+                    atomicAddWithUniform(&grid[cell_index].velocity_z, force.z, uniforms);
                 }
             }
         }
@@ -754,6 +838,125 @@ kernel void gridToParticlesElastic(
     
     // Velocity clamping to prevent extreme values while allowing strong elastic motion
     const float max_velocity = 35.0;  // Higher limit for strong elastic response
+    particles[id].velocity = clamp(particles[id].velocity, 
+                                  float3(-max_velocity), 
+                                  float3(max_velocity));
+}
+
+// Rigid Body Grid to Particle Transfer (G2P)
+kernel void gridToParticlesRigid(
+                                device MPMParticle* particles [[buffer(0)]],
+                                constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+                                device const NonAtomicMPMGridNode* grid [[buffer(2)]],
+                                texture3d<float> sdfTexture [[texture(0)]],
+                                constant CollisionUniforms& collision [[buffer(3)]],
+                                uint id [[thread_position_in_grid]]
+                                ) {
+    if (id >= uniforms.particleCount) return;
+    
+    MPMParticle p = particles[id];
+    
+    // Convert particle position to grid coordinates
+    float3 position, cell_diff;
+    int3 cell_ids;
+    particleToGridCoords(p.position, uniforms, position, cell_ids, cell_diff);
+    
+    // Quadratic B-spline weights
+    float3 weights[3];
+    bsplineWeights(cell_diff, weights);
+    
+    float3 new_velocity = float3(0.0);
+    float3x3 B = float3x3(0.0); // Velocity gradient for rigid body
+    
+    // Interpolate from surrounding grid nodes
+    for (int gx = 0; gx < 3; gx++) {
+        for (int gy = 0; gy < 3; gy++) {
+            for (int gz = 0; gz < 3; gz++) {
+                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
+                
+                if (cell_idx.x < 0 || cell_idx.x >= uniforms.gridResolution.x ||
+                    cell_idx.y < 0 || cell_idx.y >= uniforms.gridResolution.y ||
+                    cell_idx.z < 0 || cell_idx.z >= uniforms.gridResolution.z) continue;
+                
+                float weight = weights[gx].x * weights[gy].y * weights[gz].z;
+                uint gridIdx = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
+                
+                float3 grid_velocity = float3(
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_x, uniforms),
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_y, uniforms),
+                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_z, uniforms)
+                );
+                
+                float3 cell_dist = (float3(cell_idx) + 0.5) - position;
+                
+                new_velocity += weight * grid_velocity;
+                
+                // For rigid body, severely constrain deformation
+                float3x3 outer_prod = float3x3(
+                    grid_velocity * cell_dist.x,
+                    grid_velocity * cell_dist.y,
+                    grid_velocity * cell_dist.z
+                );
+                B += weight * outer_prod;
+            }
+        }
+    }
+    
+    // Update particle velocity
+    particles[id].velocity = new_velocity;
+    
+    // For rigid body, severely limit C matrix to prevent deformation
+    float3x3 newC = B * 4.0; // Scale factor for grid spacing
+    
+    // Very strong constraints for rigid body - allow minimal deformation
+    const float max_C_rigid = 0.1;  // Very small to maintain rigidity
+    newC[0] = clamp(newC[0], float3(-max_C_rigid), float3(max_C_rigid));
+    newC[1] = clamp(newC[1], float3(-max_C_rigid), float3(max_C_rigid));
+    newC[2] = clamp(newC[2], float3(-max_C_rigid), float3(max_C_rigid));
+    
+    particles[id].C = newC;
+    
+    // Update particle position
+    particles[id].position += particles[id].velocity * uniforms.deltaTime;
+    
+    // Boundary conditions for rigid body materials
+    const float k = 3.0;
+    const float wall_stiffness = 0.8;  // Strong wall interaction for rigid body
+    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
+    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
+    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+    
+    // Handle mesh collision detection
+    handleCollision(particles[id].position, particles[id].velocity,
+                   particles[id].position, sdfTexture, collision);
+    
+    // Wall collisions with strong response for rigid body
+    if (x_n.x < wall_min.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
+    }
+    if (x_n.x > wall_max.x) {
+        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
+    }
+    if (x_n.y < wall_min.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
+    }
+    if (x_n.y > wall_max.y) {
+        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
+    }
+    if (x_n.z < wall_min.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
+    }
+    if (x_n.z > wall_max.z) {
+        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+    }
+    
+    // Position clamping - Essential for rigid body
+    particles[id].position = clamp(particles[id].position, 
+                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+    
+    // Velocity clamping for rigid body motion
+    const float max_velocity = 50.0;  // Allow fast rigid body motion
     particles[id].velocity = clamp(particles[id].velocity, 
                                   float3(-max_velocity), 
                                   float3(max_velocity));

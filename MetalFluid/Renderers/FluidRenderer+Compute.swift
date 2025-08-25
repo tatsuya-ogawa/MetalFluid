@@ -131,6 +131,41 @@ extension MPMFluidRenderer {
                 "Could not create gridToParticlesElastic pipeline state: \(error)"
             )
         }
+        
+        // Rigid body material pipeline states
+        guard
+            let particlesToGridRigidFunction = library.makeFunction(
+                name: "particlesToGridRigid"
+            )
+        else {
+            fatalError("Could not find function 'particlesToGridRigid'")
+        }
+        do {
+            particlesToGridRigidPipelineState = try device.makeComputePipelineState(
+                function: particlesToGridRigidFunction
+            )
+        } catch {
+            fatalError(
+                "Could not create particlesToGridRigid pipeline state: \(error)"
+            )
+        }
+        
+        guard
+            let gridToParticlesRigidFunction = library.makeFunction(
+                name: "gridToParticlesRigid"
+            )
+        else {
+            fatalError("Could not find function 'gridToParticlesRigid'")
+        }
+        do {
+            gridToParticlesRigidPipelineState = try device.makeComputePipelineState(
+                function: gridToParticlesRigidFunction
+            )
+        } catch {
+            fatalError(
+                "Could not create gridToParticlesRigid pipeline state: \(error)"
+            )
+        }
     }
     
     internal func setupParticles() {
@@ -144,8 +179,8 @@ extension MPMFluidRenderer {
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
         
-        if currentMaterialMode == .neoHookeanElastic {
-            // Dense cube formation for elastic materials
+        if currentMaterialMode == .neoHookeanElastic || currentMaterialMode == .rigidBody {
+            // Dense cube formation for elastic and rigid body materials
             setupElasticCube(particlePointer: particlePointer, center: center, range: range)
         } else {
             // Original spherical distribution for fluid
@@ -373,11 +408,26 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.endEncoding()
                 }
-            } else {
+            } else if currentMaterialMode == .neoHookeanElastic {
                 // Elastic P2G: Neo-Hookean elastic material transfer
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
                         particlesToGridElasticPipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
+            } else { // .rigidBody
+                // Rigid Body P2G: Rigid body material transfer
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        particlesToGridRigidPipelineState
                     )
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
@@ -430,11 +480,36 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.endEncoding()
                 }
-            } else {
+            } else if currentMaterialMode == .neoHookeanElastic {
                 // Elastic G2P: Neo-Hookean elastic material transfer
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesElasticPipelineState
+                    )
+                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    
+                    // Set collision resources if available
+                    if let collisionManager {
+                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        
+                        if let sdfTexture = collisionManager.getSDFTexture() {
+                            computeEncoder.setTexture(sdfTexture, index: 0)
+                        }
+                    }
+                    
+                    computeEncoder.dispatchThreadgroups(
+                        particleThreadgroups,
+                        threadsPerThreadgroup: particleThreadsPerThreadgroup
+                    )
+                    computeEncoder.endEncoding()
+                }
+            } else { // .rigidBody
+                // Rigid Body G2P: Rigid body material transfer
+                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                    computeEncoder.setComputePipelineState(
+                        gridToParticlesRigidPipelineState
                     )
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)

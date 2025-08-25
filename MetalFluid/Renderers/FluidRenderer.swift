@@ -104,6 +104,7 @@ enum RenderMode {
 enum MaterialMode {
     case fluid
     case neoHookeanElastic
+    case rigidBody
 }
 
 enum ParticleRenderMode {
@@ -361,6 +362,10 @@ class MPMFluidRenderer: NSObject {
     public var particlesToGridElasticPipelineState: MTLComputePipelineState!
     public var gridToParticlesElasticPipelineState: MTLComputePipelineState!
     
+    // Rigid body material compute pipeline states
+    public var particlesToGridRigidPipelineState: MTLComputePipelineState!
+    public var gridToParticlesRigidPipelineState: MTLComputePipelineState!
+    
     // Bitonic sort pipeline states
     internal var extractSortKeysPipelineState: MTLComputePipelineState!
     internal var bitonicSortPipelineState: MTLComputePipelineState!
@@ -428,7 +433,14 @@ class MPMFluidRenderer: NSObject {
     // Number of simulation substeps per frame
     public var simulationSubsteps: Int {
         get{
-            return currentMaterialMode == .fluid ? 2 : 1
+            switch currentMaterialMode {
+            case .fluid:
+                return 2
+            case .neoHookeanElastic:
+                return 1
+            case .rigidBody:
+                return 1  // Rigid body is stable with single substep
+            }
         }
     }
     // Particle sorting configuration
@@ -441,7 +453,7 @@ class MPMFluidRenderer: NSObject {
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
     
     // Material mode state
-    public var currentMaterialMode: MaterialMode = .neoHookeanElastic
+    public var currentMaterialMode: MaterialMode = .rigidBody
     public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
     public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
     
@@ -474,6 +486,8 @@ class MPMFluidRenderer: NSObject {
                 return  -2.5 //-9.81
             case .neoHookeanElastic:
                 return -1.0
+            case .rigidBody:
+                return -2.0  // Standard gravity for rigid body
             }
         }
     }
