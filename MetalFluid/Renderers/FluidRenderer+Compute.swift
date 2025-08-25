@@ -27,19 +27,19 @@ extension MPMFluidRenderer {
 
         // Particles to grid 1 pipeline
         guard
-            let particlesToGrid1Function = library.makeFunction(
-                name: "particlesToGrid1"
+            let particlesToGridFluidFunction = library.makeFunction(
+                name: "particlesToGridFluid"
             )
         else {
-            fatalError("Could not find function 'particlesToGrid1'")
+            fatalError("Could not find function 'particlesToGridFluid'")
         }
         do {
-            particlesToGrid1PipelineState = try device.makeComputePipelineState(
-                function: particlesToGrid1Function
+            particlesToGridFluidPipelineState = try device.makeComputePipelineState(
+                function: particlesToGridFluidFunction
             )
         } catch {
             fatalError(
-                "Could not create particlesToGrid1 pipeline state: \(error)"
+                "Could not create particlesToGridFluid pipeline state: \(error)"
             )
         }
         // Particles to grid 2 pipeline
@@ -81,19 +81,19 @@ extension MPMFluidRenderer {
 
         // Grid to particles pipeline
         guard
-            let gridToParticlesFunction = library.makeFunction(
-                name: "gridToParticles"
+            let gridToParticlesFluidFunction = library.makeFunction(
+                name: "gridToParticlesFluid"
             )
         else {
-            fatalError("Could not find function 'gridToParticles'")
+            fatalError("Could not find function 'gridToParticlesFluid'")
         }
         do {
-            gridToParticlesPipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesFunction
+            gridToParticlesFluidPipelineState = try device.makeComputePipelineState(
+                function: gridToParticlesFluidFunction
             )
         } catch {
             fatalError(
-                "Could not create grid to particles pipeline state: \(error)"
+                "Could not create gridToParticlesFluid pipeline state: \(error)"
             )
         }
         
@@ -224,7 +224,7 @@ extension MPMFluidRenderer {
             256
         )
         let particleThreadgroupSize = min(
-            particlesToGrid1PipelineState.maxTotalThreadsPerThreadgroup,
+            particlesToGridFluidPipelineState.maxTotalThreadsPerThreadgroup,
             256
         )
 
@@ -273,7 +273,7 @@ extension MPMFluidRenderer {
                 // Fluid P2G Phase 1: Transfer mass and momentum from particles to grid
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
-                        particlesToGrid1PipelineState
+                        particlesToGridFluidPipelineState
                     )
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
@@ -334,7 +334,7 @@ extension MPMFluidRenderer {
                 // Fluid G2P: Transfer velocity and affine momentum from grid to particles
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
-                        gridToParticlesPipelineState
+                        gridToParticlesFluidPipelineState
                     )
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
