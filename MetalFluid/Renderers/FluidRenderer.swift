@@ -162,20 +162,29 @@ class ParticleRenderer: ModeRenderer {
             renderPassDescriptor.depthAttachment.texture = depthBuffer
             renderPassDescriptor.depthAttachment.loadAction = .clear
             renderPassDescriptor.depthAttachment.clearDepth = 1.0
-            renderPassDescriptor.depthAttachment.storeAction = .dontCare
+            renderPassDescriptor.depthAttachment.storeAction = .store
         }
         
-        // Render particles and collision mesh in the same render encoder
+        // Render mesh and particles with new ordering
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(
             descriptor: renderPassDescriptor
         ) {
-            // Render particles first
+            // Step 1: Render collision mesh with depth writing enabled
+            renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+            
+            // Step 2: Create a new depth stencil state for particles that tests depth but doesn't write
+            let particleDepthStencilDescriptor = MTLDepthStencilDescriptor()
+            particleDepthStencilDescriptor.depthCompareFunction = .less
+            particleDepthStencilDescriptor.isDepthWriteEnabled = false  // Don't write depth for transparent particles
+            let particleDepthStencilState = renderer.device.makeDepthStencilState(descriptor: particleDepthStencilDescriptor)!
+            
+            // Step 3: Render particles with depth testing but transparent blending
             guard let pipelineState = renderer.pressureHeatmapPipelineState else{
                 fatalError("Unable to select pipeline state")
             }
             
             renderEncoder.setRenderPipelineState(pipelineState)
-            renderEncoder.setDepthStencilState(renderer.depthStencilState)
+            renderEncoder.setDepthStencilState(particleDepthStencilState)
             renderEncoder.setVertexBuffer(renderer.particleBuffer, offset: 0, index: 0)
             renderEncoder.setVertexBuffer(renderer.vertexUniformBuffer, offset: 0, index: 1)
             
@@ -189,9 +198,6 @@ class ParticleRenderer: ModeRenderer {
                 vertexStart: 0,
                 vertexCount: renderer.particleCount
             )
-            
-            // Render collision mesh in the same encoder
-            renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
             
             renderEncoder.endEncoding()
         }
@@ -268,20 +274,45 @@ class WaterRenderer: ModeRenderer {
             invViewMatrix: invViewMatrix
         )
         
+        // Ensure depth buffer is available for mesh rendering
+        if renderPassDescriptor.depthAttachment.texture == nil {
+            let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .depth32Float,
+                width: Int(screenSize.x),
+                height: Int(screenSize.y),
+                mipmapped: false
+            )
+            depthTextureDescriptor.usage = .renderTarget
+            let depthBuffer = renderer.device.makeTexture(descriptor: depthTextureDescriptor)!
+            
+            renderPassDescriptor.depthAttachment.texture = depthBuffer
+            renderPassDescriptor.depthAttachment.loadAction = .clear
+            renderPassDescriptor.depthAttachment.clearDepth = 1.0
+            renderPassDescriptor.depthAttachment.storeAction = .store
+        }
+        
         guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             return
         }
         
+        // Step 1: Render collision mesh with depth writing enabled first
+        renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+        
+        // Step 2: Create depth stencil state for fluid surface that tests depth but can write
+        let fluidDepthStencilDescriptor = MTLDepthStencilDescriptor()
+        fluidDepthStencilDescriptor.depthCompareFunction = .less
+        fluidDepthStencilDescriptor.isDepthWriteEnabled = true  // Fluid can write depth since it outputs depth from fragment shader
+        let fluidDepthStencilState = renderer.device.makeDepthStencilState(descriptor: fluidDepthStencilDescriptor)!
+        
+        // Step 3: Render fluid surface with depth testing and blending
         renderEncoder.setRenderPipelineState(renderer.fluidSurfacePipelineState)
+        renderEncoder.setDepthStencilState(fluidDepthStencilState)
         renderEncoder.setVertexBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
         renderEncoder.setFragmentTexture(renderer.depthTexture, index: 0)
         renderEncoder.setFragmentTexture(renderer.filteredThicknessTexture, index: 1)
         renderEncoder.setFragmentTexture(renderer.environmentTexture, index: 2)
         renderEncoder.setFragmentBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        
-        // Render collision mesh in the same encoder
-        renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
         
         renderEncoder.endEncoding()
         

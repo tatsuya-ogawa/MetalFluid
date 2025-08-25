@@ -350,8 +350,14 @@ vertex FluidFragmentInput fluidVertexShader(
     return out;
 }
 
+// Output structure for fluid fragment shader with depth
+struct FluidFragmentOutput {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
+};
+
 // Fluid surface rendering fragment shader
-fragment float4 fluidFragmentShader(
+fragment FluidFragmentOutput fluidFragmentShader(
     FluidFragmentInput input [[stage_in]],
     texture2d<float> depthTexture [[texture(0)]],
     texture2d<float> thicknessTexture [[texture(1)]],
@@ -365,8 +371,15 @@ fragment float4 fluidFragmentShader(
     float3 bgColor = float3(0.8, 0.8, 0.8);
     
     if (depth >= 1e4 || depth <= 0.0) {
-        return float4(bgColor, 1.0);
+        FluidFragmentOutput output;
+        output.color = float4(bgColor, 1.0);
+        output.depth = 1.0;  // Far depth for background
+        return output;
     }
+    
+    // Convert view space depth to NDC depth for depth buffer
+    float4 clipPos = uniforms.projectionMatrix * float4(0, 0, -depth, 1.0);
+    float ndcDepth = clipPos.z / clipPos.w;
     
     float3 viewPos = computeViewPosFromUVDepth(input.uv, depth, uniforms);
     
@@ -412,7 +425,10 @@ fragment float4 fluidFragmentShader(
     float3 reflectionColor = envmapTexture.sample(textureSampler, reflectionDirWorld).rgb;
     float3 finalColor = 1.0 * specular + mix(refractionColor, reflectionColor, fresnel);
     
-    return float4(finalColor, 1.0);
+    FluidFragmentOutput output;
+    output.color = float4(finalColor, 1.0);
+    output.depth = ndcDepth;  // Output the fluid surface depth
+    return output;
 }
 
 // Thickness rendering shaders

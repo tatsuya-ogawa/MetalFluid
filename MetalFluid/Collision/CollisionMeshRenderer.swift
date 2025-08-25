@@ -74,15 +74,9 @@ class CollisionMeshRenderer {
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
         
-        // Enable blending for transparency
+        // Disable blending for opaque mesh rendering
         let colorAttachment = pipelineDescriptor.colorAttachments[0]!
-        colorAttachment.isBlendingEnabled = true
-        colorAttachment.rgbBlendOperation = .add
-        colorAttachment.alphaBlendOperation = .add
-        colorAttachment.sourceRGBBlendFactor = .sourceAlpha
-        colorAttachment.sourceAlphaBlendFactor = .sourceAlpha
-        colorAttachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        colorAttachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        colorAttachment.isBlendingEnabled = false
         
         do {
             solidPipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
@@ -104,15 +98,9 @@ class CollisionMeshRenderer {
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
         
-        // Enable blending for wireframe
+        // Disable blending for wireframe mesh rendering  
         let colorAttachment = pipelineDescriptor.colorAttachments[0]!
-        colorAttachment.isBlendingEnabled = true
-        colorAttachment.rgbBlendOperation = .add
-        colorAttachment.alphaBlendOperation = .add
-        colorAttachment.sourceRGBBlendFactor = .sourceAlpha
-        colorAttachment.sourceAlphaBlendFactor = .sourceAlpha
-        colorAttachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        colorAttachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        colorAttachment.isBlendingEnabled = false
         
         do {
             wireframePipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
