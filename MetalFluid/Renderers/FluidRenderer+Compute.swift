@@ -224,7 +224,9 @@ extension MPMFluidRenderer {
                         position: pos + randomOffset,
                         velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                         C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                        mass: particleMass
+                        mass: particleMass,
+                        rigidId: currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                        initialOffset: currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
                     )
                     
                     particleIndex += 1
@@ -246,7 +248,9 @@ extension MPMFluidRenderer {
                 position: pos,
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                 C: simd_float3x3(0.0),
-                mass: particleMass
+                mass: particleMass,
+                rigidId: currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                initialOffset: currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
             )
             
             particleIndex += 1
@@ -297,7 +301,9 @@ extension MPMFluidRenderer {
                 position: finalPos,
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
                 C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                mass: particleMass
+                mass: particleMass,
+                rigidId: 0,  // Fluid particles don't belong to rigid bodies
+                initialOffset: SIMD3<Float>(0, 0, 0)
             )
         }
         

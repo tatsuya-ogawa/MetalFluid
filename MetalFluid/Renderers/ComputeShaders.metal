@@ -961,3 +961,220 @@ kernel void gridToParticlesRigid(
                                   float3(-max_velocity), 
                                   float3(max_velocity));
 }
+
+// ==============================================
+// RIGID BODY PROJECTION SYSTEM
+// ==============================================
+
+// --- Utility functions for rigid body dynamics ---
+
+// Convert quaternion to rotation matrix
+inline float3x3 quatToMatrix(float4 q) {
+    float x = q.x, y = q.y, z = q.z, w = q.w;
+    
+    return float3x3(
+        float3(1.0 - 2.0*(y*y + z*z), 2.0*(x*y - w*z), 2.0*(x*z + w*y)),
+        float3(2.0*(x*y + w*z), 1.0 - 2.0*(x*x + z*z), 2.0*(y*z - w*x)),
+        float3(2.0*(x*z - w*y), 2.0*(y*z + w*x), 1.0 - 2.0*(x*x + y*y))
+    );
+}
+
+// Normalize quaternion to avoid drift
+inline float4 normalizeQuat(float4 q) {
+    float len = sqrt(dot(q, q));
+    if (len < 1e-8) {
+        return float4(0, 0, 0, 1); // Identity quaternion
+    }
+    return q / len;
+}
+
+// Integrate angular velocity into quaternion
+inline float4 integrateAngularVelocity(float4 q, float3 omega, float dt) {
+    if (length(omega) < 1e-8) return q;
+    
+    float angle = length(omega) * dt * 0.5;
+    float3 axis = normalize(omega);
+    
+    float4 deltaQ = float4(sin(angle) * axis.x, sin(angle) * axis.y, sin(angle) * axis.z, cos(angle));
+    
+    // Quaternion multiplication: deltaQ * q
+    float4 result;
+    result.w = deltaQ.w * q.w - dot(deltaQ.xyz, q.xyz);
+    result.xyz = deltaQ.w * q.xyz + q.w * deltaQ.xyz + cross(deltaQ.xyz, q.xyz);
+    
+    return normalizeQuat(result);
+}
+
+// Stage 1: Accumulate forces and torques from particles to rigid bodies
+kernel void accumulateRigidBodyForces(
+    device const MPMParticle* particles [[buffer(0)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+    device RigidBodyState* rigidBodies [[buffer(2)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= uniforms.particleCount) return;
+    
+    MPMParticle p = particles[id];
+    
+    // Skip particles that don't belong to any rigid body
+    if (p.rigidId == 0) return;
+    
+    uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
+    if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
+    
+    // Calculate force on this particle (F = ma, approximating acceleration from velocity change)
+    float3 acceleration = (p.velocity) / max(uniforms.deltaTime, 1e-6); // Simplified force calculation
+    float3 force = p.mass * acceleration;
+    
+    // Add gravity force
+    force.y += p.mass * uniforms.gravity;
+    
+    // Accumulate linear force - use separate atomic additions for each component
+    device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
+    atomic_fetch_add_explicit(&forcePtr[0], force.x, memory_order_relaxed);
+    atomic_fetch_add_explicit(&forcePtr[1], force.y, memory_order_relaxed);
+    atomic_fetch_add_explicit(&forcePtr[2], force.z, memory_order_relaxed);
+    
+    // Calculate torque: τ = r × F
+    float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
+    float3 torque = cross(r, force);
+    
+    // Accumulate angular torque - use separate atomic additions for each component
+    device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
+    atomic_fetch_add_explicit(&torquePtr[0], torque.x, memory_order_relaxed);
+    atomic_fetch_add_explicit(&torquePtr[1], torque.y, memory_order_relaxed);
+    atomic_fetch_add_explicit(&torquePtr[2], torque.z, memory_order_relaxed);
+}
+
+// Stage 2: Update rigid body dynamics (one thread per rigid body)
+kernel void updateRigidBodyDynamics(
+    device RigidBodyState* rigidBodies [[buffer(0)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= uniforms.rigidBodyCount) return;
+    
+    device RigidBodyState& rb = rigidBodies[id];
+    if (!rb.isActive) return;
+    
+    float dt = uniforms.deltaTime;
+    
+    // Linear dynamics: F = ma → a = F/m
+    float3 linearAcceleration = rb.accumulatedForce / max(rb.totalMass, 1e-6);
+    rb.linearVelocity += linearAcceleration * dt;
+    rb.centerOfMass += rb.linearVelocity * dt;
+    
+    // Angular dynamics: τ = Iα → α = I⁻¹τ
+    float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque;
+    rb.angularVelocity += angularAcceleration * dt;
+    
+    // Update orientation using angular velocity
+    rb.orientation = integrateAngularVelocity(rb.orientation, rb.angularVelocity, dt);
+    
+    // Apply damping to prevent excessive rotation
+    rb.angularVelocity *= 0.99;
+    rb.linearVelocity *= 0.999;
+    
+    // Clear accumulated forces and torques for next frame
+    rb.accumulatedForce = float3(0, 0, 0);
+    rb.accumulatedTorque = float3(0, 0, 0);
+}
+
+// Stage 3: Project particles to maintain rigid body constraints
+kernel void projectRigidBodies(
+    device MPMParticle* particles [[buffer(0)]],
+    device const RigidBodyState* rigidBodies [[buffer(1)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(2)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= uniforms.particleCount) return;
+    
+    device MPMParticle& p = particles[id];
+    
+    // Skip particles that don't belong to any rigid body
+    if (p.rigidId == 0) return;
+    
+    uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
+    if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
+    
+    device const RigidBodyState& rb = rigidBodies[rigidBodyIdx];
+    if (!rb.isActive) return;
+    
+    // Get rotation matrix from quaternion
+    float3x3 R = quatToMatrix(rb.orientation);
+    
+    // Calculate new particle position: x_p = x_cm + R * r_p0
+    float3 rotatedOffset = R * p.initialOffset;
+    float3 newPosition = rb.centerOfMass + rotatedOffset;
+    
+    // Calculate new particle velocity: v_p = v_cm + ω × (R * r_p0)
+    float3 angularContribution = cross(rb.angularVelocity, rotatedOffset);
+    float3 newVelocity = rb.linearVelocity + angularContribution;
+    
+    // Update particle state
+    p.position = newPosition;
+    p.velocity = newVelocity;
+    
+    // Reset C matrix to prevent deformation in rigid bodies
+    p.C = float3x3(0.0);
+    
+    // Apply boundary constraints
+    float3 boundaryMin = uniforms.boundaryMin + uniforms.gridSpacing;
+    float3 boundaryMax = uniforms.boundaryMax - uniforms.gridSpacing;
+    
+    p.position = clamp(p.position, boundaryMin, boundaryMax);
+    
+    // Clamp velocity to prevent instabilities
+    const float maxVel = 100.0;
+    p.velocity = clamp(p.velocity, float3(-maxVel), float3(maxVel));
+}
+
+// Initialize rigid body state (called once during setup)
+kernel void initializeRigidBodies(
+    device RigidBodyState* rigidBodies [[buffer(0)]],
+    device const MPMParticle* particles [[buffer(1)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(2)]],
+    uint rigidBodyId [[thread_position_in_grid]]
+) {
+    if (rigidBodyId >= uniforms.rigidBodyCount) return;
+    
+    device RigidBodyState& rb = rigidBodies[rigidBodyId];
+    uint actualRigidId = rigidBodyId + 1; // Convert to 1-based ID
+    
+    // Calculate center of mass and total mass
+    float3 centerOfMass = float3(0, 0, 0);
+    float totalMass = 0.0;
+    uint particleCount = 0;
+    
+    for (uint i = 0; i < uniforms.particleCount; ++i) {
+        if (particles[i].rigidId == actualRigidId) {
+            centerOfMass += particles[i].position * particles[i].mass;
+            totalMass += particles[i].mass;
+            particleCount++;
+        }
+    }
+    
+    if (totalMass > 0.0) {
+        centerOfMass /= totalMass;
+    }
+    
+    // Initialize rigid body state
+    rb.centerOfMass = centerOfMass;
+    rb.linearVelocity = float3(0, 0, 0);
+    rb.angularVelocity = float3(0, 0, 0);
+    rb.orientation = float4(0, 0, 0, 1); // Identity quaternion
+    rb.totalMass = totalMass;
+    rb.particleCount = particleCount;
+    rb.isActive = (particleCount > 0) ? 1 : 0;
+    rb.accumulatedForce = float3(0, 0, 0);
+    rb.accumulatedTorque = float3(0, 0, 0);
+    
+    // Calculate inertia tensor (simplified - assume uniform density cube)
+    float size = 1.0; // Approximate size, could be calculated more precisely
+    float I = totalMass * size * size / 6.0; // Moment of inertia for cube
+    rb.invInertiaTensor = float3x3(
+        float3(1.0/I, 0, 0),
+        float3(0, 1.0/I, 0),
+        float3(0, 0, 1.0/I)
+    );
+}

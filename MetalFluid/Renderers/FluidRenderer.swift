@@ -9,6 +9,8 @@ struct MPMParticle {
     var velocity: SIMD3<Float>  // Velocity
     var C: simd_float3x3  // Affine momentum matrix (3D)
     var mass: Float  // Mass
+    var rigidId: UInt32  // Rigid body ID (0 = no rigid body, >0 = rigid body index)
+    var initialOffset: SIMD3<Float>  // Initial relative position from rigid body center of mass
     //    var volume: Float             // Volume
     //    var Jp: Float  // Plastic deformation determinant
     //    var color: SIMD3<Float>  // Rendering color
@@ -38,9 +40,10 @@ struct ComputeShaderUniforms {
     var dynamic_viscosity: Float
     var massScale: Float
     var timeSalt: UInt32
-    var materialMode: UInt32  // 0: fluid, 1: neo-hookean elastic
+    var materialMode: UInt32  // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     var youngsModulus: Float  // Young's modulus for elastic material
     var poissonsRatio: Float  // Poisson's ratio for elastic material
+    var rigidBodyCount: UInt32  // Number of active rigid bodies
 }
 
 struct CollisionUniforms {
@@ -94,6 +97,20 @@ struct GaussianUniforms {
 struct SortKey {
     var key: UInt32      // Grid index as sort key
     var value: UInt32    // Original particle index
+}
+
+// Rigid Body state for complete rigid body dynamics
+struct RigidBodyState {
+    var centerOfMass: SIMD3<Float>          // Center of mass position
+    var linearVelocity: SIMD3<Float>        // Linear velocity
+    var angularVelocity: SIMD3<Float>       // Angular velocity
+    var orientation: SIMD4<Float>           // Orientation quaternion (x, y, z, w)
+    var totalMass: Float                    // Total mass of rigid body
+    var invInertiaTensor: simd_float3x3     // Inverse inertia tensor (world space)
+    var accumulatedForce: SIMD3<Float>      // Accumulated force for this frame
+    var accumulatedTorque: SIMD3<Float>     // Accumulated torque for this frame
+    var particleCount: UInt32               // Number of particles in this rigid body
+    var isActive: UInt32                    // 1 if active, 0 if inactive
 }
 
 enum RenderMode {
@@ -765,9 +782,10 @@ class MPMFluidRenderer: NSObject {
             dynamic_viscosity: dynamic_viscosity,
             massScale: massScale,
             timeSalt: timeSalt,
-            materialMode: currentMaterialMode == .fluid ? 0 : 1,  // 0: fluid, 1: neo-hookean elastic
+            materialMode: UInt32(currentMaterialMode == .fluid ? 0 : (currentMaterialMode == .neoHookeanElastic ? 1 : 2)),  // 0: fluid, 1: elastic, 2: rigid
             youngsModulus: youngsModulus,
-            poissonsRatio: poissonsRatio
+            poissonsRatio: poissonsRatio,
+            rigidBodyCount: currentMaterialMode == .rigidBody ? 1 : 0
         )
     }
     

@@ -18,6 +18,8 @@ typedef struct {
     float3 velocity;        // Velocity
     metal::float3x3 C;            // Affine momentum matrix
     float mass;           // Mass
+    uint32_t rigidId;     // Rigid body ID (0 = no rigid body, >0 = rigid body index)
+    float3 initialOffset; // Initial relative position from rigid body center of mass
 //    float volume;         // Volume
 //    float Jp;             // Plastic deformation determinant
 //    float3 color;         // Rendering color
@@ -37,6 +39,20 @@ typedef struct {
     MPM_NON_ATOMIC_FLOAT mass;           // atomic<float> mass (Metal) / float (Swift)
 } NonAtomicMPMGridNode;
 
+// Rigid body state for complete rigid body dynamics
+typedef struct {
+    simd_float3 centerOfMass;          // Center of mass position
+    simd_float3 linearVelocity;        // Linear velocity
+    simd_float3 angularVelocity;       // Angular velocity
+    float4 orientation;                // Orientation quaternion (x, y, z, w)
+    float totalMass;                   // Total mass of rigid body
+    simd_float3x3 invInertiaTensor;    // Inverse inertia tensor (world space)
+    simd_float3 accumulatedForce;      // Accumulated force for this frame
+    simd_float3 accumulatedTorque;     // Accumulated torque for this frame
+    uint32_t particleCount;            // Number of particles in this rigid body
+    uint32_t isActive;                 // 1 if active, 0 if inactive
+} RigidBodyState;
+
 // Compute shader specific uniforms
 typedef struct {
     float deltaTime;
@@ -53,9 +69,10 @@ typedef struct {
     float dynamic_viscosity; // Dynamic viscosity parameter
     float massScale;       // Mass scaling factor for particles
     uint32_t timeSalt;
-    uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic
+    uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     float youngsModulus;       // Young's modulus for elastic material
     float poissonsRatio;       // Poisson's ratio for elastic material
+    uint32_t rigidBodyCount;   // Number of active rigid bodies
 } ComputeShaderUniforms;
 
 // Collision detection uniforms
