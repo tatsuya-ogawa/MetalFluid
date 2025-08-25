@@ -382,6 +382,12 @@ class MPMFluidRenderer: NSObject {
     // Rigid body material compute pipeline states
     public var particlesToGridRigidPipelineState: MTLComputePipelineState!
     public var gridToParticlesRigid1PipelineState: MTLComputePipelineState!
+    public var gridToParticlesRigid2PipelineState: MTLComputePipelineState!
+    public var gridToParticlesRigid3PipelineState: MTLComputePipelineState!
+    public var gridToParticlesRigid4PipelineState: MTLComputePipelineState!
+    
+    // Rigid body state buffer
+    public var rigidBodyStateBuffer: MTLBuffer!
     
     // Bitonic sort pipeline states
     internal var extractSortKeysPipelineState: MTLComputePipelineState!
@@ -661,6 +667,14 @@ class MPMFluidRenderer: NSObject {
         let gaussianUniformSize = MemoryLayout<GaussianUniforms>.stride
         gaussianUniformBuffer = device.makeBuffer(
             length: gaussianUniformSize,
+            options: .storageModeShared
+        )!
+        
+        // Rigid body state buffer
+        let maxRigidBodies = 10  // Maximum number of rigid bodies
+        let rigidBodyBufferSize = MemoryLayout<RigidBodyState>.stride * maxRigidBodies
+        rigidBodyStateBuffer = device.makeBuffer(
+            length: rigidBodyBufferSize,
             options: .storageModeShared
         )!
     }
