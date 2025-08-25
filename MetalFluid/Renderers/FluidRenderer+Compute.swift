@@ -151,19 +151,19 @@ extension MPMFluidRenderer {
         }
         
         guard
-            let gridToParticlesRigidFunction = library.makeFunction(
-                name: "gridToParticlesRigid"
+            let gridToParticlesRigid1Function = library.makeFunction(
+                name: "gridToParticlesRigid1"
             )
         else {
-            fatalError("Could not find function 'gridToParticlesRigid'")
+            fatalError("Could not find function 'gridToParticlesRigid1'")
         }
         do {
-            gridToParticlesRigidPipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesRigidFunction
+            gridToParticlesRigid1PipelineState = try device.makeComputePipelineState(
+                function: gridToParticlesRigid1Function
             )
         } catch {
             fatalError(
-                "Could not create gridToParticlesRigid pipeline state: \(error)"
+                "Could not create gridToParticlesRigid1 pipeline state: \(error)"
             )
         }
     }
@@ -515,7 +515,7 @@ extension MPMFluidRenderer {
                 // Rigid Body G2P: Rigid body material transfer
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
-                        gridToParticlesRigidPipelineState
+                        gridToParticlesRigid1PipelineState
                     )
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)

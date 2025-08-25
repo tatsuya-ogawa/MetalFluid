@@ -381,7 +381,7 @@ class MPMFluidRenderer: NSObject {
     
     // Rigid body material compute pipeline states
     public var particlesToGridRigidPipelineState: MTLComputePipelineState!
-    public var gridToParticlesRigidPipelineState: MTLComputePipelineState!
+    public var gridToParticlesRigid1PipelineState: MTLComputePipelineState!
     
     // Bitonic sort pipeline states
     internal var extractSortKeysPipelineState: MTLComputePipelineState!

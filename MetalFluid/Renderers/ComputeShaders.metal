@@ -844,7 +844,7 @@ kernel void gridToParticlesElastic(
 }
 
 // Rigid Body Grid to Particle Transfer (G2P)
-kernel void gridToParticlesRigid(
+kernel void gridToParticlesRigid1(
                                 device MPMParticle* particles [[buffer(0)]],
                                 constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                 device const NonAtomicMPMGridNode* grid [[buffer(2)]],
@@ -951,9 +951,10 @@ kernel void gridToParticlesRigid(
     }
     
     // Position clamping - Essential for rigid body
-    particles[id].position = clamp(particles[id].position, 
-                                  uniforms.boundaryMin + uniforms.gridSpacing, 
-                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+//    particles[id].position = clamp(particles[id].position, 
+//                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+//                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
+    particles[id].position = position; //revert position for rigidbody update
     
     // Velocity clamping for rigid body motion
     const float max_velocity = 50.0;  // Allow fast rigid body motion
@@ -1006,7 +1007,7 @@ inline float4 integrateAngularVelocity(float4 q, float3 omega, float dt) {
 }
 
 // Stage 1: Accumulate forces and torques from particles to rigid bodies
-kernel void accumulateRigidBodyForces(
+kernel void gridToParticlesRigid2(
     device const MPMParticle* particles [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     device RigidBodyState* rigidBodies [[buffer(2)]],
@@ -1047,7 +1048,7 @@ kernel void accumulateRigidBodyForces(
 }
 
 // Stage 2: Update rigid body dynamics (one thread per rigid body)
-kernel void updateRigidBodyDynamics(
+kernel void gridToParticlesRigid3(
     device RigidBodyState* rigidBodies [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     uint id [[thread_position_in_grid]]
@@ -1081,7 +1082,7 @@ kernel void updateRigidBodyDynamics(
 }
 
 // Stage 3: Project particles to maintain rigid body constraints
-kernel void projectRigidBodies(
+kernel void gridToParticlesRigid4(
     device MPMParticle* particles [[buffer(0)]],
     device const RigidBodyState* rigidBodies [[buffer(1)]],
     constant ComputeShaderUniforms& uniforms [[buffer(2)]],
