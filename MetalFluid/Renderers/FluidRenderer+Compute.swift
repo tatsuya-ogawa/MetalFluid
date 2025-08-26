@@ -230,14 +230,15 @@ extension MPMFluidRenderer {
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
         
-        if currentMaterialMode == .neoHookeanElastic || currentMaterialMode == .rigidBody {
+        if currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
             setupElasticCube(particlePointer: particlePointer, center: center, range: range)
             
+        } else if currentMaterialMode == .rigidBody{
+            // Original spherical distribution for fluid
+            setupFluidSphere(particlePointer: particlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
             // Initialize rigid body states if in rigid body mode
-            if currentMaterialMode == .rigidBody {
-                initializeRigidBodyStates()
-            }
+            initializeRigidBodyStates()
         } else {
             // Original spherical distribution for fluid
             setupFluidSphere(particlePointer: particlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
