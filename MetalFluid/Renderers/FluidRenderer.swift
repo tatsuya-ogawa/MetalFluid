@@ -480,7 +480,7 @@ class MPMFluidRenderer: NSObject {
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
     
     // Material mode state
-    public var currentMaterialMode: MaterialMode = .rigidBody
+    public var currentMaterialMode: MaterialMode = .fluid
     public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
     public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
     

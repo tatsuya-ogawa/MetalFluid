@@ -226,6 +226,72 @@ inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
     return P;
 }
 
+// Friction projection following taichi-mpm approach
+// Projects velocity considering boundary friction and normal constraints
+inline float3 frictionProject(float3 velocity, float3 baseVelocity, float3 normal, float friction) {
+    float3 relativeVel = velocity - baseVelocity;
+    
+    // Special case: sticky boundary (mu = -1)
+    if (friction == -1.0) {
+        return baseVelocity;  // Completely stick to boundary
+    }
+    
+    // Check for slip boundary (mu <= -2)
+    bool slip = friction <= -2.0;
+    if (slip) {
+        friction = -friction - 2.0;  // Extract actual friction value
+    }
+    
+    // Project relative velocity
+    float normalComponent = dot(normal, relativeVel);
+    float3 tangentialVel = relativeVel - normalComponent * normal;
+    float tangentialNorm = length(tangentialVel);
+    
+    // Compute tangential scaling factor (Coulomb friction law)
+    float tangentialScale = max(tangentialNorm + min(normalComponent, 0.0) * friction, 0.0) / 
+                           max(1e-30, tangentialNorm);
+    
+    // Compute projected relative velocity
+    float3 projectedRelativeVel = tangentialScale * tangentialVel + 
+                                 max(0.0, normalComponent * (slip ? 0.0 : 1.0)) * normal;
+    
+    return projectedRelativeVel + baseVelocity;
+}
+
+// Compute boundary normal and distance from domain boundaries
+inline void computeBoundaryInfo(float3 position, 
+                               constant ComputeShaderUniforms& uniforms,
+                               thread float3& boundaryNormal, 
+                               thread float& boundaryDistance) {
+    float3 boundaryMin = uniforms.boundaryMin;
+    float3 boundaryMax = uniforms.boundaryMax;
+    
+    // Find closest boundary
+    float3 distToMin = position - boundaryMin;
+    float3 distToMax = boundaryMax - position;
+    
+    // Find minimum distance to any boundary
+    float minDist = min(min(min(distToMin.x, distToMin.y), distToMin.z),
+                       min(min(distToMax.x, distToMax.y), distToMax.z));
+    
+    boundaryDistance = minDist;
+    
+    // Determine boundary normal based on closest boundary
+    if (minDist == distToMin.x) {
+        boundaryNormal = float3(-1.0, 0.0, 0.0);  // Left wall
+    } else if (minDist == distToMax.x) {
+        boundaryNormal = float3(1.0, 0.0, 0.0);   // Right wall
+    } else if (minDist == distToMin.y) {
+        boundaryNormal = float3(0.0, -1.0, 0.0);  // Bottom wall
+    } else if (minDist == distToMax.y) {
+        boundaryNormal = float3(0.0, 1.0, 0.0);   // Top wall
+    } else if (minDist == distToMin.z) {
+        boundaryNormal = float3(0.0, 0.0, -1.0);  // Back wall
+    } else {
+        boundaryNormal = float3(0.0, 0.0, 1.0);   // Front wall
+    }
+}
+
 // Compute deformation gradient from affine momentum matrix
 inline float3x3 computeDeformationGradient(float3x3 C, float dt) {
     float3x3 I = float3x3(1.0);  // Identity matrix
@@ -682,38 +748,39 @@ kernel void gridToParticlesFluid1(
     particles[id].velocity = new_velocity;
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
 
-    // --- Velocity correction by wall repulsion force ---
-    const float k = 3.0;
-    const float wall_stiffness = 0.3;
-    float3 wall_min = uniforms.boundaryMin + float3(1.0,1.0,1.0)*3.0 * uniforms.gridSpacing;
-    float3 wall_max = uniforms.boundaryMax - float3(1.0,1.0,1.0)*4.0 * uniforms.gridSpacing;
-    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
-
-    // Handle mesh collision detection (now safe from hanging)
-    handleCollision(particles[id].position, particles[id].velocity,
-                   particles[id].position, sdfTexture, collision);
-
-    if (x_n.x < wall_min.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-    }
-    if (x_n.x > wall_max.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-    }
-    if (x_n.y < wall_min.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-    }
-    if (x_n.y > wall_max.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-    }
-    if (x_n.z < wall_min.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-    }
-    if (x_n.z > wall_max.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+    // Compute boundary information for this particle
+    float3 boundaryNormal;
+    float boundaryDistance;
+    computeBoundaryInfo(particles[id].position, uniforms, boundaryNormal, boundaryDistance);
+    
+    // Boundary handling using taichi-mpm approach
+    const float boundaryThreshold = 2.0 * uniforms.gridSpacing;  // Distance threshold for near-boundary
+    const float friction = 0.1;  // Fluid friction coefficient
+    const float pushingForce = 0.0;  // No additional pushing force for fluid
+    
+    if (boundaryDistance < boundaryThreshold) {
+        // Apply friction projection for boundary particles
+        float3 projectedVelocity = frictionProject(particles[id].velocity, float3(0.0), boundaryNormal, friction);
+        particles[id].velocity = projectedVelocity;
+        
+        // Add slight pushing force away from boundary if very close
+        if (boundaryDistance < uniforms.gridSpacing) {
+            particles[id].velocity += boundaryNormal * pushingForce * uniforms.deltaTime;
+        }
+        
+        // Clear affine momentum near boundaries (following taichi-mpm)
+        particles[id].C = float3x3(0.0);
     }
     
-    // Clamp position based on boundaries (direct clamp in world coordinates)
-    particles[id].position = clamp(particles[id].position, uniforms.boundaryMin+1.0*uniforms.gridSpacing, uniforms.boundaryMax-2.0*uniforms.gridSpacing);
+    // Handle mesh collision detection
+    handleCollision(particles[id].position, particles[id].velocity,
+                   particles[id].position, sdfTexture, collision);
+    
+    // Final position clamping as safety net
+    float3 safetyMargin = float3(0.5) * uniforms.gridSpacing;
+    particles[id].position = clamp(particles[id].position, 
+                                  uniforms.boundaryMin + safetyMargin, 
+                                  uniforms.boundaryMax - safetyMargin);
 }
 
 // Neo-Hookean Elastic Grid to Particle Transfer (G2P)
