@@ -919,36 +919,36 @@ kernel void gridToParticlesRigid1(
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
-    // Boundary conditions for rigid body materials
-    const float k = 3.0;
-    const float wall_stiffness = 0.8;  // Strong wall interaction for rigid body
-    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
-    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
-    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
+//    // Boundary conditions for rigid body materials
+//    const float k = 3.0;
+//    const float wall_stiffness = 0.8;  // Strong wall interaction for rigid body
+//    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
+//    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
+//    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
     
     // Handle mesh collision detection
-    handleCollision(particles[id].position, particles[id].velocity,
-                   particles[id].position, sdfTexture, collision);
-    
-    // Wall collisions with strong response for rigid body
-    if (x_n.x < wall_min.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-    }
-    if (x_n.x > wall_max.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-    }
-    if (x_n.y < wall_min.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-    }
-    if (x_n.y > wall_max.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-    }
-    if (x_n.z < wall_min.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-    }
-    if (x_n.z > wall_max.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
-    }
+//    handleCollision(particles[id].position, particles[id].velocity,
+//                   particles[id].position, sdfTexture, collision);
+//    
+//    // Wall collisions with strong response for rigid body
+//    if (x_n.x < wall_min.x) {
+//        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
+//    }
+//    if (x_n.x > wall_max.x) {
+//        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
+//    }
+//    if (x_n.y < wall_min.y) {
+//        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
+//    }
+//    if (x_n.y > wall_max.y) {
+//        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
+//    }
+//    if (x_n.z < wall_min.z) {
+//        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
+//    }
+//    if (x_n.z > wall_max.z) {
+//        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
+//    }
     
     // Position clamping - Essential for rigid body
 //    particles[id].position = clamp(particles[id].position, 
@@ -956,11 +956,11 @@ kernel void gridToParticlesRigid1(
 //                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
     particles[id].position = position; //revert position for rigidbody update
     
-    // Velocity clamping for rigid body motion
-    const float max_velocity = 50.0;  // Allow fast rigid body motion
-    particles[id].velocity = clamp(particles[id].velocity, 
-                                  float3(-max_velocity), 
-                                  float3(max_velocity));
+//    // Velocity clamping for rigid body motion
+//    const float max_velocity = 50.0;  // Allow fast rigid body motion
+//    particles[id].velocity = clamp(particles[id].velocity, 
+//                                  float3(-max_velocity), 
+//                                  float3(max_velocity));
 }
 
 // ==============================================
@@ -1028,7 +1028,7 @@ kernel void gridToParticlesRigid2(
     float3 force = p.mass * acceleration;
     
     // Add gravity force
-    force.y += p.mass * uniforms.gravity;
+//    force.y += p.mass * uniforms.gravity;
     
     // Accumulate linear force - use separate atomic additions for each component
     device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
@@ -1038,7 +1038,7 @@ kernel void gridToParticlesRigid2(
     
     // Calculate torque: τ = r × F
     float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
-    float3 torque = cross(r, force);
+    float3 torque = cross(r, force);    
     
     // Accumulate angular torque - use separate atomic additions for each component
     device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
@@ -1073,8 +1073,8 @@ kernel void gridToParticlesRigid3(
     rb.orientation = integrateAngularVelocity(rb.orientation, rb.angularVelocity, dt);
     
     // Apply damping to prevent excessive rotation
-    rb.angularVelocity *= 0.99;
-    rb.linearVelocity *= 0.999;
+//    rb.angularVelocity *= 0.98;
+//    rb.linearVelocity *= 0.995;
     
     // Clear accumulated forces and torques for next frame
     rb.accumulatedForce = float3(0, 0, 0);
@@ -1089,7 +1089,6 @@ kernel void gridToParticlesRigid4(
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.particleCount) return;
-    
     device MPMParticle& p = particles[id];
     
     // Skip particles that don't belong to any rigid body
@@ -1120,14 +1119,14 @@ kernel void gridToParticlesRigid4(
     p.C = float3x3(0.0);
     
     // Apply boundary constraints
-    float3 boundaryMin = uniforms.boundaryMin + uniforms.gridSpacing;
-    float3 boundaryMax = uniforms.boundaryMax - uniforms.gridSpacing;
-    
-    p.position = clamp(p.position, boundaryMin, boundaryMax);
+//    float3 boundaryMin = uniforms.boundaryMin + uniforms.gridSpacing;
+//    float3 boundaryMax = uniforms.boundaryMax - uniforms.gridSpacing;
+//    
+//    p.position = clamp(p.position, boundaryMin, boundaryMax);
     
     // Clamp velocity to prevent instabilities
-    const float maxVel = 100.0;
-    p.velocity = clamp(p.velocity, float3(-maxVel), float3(maxVel));
+//    const float maxVel = 50.0;
+//    p.velocity = clamp(p.velocity, float3(-maxVel), float3(maxVel));
 }
 
 // Initialize rigid body state (called once during setup)
@@ -1171,8 +1170,10 @@ kernel void initializeRigidBodies(
     rb.accumulatedTorque = float3(0, 0, 0);
     
     // Calculate inertia tensor (simplified - assume uniform density cube)
-    float size = 1.0; // Approximate size, could be calculated more precisely
+    float size = 1.0; // Approximate size based on particle distribution
     float I = totalMass * size * size / 6.0; // Moment of inertia for cube
+    I = max(I, totalMass * 0.01); // Minimum inertia to prevent division by zero
+    
     rb.invInertiaTensor = float3x3(
         float3(1.0/I, 0, 0),
         float3(0, 1.0/I, 0),
