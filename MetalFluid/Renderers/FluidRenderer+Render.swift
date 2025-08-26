@@ -251,6 +251,11 @@ extension MPMFluidRenderer {
         projectionMatrix: float4x4,
         viewMatrix: float4x4
     ) {
+        // Render AR background if enabled
+        if isAREnabled, let arRenderer = arRenderer {
+            renderARBackground(renderPassDescriptor: renderPassDescriptor, arRenderer: arRenderer)
+        }
+        
         switch currentRenderMode {
         case .particles:
             particleRenderer.render(
@@ -267,6 +272,48 @@ extension MPMFluidRenderer {
                 viewMatrix: viewMatrix
             )
         }
+        
+        // Render AR mesh if enabled
+        if isAREnabled && showARMesh, let arRenderer = arRenderer {
+            renderARMesh(renderPassDescriptor: renderPassDescriptor, 
+                        arRenderer: arRenderer,
+                        projectionMatrix: projectionMatrix,
+                        viewMatrix: viewMatrix)
+        }
+    }
+    
+    // MARK: - AR Rendering Functions
+    
+    private func renderARBackground(renderPassDescriptor: MTLRenderPassDescriptor, arRenderer: ARRenderer) {
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
+        
+        // Render AR camera background
+        arRenderer.renderCameraBackground(commandEncoder: renderEncoder)
+        
+        renderEncoder.endEncoding()
+        commandBuffer.commit()
+    }
+    
+    private func renderARMesh(renderPassDescriptor: MTLRenderPassDescriptor,
+                             arRenderer: ARRenderer,
+                             projectionMatrix: float4x4,
+                             viewMatrix: float4x4) {
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+            return
+        }
+        
+        // Render AR mesh
+        arRenderer.renderARMesh(commandEncoder: renderEncoder,
+                              viewMatrix: simd_float4x4(viewMatrix),
+                              projectionMatrix: simd_float4x4(projectionMatrix),
+                              wireframe: arMeshWireframe)
+        
+        renderEncoder.endEncoding()
+        commandBuffer.commit()
     }
     
     // MARK: - Water Rendering Pipeline

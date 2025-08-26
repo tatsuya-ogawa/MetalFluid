@@ -484,9 +484,15 @@ class MPMFluidRenderer: NSObject {
     public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
     public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
     
+    // AR state
+    public var isAREnabled: Bool = false
+    public var showARMesh: Bool = true
+    public var arMeshWireframe: Bool = true
+    
     // Mode-specific renderers
     internal var particleRenderer: ParticleRenderer!
     internal var waterRenderer: WaterRenderer!
+    internal var arRenderer: ARRenderer?
     
     // Particle size multiplier for smooth scaling
     public var particleSizeMultiplier: Float = 1.0
@@ -583,6 +589,9 @@ class MPMFluidRenderer: NSObject {
     internal func setupModeRenderers() {
         particleRenderer = ParticleRenderer(fluidRenderer: self)
         waterRenderer = WaterRenderer(fluidRenderer: self)
+        arRenderer = ARRenderer(device: device, commandQueue: commandQueue)
+        
+        print("🚀 ARRenderer initialized. AR supported: \(arRenderer?.isARSupported ?? false)")
     }
     
     internal func setupMetal() {
