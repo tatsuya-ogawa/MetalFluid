@@ -111,6 +111,10 @@ struct RigidBodyState {
     var accumulatedTorque: SIMD3<Float>     // Accumulated torque for this frame
     var particleCount: UInt32               // Number of particles in this rigid body
     var isActive: UInt32                    // 1 if active, 0 if inactive
+    var linearDamping: Float                // Linear damping coefficient
+    var angularDamping: Float               // Angular damping coefficient
+    var restitution: Float                  // Coefficient of restitution
+    var friction: Float                     // Friction coefficient
 }
 
 enum RenderMode {

@@ -51,6 +51,10 @@ typedef struct {
     simd_float3 accumulatedTorque;     // Accumulated torque for this frame
     uint32_t particleCount;            // Number of particles in this rigid body
     uint32_t isActive;                 // 1 if active, 0 if inactive
+    float linearDamping;               // Linear damping coefficient
+    float angularDamping;              // Angular damping coefficient
+    float restitution;                 // Coefficient of restitution
+    float friction;                    // Friction coefficient
 } RigidBodyState;
 
 // Compute shader specific uniforms

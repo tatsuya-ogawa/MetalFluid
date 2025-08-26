@@ -235,8 +235,7 @@ extension MPMFluidRenderer {
             setupElasticCube(particlePointer: particlePointer, center: center, range: range)
             
         } else if currentMaterialMode == .rigidBody{
-            // Original spherical distribution for fluid
-            setupFluidSphere(particlePointer: particlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
+            setupElasticCube(particlePointer: particlePointer, center: center, range: range)
             // Initialize rigid body states if in rigid body mode
             initializeRigidBodyStates()
         } else {

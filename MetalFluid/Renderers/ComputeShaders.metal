@@ -1023,22 +1023,28 @@ kernel void gridToParticlesRigid2(
     uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
     if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
     
-    // Calculate force on this particle (F = ma, approximating acceleration from velocity change)
-    float3 acceleration = (p.velocity) / max(uniforms.deltaTime, 1e-6); // Simplified force calculation
-    float3 force = p.mass * acceleration;
+    // Calculate force on this particle from MPM interactions and gravity
+    // Use the velocity from G2P stage as indication of forces applied through grid
+    float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
     
-    // Add gravity force
-//    force.y += p.mass * uniforms.gravity;
+    // Add gravity force (following taichi-mpm approach)
+    float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
+    
+    float3 total_force = grid_force + gravity_force;
     
     // Accumulate linear force - use separate atomic additions for each component
     device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
-    atomic_fetch_add_explicit(&forcePtr[0], force.x, memory_order_relaxed);
-    atomic_fetch_add_explicit(&forcePtr[1], force.y, memory_order_relaxed);
-    atomic_fetch_add_explicit(&forcePtr[2], force.z, memory_order_relaxed);
+    atomic_fetch_add_explicit(&forcePtr[0], total_force.x, memory_order_relaxed);
+    atomic_fetch_add_explicit(&forcePtr[1], total_force.y, memory_order_relaxed);
+    atomic_fetch_add_explicit(&forcePtr[2], total_force.z, memory_order_relaxed);
     
-    // Calculate torque: τ = r × F
+    // Calculate torque: τ = r × F (following taichi-mpm approach)
     float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
-    float3 torque = cross(r, force);    
+    float3 torque = cross(r, total_force);
+    
+    // Apply torque scaling based on taichi-mpm approach
+    const float torque_scale = 0.05;  // Further reduce torque sensitivity
+    torque *= torque_scale;    
     
     // Accumulate angular torque - use separate atomic additions for each component
     device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
@@ -1060,21 +1066,43 @@ kernel void gridToParticlesRigid3(
     
     float dt = uniforms.deltaTime;
     
-    // Linear dynamics: F = ma → a = F/m
-    float3 linearAcceleration = rb.accumulatedForce / max(rb.totalMass, 1e-6);
+    // Linear dynamics: F = ma → a = F/m (following taichi-mpm approach)
+    // Use accumulated force from Stage 2 (includes gravity and MPM forces)
+    float3 totalForce = rb.accumulatedForce;
+    
+    // Apply linear damping (exponential decay)
+    rb.linearVelocity *= exp(-rb.linearDamping * dt);
+    
+    // Integrate acceleration
+    float3 linearAcceleration = totalForce / max(rb.totalMass, 1e-6);
     rb.linearVelocity += linearAcceleration * dt;
+    
+    // Integrate position
     rb.centerOfMass += rb.linearVelocity * dt;
     
-    // Angular dynamics: τ = Iα → α = I⁻¹τ
+    // Angular dynamics: τ = Iα → α = I⁻¹τ (following taichi-mpm approach)
+    // Apply angular damping first (exponential decay)
+    rb.angularVelocity *= exp(-rb.angularDamping * dt);
+    
+    // Integrate angular acceleration
     float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque;
+    
+    // Limit angular acceleration to prevent runaway rotation
+    const float max_angular_accel = 50.0;
+    angularAcceleration = clamp(angularAcceleration, 
+                               float3(-max_angular_accel), 
+                               float3(max_angular_accel));
+    
     rb.angularVelocity += angularAcceleration * dt;
+    
+    // Limit angular velocity to prevent excessive rotation
+    const float max_angular_vel = 20.0;
+    rb.angularVelocity = clamp(rb.angularVelocity, 
+                              float3(-max_angular_vel), 
+                              float3(max_angular_vel));
     
     // Update orientation using angular velocity
     rb.orientation = integrateAngularVelocity(rb.orientation, rb.angularVelocity, dt);
-    
-    // Apply damping to prevent excessive rotation
-//    rb.angularVelocity *= 0.98;
-//    rb.linearVelocity *= 0.995;
     
     // Clear accumulated forces and torques for next frame
     rb.accumulatedForce = float3(0, 0, 0);
@@ -1158,7 +1186,7 @@ kernel void initializeRigidBodies(
         centerOfMass /= totalMass;
     }
     
-    // Initialize rigid body state
+    // Initialize rigid body state (following taichi-mpm approach)
     rb.centerOfMass = centerOfMass;
     rb.linearVelocity = float3(0, 0, 0);
     rb.angularVelocity = float3(0, 0, 0);
@@ -1169,10 +1197,28 @@ kernel void initializeRigidBodies(
     rb.accumulatedForce = float3(0, 0, 0);
     rb.accumulatedTorque = float3(0, 0, 0);
     
-    // Calculate inertia tensor (simplified - assume uniform density cube)
-    float size = 1.0; // Approximate size based on particle distribution
-    float I = totalMass * size * size / 6.0; // Moment of inertia for cube
-    I = max(I, totalMass * 0.01); // Minimum inertia to prevent division by zero
+    // Set physical parameters similar to taichi-mpm
+    rb.linearDamping = 0.1;    // Moderate linear damping
+    rb.angularDamping = 0.2;   // More angular damping to prevent excessive rotation
+    rb.restitution = 0.3;      // Some bounciness
+    rb.friction = 0.5;         // Moderate friction
+    
+    // Calculate inertia tensor based on particle distribution (taichi-mpm style)
+    // Calculate the extent of the rigid body
+    float3 minPos = float3(1e6), maxPos = float3(-1e6);
+    for (uint i = 0; i < uniforms.particleCount; ++i) {
+        if (particles[i].rigidId == actualRigidId) {
+            minPos = min(minPos, particles[i].position);
+            maxPos = max(maxPos, particles[i].position);
+        }
+    }
+    
+    float3 extent = maxPos - minPos;
+    float avgSize = (extent.x + extent.y + extent.z) / 3.0;
+    
+    // More conservative inertia tensor calculation
+    float I = totalMass * avgSize * avgSize / 12.0; // Box inertia tensor approximation
+    I = max(I, totalMass * 0.001); // Smaller minimum inertia for more responsive rotation
     
     rb.invInertiaTensor = float3x3(
         float3(1.0/I, 0, 0),
