@@ -1,6 +1,18 @@
 #include <metal_stdlib>
 #include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
+
+// Material mode constants
+constant int MATERIAL_FLUID = 0;
+constant int MATERIAL_ELASTIC = 1;
+constant int MATERIAL_RIGID = 2;
+
+// Check if gravity should be applied on grid for this material mode
+inline bool needGravityOnGrid(uint32_t materialMode) {
+    // Skip gravity on grid for rigid bodies (they handle gravity in Stage 2)
+    return materialMode != MATERIAL_RIGID;
+}
+
 // --- Utility: clamp velocity to avoid NaN/Inf and large values ---
 inline float3 clampVelocity(float3 v) {
     return v;
@@ -589,8 +601,10 @@ kernel void updateGridVelocity(
                              nonAtomicLoadWithUniform(&grid[id].velocity_z, uniforms)
                              ) / mass;
     
-    // Apply gravity
-    velocity.y += uniforms.gravity * uniforms.deltaTime;
+    // Apply gravity (skip for rigid bodies as they handle gravity in Stage 2)
+    if (needGravityOnGrid(uniforms.materialMode)) {
+        velocity.y += uniforms.gravity * uniforms.deltaTime;
+    }
     
     // Get grid coordinates
     uint3 xyz = gridXYZ(id,uniforms);
@@ -1023,11 +1037,11 @@ kernel void gridToParticlesRigid2(
     uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
     if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
     
-    // Calculate force on this particle from MPM interactions and gravity
+    // Calculate force on this particle from MPM interactions
     // Use the velocity from G2P stage as indication of forces applied through grid
     float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
     
-    // Add gravity force (following taichi-mpm approach)
+    // Add gravity force only for rigid bodies (since updateGridVelocity skips it)
     float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
     
     float3 total_force = grid_force + gravity_force;
