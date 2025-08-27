@@ -6,25 +6,7 @@ import simd
 extension MPMFluidRenderer {
     
     // MARK: - Setup Functions
-    
-    internal func setupComputePipelines() {
-        guard let library = device.makeDefaultLibrary() else {
-            fatalError("Could not create default library")
-        }
-
-        // Clear grid pipeline
-        guard let clearGridFunction = library.makeFunction(name: "clearGrid")
-        else {
-            fatalError("Could not find function 'clearGrid'")
-        }
-        do {
-            clearGridPipelineState = try device.makeComputePipelineState(
-                function: clearGridFunction
-            )
-        } catch {
-            fatalError("Could not create clear grid pipeline state: \(error)")
-        }
-
+    internal func setupComputePipelinesFluid(library:MTLLibrary){
         // Particles to grid 1 pipeline
         guard
             let particlesToGridFluid1Function = library.makeFunction(
@@ -59,7 +41,105 @@ extension MPMFluidRenderer {
                 "Could not create particlesToGridFluid2 pipeline state: \(error)"
             )
         }
+        // Grid to particles pipeline
+        guard
+            let gridToParticlesFluid1Function = library.makeFunction(
+                name: "gridToParticlesFluid1"
+            )
+        else {
+            fatalError("Could not find function 'gridToParticlesFluid1'")
+        }
+        do {
+            gridToParticlesFluid1PipelineState = try device.makeComputePipelineState(
+                function: gridToParticlesFluid1Function
+            )
+        } catch {
+            fatalError(
+                "Could not create gridToParticlesFluid1 pipeline state: \(error)"
+            )
+        }
+    }
+    internal func setupComputePipelinesElastic(library: MTLLibrary) {
+        // Elastic material pipeline states
+        guard let particlesToGridElasticFunction = library.makeFunction(name: "particlesToGridElastic") else {
+            fatalError("Could not find function 'particlesToGridElastic'")
+        }
+        do {
+            particlesToGridElasticPipelineState = try device.makeComputePipelineState(function: particlesToGridElasticFunction)
+        } catch {
+            fatalError("Could not create particlesToGridElastic pipeline state: \(error)")
+        }
+        guard let gridToParticlesElasticFunction = library.makeFunction(name: "gridToParticlesElastic") else {
+            fatalError("Could not find function 'gridToParticlesElastic'")
+        }
+        do {
+            gridToParticlesElasticPipelineState = try device.makeComputePipelineState(function: gridToParticlesElasticFunction)
+        } catch {
+            fatalError("Could not create gridToParticlesElastic pipeline state: \(error)")
+        }
+    }
+    internal func setupComputePipelinesRigid(library: MTLLibrary) {
+        // Rigid body material pipeline states
+        guard let particlesToGridRigidFunction = library.makeFunction(name: "particlesToGridRigid") else {
+            fatalError("Could not find function 'particlesToGridRigid'")
+        }
+        do {
+            particlesToGridRigidPipelineState = try device.makeComputePipelineState(function: particlesToGridRigidFunction)
+        } catch {
+            fatalError("Could not create particlesToGridRigid pipeline state: \(error)")
+        }
+        guard let gridToParticlesRigid1Function = library.makeFunction(name: "gridToParticlesRigid1") else {
+            fatalError("Could not find function 'gridToParticlesRigid1'")
+        }
+        do {
+            gridToParticlesRigid1PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid1Function)
+        } catch {
+            fatalError("Could not create gridToParticlesRigid1 pipeline state: \(error)")
+        }
+        guard let gridToParticlesRigid2Function = library.makeFunction(name: "gridToParticlesRigid2") else {
+            fatalError("Could not find function 'gridToParticlesRigid2'")
+        }
+        do {
+            gridToParticlesRigid2PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid2Function)
+        } catch {
+            fatalError("Could not create gridToParticlesRigid2 pipeline state: \(error)")
+        }
+        guard let gridToParticlesRigid3Function = library.makeFunction(name: "gridToParticlesRigid3") else {
+            fatalError("Could not find function 'gridToParticlesRigid3'")
+        }
+        do {
+            gridToParticlesRigid3PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid3Function)
+        } catch {
+            fatalError("Could not create gridToParticlesRigid3 pipeline state: \(error)")
+        }
+        guard let gridToParticlesRigid4Function = library.makeFunction(name: "gridToParticlesRigid4") else {
+            fatalError("Could not find function 'gridToParticlesRigid4'")
+        }
+        do {
+            gridToParticlesRigid4PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid4Function)
+        } catch {
+            fatalError("Could not create gridToParticlesRigid4 pipeline state: \(error)")
+        }
+    }
+    internal func setupComputePipelines() {
+        guard let library = device.makeDefaultLibrary() else {
+            fatalError("Could not create default library")
+        }
 
+        // Clear grid pipeline
+        guard let clearGridFunction = library.makeFunction(name: "clearGrid")
+        else {
+            fatalError("Could not find function 'clearGrid'")
+        }
+        do {
+            clearGridPipelineState = try device.makeComputePipelineState(
+                function: clearGridFunction
+            )
+        } catch {
+            fatalError("Could not create clear grid pipeline state: \(error)")
+        }
+
+        
         // Update grid velocity pipeline
         guard
             let updateGridVelocityFunction = library.makeFunction(
@@ -78,145 +158,9 @@ extension MPMFluidRenderer {
                 "Could not create update grid velocity pipeline state: \(error)"
             )
         }
-
-        // Grid to particles pipeline
-        guard
-            let gridToParticlesFluid1Function = library.makeFunction(
-                name: "gridToParticlesFluid1"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesFluid1'")
-        }
-        do {
-            gridToParticlesFluid1PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesFluid1Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesFluid1 pipeline state: \(error)"
-            )
-        }
-        
-        // Elastic material pipeline states
-        guard
-            let particlesToGridElasticFunction = library.makeFunction(
-                name: "particlesToGridElastic"
-            )
-        else {
-            fatalError("Could not find function 'particlesToGridElastic'")
-        }
-        do {
-            particlesToGridElasticPipelineState = try device.makeComputePipelineState(
-                function: particlesToGridElasticFunction
-            )
-        } catch {
-            fatalError(
-                "Could not create particlesToGridElastic pipeline state: \(error)"
-            )
-        }
-        
-        guard
-            let gridToParticlesElasticFunction = library.makeFunction(
-                name: "gridToParticlesElastic"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesElastic'")
-        }
-        do {
-            gridToParticlesElasticPipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesElasticFunction
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesElastic pipeline state: \(error)"
-            )
-        }
-        
-        // Rigid body material pipeline states
-        guard
-            let particlesToGridRigidFunction = library.makeFunction(
-                name: "particlesToGridRigid"
-            )
-        else {
-            fatalError("Could not find function 'particlesToGridRigid'")
-        }
-        do {
-            particlesToGridRigidPipelineState = try device.makeComputePipelineState(
-                function: particlesToGridRigidFunction
-            )
-        } catch {
-            fatalError(
-                "Could not create particlesToGridRigid pipeline state: \(error)"
-            )
-        }
-        
-        guard
-            let gridToParticlesRigid1Function = library.makeFunction(
-                name: "gridToParticlesRigid1"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesRigid1'")
-        }
-        do {
-            gridToParticlesRigid1PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesRigid1Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesRigid1 pipeline state: \(error)"
-            )
-        }
-        
-        guard
-            let gridToParticlesRigid2Function = library.makeFunction(
-                name: "gridToParticlesRigid2"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesRigid2'")
-        }
-        do {
-            gridToParticlesRigid2PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesRigid2Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesRigid2 pipeline state: \(error)"
-            )
-        }
-        
-        guard
-            let gridToParticlesRigid3Function = library.makeFunction(
-                name: "gridToParticlesRigid3"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesRigid3'")
-        }
-        do {
-            gridToParticlesRigid3PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesRigid3Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesRigid3 pipeline state: \(error)"
-            )
-        }
-        
-        guard
-            let gridToParticlesRigid4Function = library.makeFunction(
-                name: "gridToParticlesRigid4"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesRigid4'")
-        }
-        do {
-            gridToParticlesRigid4PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesRigid4Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesRigid4 pipeline state: \(error)"
-            )
-        }
+        setupComputePipelinesFluid(library: library)
+        setupComputePipelinesElastic(library: library)
+        setupComputePipelinesRigid(library: library)
     }
     
     internal func setupParticles() {
