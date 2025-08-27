@@ -506,15 +506,6 @@ class MPMFluidRenderer: NSObject {
         print("🔄 Copied compute buffers to render buffers (\(particleBufferSize + uniformBufferSize) bytes)")
     }
     
-    public func swapParticleBufferWith(_ otherBuffer: inout MTLBuffer) {
-        // During compute, swap with compute buffer
-        if isComputing {
-            swap(&computeParticleBuffer, &otherBuffer)
-        } else {
-            // During render, this shouldn't happen but handle gracefully
-            print("⚠️ Attempted buffer swap during render phase")
-        }
-    }
     
     public func getCurrentBufferInfo() -> (stage: String, computeBuffer: String, renderBuffer: String) {
         return (
