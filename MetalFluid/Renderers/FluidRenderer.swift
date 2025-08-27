@@ -100,7 +100,7 @@ struct SortKey {
 }
 
 // MARK: - Texture Bundle Struct
-struct FluidRenderTextures {
+internal struct FluidRenderTextures {
     let depthTexture: MTLTexture
     let tempDepthTexture: MTLTexture
     let filteredDepthTexture: MTLTexture
@@ -487,10 +487,7 @@ class MPMFluidRenderer: NSObject {
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
     
     // Texture cache for screen size optimization
-    internal var textureCache: [String: FluidRenderTextures] = [:]
-    internal let textureCacheQueue = DispatchQueue(label: "com.metalfluid.textureCache", attributes: .concurrent)
-    internal let maxCacheSize = 3 // 最大3つの画面サイズまでキャッシュ
-    internal var cacheAccessOrder: [String] = [] // LRU管理用
+    internal let textureCacheManager: TextureCacheManager<FluidRenderTextures>
     
     // 2-stage pipeline management
     public func beginCompute() {
@@ -662,6 +659,10 @@ class MPMFluidRenderer: NSObject {
         self.particleCount = particleCount
         self.gridSize = gridSize
         self.gridHeightMultiplier = gridHeightMultiplier
+        self.textureCacheManager = TextureCacheManager<FluidRenderTextures>(
+            maxSize: 3,
+            name: "FluidRenderTextures"
+        )
         super.init()
         setupMetal()
         setupCollisionManager()  // Initialize collision manager once
@@ -672,8 +673,7 @@ class MPMFluidRenderer: NSObject {
     
     deinit {
         // Clean up texture cache on deallocation
-        textureCache.removeAll()
-        cacheAccessOrder.removeAll()
+        textureCacheManager.clearCache()
         print("🗑️ MPMFluidRenderer deinitialized, texture cache cleared")
     }
     
