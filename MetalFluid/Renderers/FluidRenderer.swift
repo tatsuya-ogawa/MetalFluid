@@ -462,9 +462,8 @@ class MPMFluidRenderer: NSObject {
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
     
-    // Separate rigid info buffers (compute / render)
+    // Separate rigid info buffers (compute)
     internal var computeRigidInfoBuffer: MTLBuffer!
-    internal var renderRigidInfoBuffer: MTLBuffer!
     
     // Sort manager for particle sorting operations
     internal var sortManager: SortManager!
@@ -691,13 +690,6 @@ class MPMFluidRenderer: NSObject {
         }
         renderParticles.label = "RenderParticleBuffer"
         renderParticleBuffer = renderParticles
-
-        // Create render rigid info buffer
-        guard let renderRigid = device.makeBuffer(length: rigidInfoBufferSize, options: .storageModeShared) else {
-            fatalError("Failed to create render rigid info buffer")
-        }
-        renderRigid.label = "RenderRigidInfoBuffer"
-        renderRigidInfoBuffer = renderRigid
                 
         // Vertex shader uniform buffer
         let vertexUniformBufferSize = MemoryLayout<VertexShaderUniforms>.stride

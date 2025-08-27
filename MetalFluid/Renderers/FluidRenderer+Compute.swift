@@ -198,12 +198,6 @@ extension MPMFluidRenderer {
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         let renderParticlePointer = renderParticleBuffer.contents()
         memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
-
-        // Copy rigid info to render rigid info buffer
-        let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-        let computeRigidPtr = computeRigidInfoBuffer.contents()
-        let renderRigidPtr = renderRigidInfoBuffer.contents()
-        memcpy(renderRigidPtr, computeRigidPtr, rigidInfoSize)
         
         print("🔄 Initialized particles in both compute and render buffers")
     }
@@ -743,9 +737,6 @@ extension MPMFluidRenderer {
     
     private func copyRenderBuffersToCompute() {
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        let uniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
-        let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-        
         // Copy particle data from render to compute
         copyBuffersWithBlit(
             from: renderParticleBuffer,
@@ -753,29 +744,16 @@ extension MPMFluidRenderer {
             size: particleBufferSize,
             label: "render to compute particles"
         )
-        
-        // Copy rigid info from render to compute
-        copyBuffersWithBlit(
-            from: renderRigidInfoBuffer,
-            to: computeRigidInfoBuffer,
-            size: rigidInfoSize,
-            label: "render to compute rigid info"
-        )
-        print("🔄 Copied render buffers to compute buffers (\(particleBufferSize + uniformBufferSize + rigidInfoSize) bytes)")
     }
     
     private func swapComputeAndRenderBuffers() {
         // Swap particle buffers using Swift's swap function
         swap(&computeParticleBuffer, &renderParticleBuffer)
-        
-        // Swap rigid info buffers using Swift's swap function
-        swap(&computeRigidInfoBuffer, &renderRigidInfoBuffer)
-        
+                
         // Update buffer labels for debugging
         computeParticleBuffer.label = "ComputeParticleBuffer"
         renderParticleBuffer.label = "RenderParticleBuffer"
         computeRigidInfoBuffer.label = "ComputeRigidInfoBuffer"
-        renderRigidInfoBuffer.label = "RenderRigidInfoBuffer"
     }
     
     
