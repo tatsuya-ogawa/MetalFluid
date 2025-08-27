@@ -99,6 +99,18 @@ struct SortKey {
     var value: UInt32    // Original particle index
 }
 
+// MARK: - Texture Bundle Struct
+struct FluidRenderTextures {
+    let depthTexture: MTLTexture
+    let tempDepthTexture: MTLTexture
+    let filteredDepthTexture: MTLTexture
+    let thicknessTexture: MTLTexture
+    let tempThicknessTexture: MTLTexture
+    let filteredThicknessTexture: MTLTexture
+    let environmentTexture: MTLTexture
+    let screenSize: SIMD2<Float>
+}
+
 // Rigid Body state for complete rigid body dynamics
 struct RigidBodyState {
     var centerOfMass: SIMD3<Float>          // Center of mass position
@@ -474,6 +486,12 @@ class MPMFluidRenderer: NSObject {
     private var arSDFTexture: MTLTexture?
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
     
+    // Texture cache for screen size optimization
+    internal var textureCache: [String: FluidRenderTextures] = [:]
+    internal let textureCacheQueue = DispatchQueue(label: "com.metalfluid.textureCache", attributes: .concurrent)
+    internal let maxCacheSize = 3 // 最大3つの画面サイズまでキャッシュ
+    internal var cacheAccessOrder: [String] = [] // LRU管理用
+    
     // 2-stage pipeline management
     public func beginCompute() {
         isComputing = true
@@ -650,6 +668,13 @@ class MPMFluidRenderer: NSObject {
         setupParticles()
         frameIndex = 0
         setupModeRenderers()
+    }
+    
+    deinit {
+        // Clean up texture cache on deallocation
+        textureCache.removeAll()
+        cacheAccessOrder.removeAll()
+        print("🗑️ MPMFluidRenderer deinitialized, texture cache cleared")
     }
     
     internal func setupModeRenderers() {

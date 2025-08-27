@@ -2,18 +2,6 @@ import Metal
 import MetalKit
 import simd
 
-// MARK: - Texture Bundle Struct
-struct FluidRenderTextures {
-    let depthTexture: MTLTexture
-    let tempDepthTexture: MTLTexture
-    let filteredDepthTexture: MTLTexture
-    let thicknessTexture: MTLTexture
-    let tempThicknessTexture: MTLTexture
-    let filteredThicknessTexture: MTLTexture
-    let environmentTexture: MTLTexture
-    let screenSize: SIMD2<Float>
-}
-
 // MARK: - Render Extension
 extension MPMFluidRenderer {
     
@@ -248,28 +236,168 @@ extension MPMFluidRenderer {
         }
     }
     
-    public func getTexturesForScreenSize(_ newSize: SIMD2<Float>) -> FluidRenderTextures {
-        // Check if we need to recreate textures (cache invalidation)
-        if newSize.x != screenSize.x || newSize.y != screenSize.y {
-            setupDepthTextures(screenSize: newSize)
-            setupFluidTextures(screenSize: newSize)
+    private func createTexturesForSize(_ size: SIMD2<Float>) -> FluidRenderTextures {
+        // Create depth textures
+        let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r32Float,
+            width: Int(size.x),
+            height: Int(size.y),
+            mipmapped: false
+        )
+        depthTextureDescriptor.usage = [.renderTarget, .shaderRead]
+        
+        let newDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        let newTempDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        let newFilteredDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        
+        // Create thickness textures
+        let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .r16Float,
+            width: Int(size.x),
+            height: Int(size.y),
+            mipmapped: false
+        )
+        thicknessDescriptor.usage = [.renderTarget, .shaderRead]
+        let newThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        let newTempThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        let newFilteredThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        
+        // Create environment texture (size-independent, but included for completeness)
+        let envDescriptor = MTLTextureDescriptor.textureCubeDescriptor(
+            pixelFormat: .rgba8Unorm,
+            size: 64,
+            mipmapped: false
+        )
+        envDescriptor.usage = .shaderRead
+        let newEnvironmentTexture = device.makeTexture(descriptor: envDescriptor)!
+        
+        // Fill environment texture with a simple sky color
+        let envRegion = MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0), size: MTLSize(width: 64, height: 64, depth: 1))
+        let skyData = Array(repeating: UInt8(200), count: 64 * 64 * 4) // Light blue-ish
+        for face in 0..<6 {
+            newEnvironmentTexture.replace(region: envRegion, mipmapLevel: 0, slice: face, withBytes: skyData, bytesPerRow: 64 * 4, bytesPerImage: 64 * 64 * 4)
         }
         
         return FluidRenderTextures(
-            depthTexture: depthTexture,
-            tempDepthTexture: tempDepthTexture,
-            filteredDepthTexture: filteredDepthTexture,
-            thicknessTexture: thicknessTexture,
-            tempThicknessTexture: tempThicknessTexture,
-            filteredThicknessTexture: filteredThicknessTexture,
-            environmentTexture: environmentTexture,
-            screenSize: screenSize
+            depthTexture: newDepthTexture,
+            tempDepthTexture: newTempDepthTexture,
+            filteredDepthTexture: newFilteredDepthTexture,
+            thicknessTexture: newThicknessTexture,
+            tempThicknessTexture: newTempThicknessTexture,
+            filteredThicknessTexture: newFilteredThicknessTexture,
+            environmentTexture: newEnvironmentTexture,
+            screenSize: size
         )
+    }
+    
+    public func getTexturesForScreenSize(_ newSize: SIMD2<Float>) -> FluidRenderTextures {
+        let cacheKey = "\(Int(newSize.x))x\(Int(newSize.y))"
+        
+        return textureCacheQueue.sync {
+            // Check if textures exist in cache
+            if let cachedTextures = textureCache[cacheKey] {
+                // Update access order for LRU
+                updateCacheAccessOrder(cacheKey)
+                
+                // Update instance fields for backward compatibility with deprecated methods
+                updateInstanceFieldsFromTextures(cachedTextures)
+                return cachedTextures
+            }
+            
+            // Create new textures
+            let newTextures = createTexturesForSize(newSize)
+            
+            // Manage cache size with LRU eviction
+            manageCacheSize(newKey: cacheKey)
+            
+            // Add to cache
+            textureCache[cacheKey] = newTextures
+            cacheAccessOrder.append(cacheKey)
+            
+            // Update instance fields for backward compatibility with deprecated methods
+            updateInstanceFieldsFromTextures(newTextures)
+            
+            return newTextures
+        }
+    }
+    
+    private func updateCacheAccessOrder(_ key: String) {
+        // Remove from current position and add to end (most recently used)
+        if let index = cacheAccessOrder.firstIndex(of: key) {
+            cacheAccessOrder.remove(at: index)
+        }
+        cacheAccessOrder.append(key)
+    }
+    
+    private func manageCacheSize(newKey: String) {
+        // If cache is at capacity, remove least recently used items
+        while cacheAccessOrder.count >= maxCacheSize {
+            let lruKey = cacheAccessOrder.removeFirst()
+            if lruKey != newKey { // Don't remove the key we're about to add
+                textureCache.removeValue(forKey: lruKey)
+                print("🗑️ Texture cache: Evicted textures for size \(lruKey)")
+            }
+        }
+    }
+    
+    private func updateInstanceFieldsFromTextures(_ textures: FluidRenderTextures) {
+        // Update instance fields for backward compatibility
+        self.depthTexture = textures.depthTexture
+        self.tempDepthTexture = textures.tempDepthTexture
+        self.filteredDepthTexture = textures.filteredDepthTexture
+        self.thicknessTexture = textures.thicknessTexture
+        self.tempThicknessTexture = textures.tempThicknessTexture
+        self.filteredThicknessTexture = textures.filteredThicknessTexture
+        self.environmentTexture = textures.environmentTexture
+        self.screenSize = textures.screenSize
     }
     
     @available(*, deprecated, message: "Use getTexturesForScreenSize(_:) instead")
     public func updateScreenSize(_ newSize: SIMD2<Float>) {
         _ = getTexturesForScreenSize(newSize)
+    }
+    
+    public func clearTextureCache() {
+        textureCacheQueue.async(flags: .barrier) {
+            let cacheCount = self.textureCache.count
+            self.textureCache.removeAll()
+            self.cacheAccessOrder.removeAll()
+            if cacheCount > 0 {
+                print("🗑️ Texture cache: Cleared \(cacheCount) cached texture sets")
+            }
+        }
+    }
+    
+    public func getTextureCacheInfo() -> (count: Int, sizes: [String]) {
+        return textureCacheQueue.sync {
+            return (textureCache.count, Array(textureCache.keys))
+        }
+    }
+    
+    // メモリ警告時などに古いキャッシュをクリアする
+    public func handleMemoryWarning() {
+        textureCacheQueue.async(flags: .barrier) {
+            let originalCount = self.textureCache.count
+            
+            // Keep only the most recent cache entry
+            if self.cacheAccessOrder.count > 1 {
+                let mostRecentKey = self.cacheAccessOrder.last!
+                let mostRecentTextures = self.textureCache[mostRecentKey]
+                
+                self.textureCache.removeAll()
+                self.cacheAccessOrder.removeAll()
+                
+                if let textures = mostRecentTextures {
+                    self.textureCache[mostRecentKey] = textures
+                    self.cacheAccessOrder.append(mostRecentKey)
+                }
+                
+                let clearedCount = originalCount - self.textureCache.count
+                if clearedCount > 0 {
+                    print("⚠️ Memory warning: Cleared \(clearedCount) texture cache entries, keeping most recent")
+                }
+            }
+        }
     }
     
     // Backward compatibility methods - deprecated
