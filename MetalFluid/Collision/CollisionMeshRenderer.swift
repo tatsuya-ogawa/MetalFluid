@@ -19,8 +19,10 @@ class CollisionMeshRenderer {
     // Rendering resources
     private var meshBuffer: MTLBuffer?
     private var meshIndexBuffer: MTLBuffer?
+    private var wireframeIndexBuffer: MTLBuffer?
     private var vertexCount: Int = 0
     private var indexCount: Int = 0
+    private var wireframeIndexCount: Int = 0
     private var solidPipelineState: MTLRenderPipelineState?
     private var wireframePipelineState: MTLRenderPipelineState?
     private var depthStencilState: MTLDepthStencilState?
@@ -125,7 +127,8 @@ class CollisionMeshRenderer {
         guard !triangles.isEmpty else { return }
         
         var vertices: [CollisionVertex] = []
-        var indices: [UInt32] = []
+        var solidIndices: [UInt32] = []
+        var wireframeIndices: [UInt32] = []
         
         // Convert triangles to vertices with normals
         for (triangleIndex, triangle) in triangles.enumerated() {
@@ -144,24 +147,37 @@ class CollisionMeshRenderer {
             vertices.append(CollisionVertex(position: v1, normal: normal))
             vertices.append(CollisionVertex(position: v2, normal: normal))
             
-            // Add indices
-            indices.append(baseIndex + 0)
-            indices.append(baseIndex + 1)
-            indices.append(baseIndex + 2)
+            // Add solid indices (triangles)
+            solidIndices.append(baseIndex + 0)
+            solidIndices.append(baseIndex + 1)
+            solidIndices.append(baseIndex + 2)
+            
+            // Add wireframe indices (lines for triangle edges)
+            wireframeIndices.append(baseIndex + 0) // v0 -> v1
+            wireframeIndices.append(baseIndex + 1)
+            wireframeIndices.append(baseIndex + 1) // v1 -> v2
+            wireframeIndices.append(baseIndex + 2)
+            wireframeIndices.append(baseIndex + 2) // v2 -> v0
+            wireframeIndices.append(baseIndex + 0)
         }
         
         vertexCount = vertices.count
-        indexCount = indices.count
+        indexCount = solidIndices.count
+        wireframeIndexCount = wireframeIndices.count
         
         // Create vertex buffer
         let vertexBufferSize = MemoryLayout<CollisionVertex>.stride * vertexCount
         meshBuffer = device.makeBuffer(bytes: vertices, length: vertexBufferSize, options: .storageModeShared)
         
-        // Create index buffer
-        let indexBufferSize = MemoryLayout<UInt32>.stride * indexCount
-        meshIndexBuffer = device.makeBuffer(bytes: indices, length: indexBufferSize, options: .storageModeShared)
+        // Create solid index buffer
+        let solidIndexBufferSize = MemoryLayout<UInt32>.stride * solidIndices.count
+        meshIndexBuffer = device.makeBuffer(bytes: solidIndices, length: solidIndexBufferSize, options: .storageModeShared)
         
-        print("Generated collision mesh with \(vertexCount) vertices, \(indexCount/3) triangles")
+        // Create wireframe index buffer
+        let wireframeIndexBufferSize = MemoryLayout<UInt32>.stride * wireframeIndices.count
+        wireframeIndexBuffer = device.makeBuffer(bytes: wireframeIndices, length: wireframeIndexBufferSize, options: .storageModeShared)
+        
+        print("Generated collision mesh with \(vertexCount) vertices, \(indexCount/3) triangles, \(wireframeIndexCount/2) wireframe lines")
     }
     
     private func updateMeshUniforms() {
@@ -184,6 +200,11 @@ class CollisionMeshRenderer {
               let meshIndexBuffer = meshIndexBuffer,
               let meshUniformsBuffer = meshUniformsBuffer,
               indexCount > 0 else {
+            return
+        }
+        
+        // Additional check for wireframe mode
+        if wireframeMode && (wireframeIndexBuffer == nil || wireframeIndexCount == 0) {
             return
         }
         
@@ -210,14 +231,26 @@ class CollisionMeshRenderer {
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
         renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
         
-        // Draw triangles
-        renderEncoder.drawIndexedPrimitives(
-            type: .triangle,
-            indexCount: indexCount,
-            indexType: .uint32,
-            indexBuffer: meshIndexBuffer,
-            indexBufferOffset: 0
-        )
+        // Draw based on mode
+        if wireframeMode {
+            // Draw wireframe as lines
+            renderEncoder.drawIndexedPrimitives(
+                type: .line,
+                indexCount: wireframeIndexCount,
+                indexType: .uint32,
+                indexBuffer: wireframeIndexBuffer!,
+                indexBufferOffset: 0
+            )
+        } else {
+            // Draw solid triangles
+            renderEncoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: indexCount,
+                indexType: .uint32,
+                indexBuffer: meshIndexBuffer,
+                indexBufferOffset: 0
+            )
+        }
         
         renderEncoder.endEncoding()
     }
@@ -233,6 +266,11 @@ class CollisionMeshRenderer {
               let meshIndexBuffer = meshIndexBuffer,
               let meshUniformsBuffer = meshUniformsBuffer,
               indexCount > 0 else {
+            return
+        }
+        
+        // Additional check for wireframe mode
+        if wireframeMode && (wireframeIndexBuffer == nil || wireframeIndexCount == 0) {
             return
         }
         
@@ -254,14 +292,26 @@ class CollisionMeshRenderer {
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
         renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
         
-        // Draw triangles
-        renderEncoder.drawIndexedPrimitives(
-            type: .triangle,
-            indexCount: indexCount,
-            indexType: .uint32,
-            indexBuffer: meshIndexBuffer,
-            indexBufferOffset: 0
-        )
+        // Draw based on mode
+        if wireframeMode {
+            // Draw wireframe as lines
+            renderEncoder.drawIndexedPrimitives(
+                type: .line,
+                indexCount: wireframeIndexCount,
+                indexType: .uint32,
+                indexBuffer: wireframeIndexBuffer!,
+                indexBufferOffset: 0
+            )
+        } else {
+            // Draw solid triangles
+            renderEncoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: indexCount,
+                indexType: .uint32,
+                indexBuffer: meshIndexBuffer,
+                indexBufferOffset: 0
+            )
+        }
     }
     
     // Utility methods
