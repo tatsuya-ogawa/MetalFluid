@@ -427,8 +427,11 @@ extension MPMFluidRenderer {
         
         computeSimulation(commandBuffer: commandBuffer)
         
-        // End compute and copy results to render buffers
-        endComputeAndSwapToRender()
+        // Add completion handler to swap buffers when the shared command buffer finishes
+        // (This will be called when the render pass commits the command buffer)
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.endComputeAndSwapToRender()
+        }
     }
     
     // MARK: - MPM Simulation Pipeline
