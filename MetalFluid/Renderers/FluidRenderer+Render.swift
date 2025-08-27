@@ -2,6 +2,18 @@ import Metal
 import MetalKit
 import simd
 
+// MARK: - Texture Bundle Struct
+struct FluidRenderTextures {
+    let depthTexture: MTLTexture
+    let tempDepthTexture: MTLTexture
+    let filteredDepthTexture: MTLTexture
+    let thicknessTexture: MTLTexture
+    let tempThicknessTexture: MTLTexture
+    let filteredThicknessTexture: MTLTexture
+    let environmentTexture: MTLTexture
+    let screenSize: SIMD2<Float>
+}
+
 // MARK: - Render Extension
 extension MPMFluidRenderer {
     
@@ -236,11 +248,57 @@ extension MPMFluidRenderer {
         }
     }
     
-    public func updateScreenSize(_ newSize: SIMD2<Float>) {
+    public func getTexturesForScreenSize(_ newSize: SIMD2<Float>) -> FluidRenderTextures {
+        // Check if we need to recreate textures (cache invalidation)
         if newSize.x != screenSize.x || newSize.y != screenSize.y {
             setupDepthTextures(screenSize: newSize)
             setupFluidTextures(screenSize: newSize)
         }
+        
+        return FluidRenderTextures(
+            depthTexture: depthTexture,
+            tempDepthTexture: tempDepthTexture,
+            filteredDepthTexture: filteredDepthTexture,
+            thicknessTexture: thicknessTexture,
+            tempThicknessTexture: tempThicknessTexture,
+            filteredThicknessTexture: filteredThicknessTexture,
+            environmentTexture: environmentTexture,
+            screenSize: screenSize
+        )
+    }
+    
+    @available(*, deprecated, message: "Use getTexturesForScreenSize(_:) instead")
+    public func updateScreenSize(_ newSize: SIMD2<Float>) {
+        _ = getTexturesForScreenSize(newSize)
+    }
+    
+    // Backward compatibility methods - deprecated
+    @available(*, deprecated, message: "Use renderDepthMap(commandBuffer:textures:) instead")
+    internal func renderDepthMap(commandBuffer: MTLCommandBuffer) {
+        let textures = getTexturesForScreenSize(screenSize)
+        renderDepthMap(commandBuffer: commandBuffer, textures: textures)
+    }
+    
+    @available(*, deprecated, message: "Use applyDepthFilter(commandBuffer:textures:depthThreshold:filterRadius:) instead")
+    internal func applyDepthFilter(
+        commandBuffer: MTLCommandBuffer,
+        depthThreshold: Float,
+        filterRadius: Int
+    ) {
+        let textures = getTexturesForScreenSize(screenSize)
+        applyDepthFilter(commandBuffer: commandBuffer, textures: textures, depthThreshold: depthThreshold, filterRadius: filterRadius)
+    }
+    
+    @available(*, deprecated, message: "Use renderThicknessMap(commandBuffer:textures:) instead")
+    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer) {
+        let textures = getTexturesForScreenSize(screenSize)
+        renderThicknessMap(commandBuffer: commandBuffer, textures: textures)
+    }
+    
+    @available(*, deprecated, message: "Use applyThicknessFilter(commandBuffer:textures:filterRadius:) instead")
+    internal func applyThicknessFilter(commandBuffer: MTLCommandBuffer, filterRadius: Int = 4) {
+        let textures = getTexturesForScreenSize(screenSize)
+        applyThicknessFilter(commandBuffer: commandBuffer, textures: textures, filterRadius: filterRadius)
     }
         
     // MARK: - Main Render Function
@@ -321,9 +379,9 @@ extension MPMFluidRenderer {
     
     // MARK: - Water Rendering Pipeline
     
-    internal func renderDepthMap(commandBuffer: MTLCommandBuffer) {
+    internal func renderDepthMap(commandBuffer: MTLCommandBuffer, textures: FluidRenderTextures) {
         let depthPassDescriptor = MTLRenderPassDescriptor()
-        depthPassDescriptor.colorAttachments[0].texture = depthTexture
+        depthPassDescriptor.colorAttachments[0].texture = textures.depthTexture
         depthPassDescriptor.colorAttachments[0].loadAction = .clear
         depthPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         depthPassDescriptor.colorAttachments[0].storeAction = .store
@@ -331,8 +389,8 @@ extension MPMFluidRenderer {
         // Create depth buffer for depth testing
         let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .depth32Float,
-            width: depthTexture.width,
-            height: depthTexture.height,
+            width: textures.depthTexture.width,
+            height: textures.depthTexture.height,
             mipmapped: false
         )
         depthTextureDescriptor.usage = .renderTarget
@@ -365,6 +423,7 @@ extension MPMFluidRenderer {
     
     internal func applyDepthFilter(
         commandBuffer: MTLCommandBuffer,
+        textures: FluidRenderTextures,
         depthThreshold: Float,
         filterRadius: Int
     ) {
@@ -384,12 +443,12 @@ extension MPMFluidRenderer {
         let fov: Float = 60.0 * Float.pi / 180.0 // Field of view in radians
         
         let calculatedDepthThreshold = radius * blurdDepthScale
-        let projectedParticleConstant = (blurFilterSize * diameter * 0.05 * (screenSize.y / 2.0)) / tan(fov / 2.0)
+        let projectedParticleConstant = (blurFilterSize * diameter * 0.05 * (textures.screenSize.y / 2.0)) / tan(fov / 2.0)
         
         // Horizontal pass
         filterPointer[0] = FilterUniforms(
             direction: SIMD2<Float>(1.0, 0.0),
-            screenSize: screenSize,
+            screenSize: textures.screenSize,
             depthThreshold: calculatedDepthThreshold,
             filterRadius: Int32(filterRadius),
             projectedParticleConstant: projectedParticleConstant,
@@ -397,14 +456,14 @@ extension MPMFluidRenderer {
         )
         
         let horizontalPassDescriptor = MTLRenderPassDescriptor()
-        horizontalPassDescriptor.colorAttachments[0].texture = tempDepthTexture
+        horizontalPassDescriptor.colorAttachments[0].texture = textures.tempDepthTexture
         horizontalPassDescriptor.colorAttachments[0].loadAction = .clear
         horizontalPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         horizontalPassDescriptor.colorAttachments[0].storeAction = .store
         
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: horizontalPassDescriptor) {
             renderEncoder.setRenderPipelineState(depthFilterPipelineState)
-            renderEncoder.setFragmentTexture(depthTexture, index: 0)
+            renderEncoder.setFragmentTexture(textures.depthTexture, index: 0)
             renderEncoder.setFragmentBuffer(filterUniformBuffer, offset: 0, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
@@ -413,7 +472,7 @@ extension MPMFluidRenderer {
         // Vertical pass
         filterPointer[0] = FilterUniforms(
             direction: SIMD2<Float>(0.0, 1.0),
-            screenSize: screenSize,
+            screenSize: textures.screenSize,
             depthThreshold: calculatedDepthThreshold,
             filterRadius: Int32(filterRadius),
             projectedParticleConstant: projectedParticleConstant,
@@ -421,23 +480,23 @@ extension MPMFluidRenderer {
         )
         
         let verticalPassDescriptor = MTLRenderPassDescriptor()
-        verticalPassDescriptor.colorAttachments[0].texture = depthTexture
+        verticalPassDescriptor.colorAttachments[0].texture = textures.depthTexture
         verticalPassDescriptor.colorAttachments[0].loadAction = .clear
         verticalPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         verticalPassDescriptor.colorAttachments[0].storeAction = .store
         
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: verticalPassDescriptor) {
             renderEncoder.setRenderPipelineState(depthFilterPipelineState)
-            renderEncoder.setFragmentTexture(tempDepthTexture, index: 0)
+            renderEncoder.setFragmentTexture(textures.tempDepthTexture, index: 0)
             renderEncoder.setFragmentBuffer(filterUniformBuffer, offset: 0, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
         }
     }
     
-    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer) {
+    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer, textures: FluidRenderTextures) {
         let thicknessPassDescriptor = MTLRenderPassDescriptor()
-        thicknessPassDescriptor.colorAttachments[0].texture = thicknessTexture
+        thicknessPassDescriptor.colorAttachments[0].texture = textures.thicknessTexture
         thicknessPassDescriptor.colorAttachments[0].loadAction = .clear
         thicknessPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         thicknessPassDescriptor.colorAttachments[0].storeAction = .store
@@ -445,8 +504,8 @@ extension MPMFluidRenderer {
         // Create depth buffer for depth testing
         let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .depth32Float,
-            width: thicknessTexture.width,
-            height: thicknessTexture.height,
+            width: textures.thicknessTexture.width,
+            height: textures.thicknessTexture.height,
             mipmapped: false
         )
         depthTextureDescriptor.usage = .renderTarget
@@ -475,7 +534,7 @@ extension MPMFluidRenderer {
         renderEncoder.endEncoding()
     }
     
-    internal func applyThicknessFilter(commandBuffer: MTLCommandBuffer, filterRadius: Int = 4) {
+    internal func applyThicknessFilter(commandBuffer: MTLCommandBuffer, textures: FluidRenderTextures, filterRadius: Int = 4) {
         // Update Gaussian uniforms
         let gaussianPointer = gaussianUniformBuffer.contents().bindMemory(
             to: GaussianUniforms.self,
@@ -485,19 +544,19 @@ extension MPMFluidRenderer {
         // Horizontal pass
         gaussianPointer[0] = GaussianUniforms(
             direction: SIMD2<Float>(1.0, 0.0),
-            screenSize: screenSize,
+            screenSize: textures.screenSize,
             filterRadius: Int32(filterRadius)
         )
         
         let horizontalPassDescriptor = MTLRenderPassDescriptor()
-        horizontalPassDescriptor.colorAttachments[0].texture = tempThicknessTexture
+        horizontalPassDescriptor.colorAttachments[0].texture = textures.tempThicknessTexture
         horizontalPassDescriptor.colorAttachments[0].loadAction = .clear
         horizontalPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         horizontalPassDescriptor.colorAttachments[0].storeAction = .store
         
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: horizontalPassDescriptor) {
             renderEncoder.setRenderPipelineState(gaussianFilterPipelineState)
-            renderEncoder.setFragmentTexture(thicknessTexture, index: 0)
+            renderEncoder.setFragmentTexture(textures.thicknessTexture, index: 0)
             renderEncoder.setFragmentBuffer(gaussianUniformBuffer, offset: 0, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()
@@ -506,19 +565,19 @@ extension MPMFluidRenderer {
         // Vertical pass
         gaussianPointer[0] = GaussianUniforms(
             direction: SIMD2<Float>(0.0, 1.0),
-            screenSize: screenSize,
+            screenSize: textures.screenSize,
             filterRadius: Int32(filterRadius)
         )
         
         let verticalPassDescriptor = MTLRenderPassDescriptor()
-        verticalPassDescriptor.colorAttachments[0].texture = filteredThicknessTexture
+        verticalPassDescriptor.colorAttachments[0].texture = textures.filteredThicknessTexture
         verticalPassDescriptor.colorAttachments[0].loadAction = .clear
         verticalPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         verticalPassDescriptor.colorAttachments[0].storeAction = .store
         
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: verticalPassDescriptor) {
             renderEncoder.setRenderPipelineState(gaussianFilterPipelineState)
-            renderEncoder.setFragmentTexture(tempThicknessTexture, index: 0)
+            renderEncoder.setFragmentTexture(textures.tempThicknessTexture, index: 0)
             renderEncoder.setFragmentBuffer(gaussianUniformBuffer, offset: 0, index: 0)
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             renderEncoder.endEncoding()

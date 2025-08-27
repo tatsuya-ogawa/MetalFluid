@@ -265,25 +265,26 @@ class WaterRenderer: ModeRenderer {
         }
         let screenSize = SIMD2<Float>(Float(colorTexture.width), Float(colorTexture.height))
         
-        renderer.updateScreenSize(screenSize)
+        let textures = renderer.getTexturesForScreenSize(screenSize)
         
         // Step 1: Render depth map
-        renderer.renderDepthMap(commandBuffer: commandBuffer)
+        renderer.renderDepthMap(commandBuffer: commandBuffer, textures: textures)
         
         // Step 2: Apply bilateral filter to depth (4 iterations)
         for _ in 0..<4 {
             renderer.applyDepthFilter(
                 commandBuffer: commandBuffer,
+                textures: textures,
                 depthThreshold: 0.01,
                 filterRadius: 3
             )
         }
         
         // Step 3: Render thickness map
-        renderer.renderThicknessMap(commandBuffer: commandBuffer)
+        renderer.renderThicknessMap(commandBuffer: commandBuffer, textures: textures)
         
         // Step 4: Apply Gaussian filter to thickness (1 iteration)
-        renderer.applyThicknessFilter(commandBuffer: commandBuffer, filterRadius: 4)
+        renderer.applyThicknessFilter(commandBuffer: commandBuffer, textures: textures, filterRadius: 4)
         
         // Step 5: Render final fluid surface
         let fluidUniformPointer = renderer.fluidRenderUniformBuffer.contents().bindMemory(
@@ -291,7 +292,7 @@ class WaterRenderer: ModeRenderer {
             capacity: 1
         )
         
-        let texelSize = SIMD2<Float>(1.0 / screenSize.x, 1.0 / screenSize.y)
+        let texelSize = SIMD2<Float>(1.0 / textures.screenSize.x, 1.0 / textures.screenSize.y)
         let invProjectionMatrix = projectionMatrix.inverse
         let invViewMatrix = viewMatrix.inverse
         
@@ -341,9 +342,9 @@ class WaterRenderer: ModeRenderer {
         renderEncoder.setRenderPipelineState(renderer.fluidSurfacePipelineState)
         renderEncoder.setDepthStencilState(fluidDepthStencilState)
         renderEncoder.setVertexBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
-        renderEncoder.setFragmentTexture(renderer.depthTexture, index: 0)
-        renderEncoder.setFragmentTexture(renderer.filteredThicknessTexture, index: 1)
-        renderEncoder.setFragmentTexture(renderer.environmentTexture, index: 2)
+        renderEncoder.setFragmentTexture(textures.depthTexture, index: 0)
+        renderEncoder.setFragmentTexture(textures.filteredThicknessTexture, index: 1)
+        renderEncoder.setFragmentTexture(textures.environmentTexture, index: 2)
         renderEncoder.setFragmentBuffer(renderer.fluidRenderUniformBuffer, offset: 0, index: 0)
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         
