@@ -366,7 +366,45 @@ class WaterRenderer: ModeRenderer {
     }
 }
 
+class MaterialParameters {
+    
+    // Number of simulation substeps per frame
+    public var simulationSubsteps: Int {
+        get{
+            switch currentMaterialMode {
+            case .fluid:
+                return 2
+            case .neoHookeanElastic:
+                return 1
+            case .rigidBody:
+                return 1  // Rigid body is stable with single substep
+            }
+        }
+    }
+    // Material mode state
+    public var currentMaterialMode: MaterialMode = .fluid
+    public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
+    public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
+    public let particleMass: Float = 1
+    public let restDensity: Float = 4.0
+    let stiffness: Float = 3.0
+    let dynamic_viscosity: Float = 0.1
+    public var gravity: Float {
+        get{
+            switch currentMaterialMode{
+            case .fluid:
+                return  -2.5 //-9.81
+            case .neoHookeanElastic:
+                return -1.0
+            case .rigidBody:
+                return -2.0  // Standard gravity for rigid body
+            }
+        }
+    }
+}
+
 class MPMFluidRenderer: NSObject {
+    let materialParameters = MaterialParameters()
     // Public for testing
     public var device: MTLDevice!
     public var commandQueue: MTLCommandQueue!
@@ -452,8 +490,6 @@ class MPMFluidRenderer: NSObject {
     // Texture cache for screen size optimization
     internal let textureCacheManager: TextureCacheManager<FluidRenderTextures>
     
-   
-    
     // Performance settings - Public for testing
     public var particleCount: Int
     public var gridSize: Int
@@ -461,28 +497,9 @@ class MPMFluidRenderer: NSObject {
     public var gridNodes: Int { gridSize * Int(Float(gridSize) * gridHeightMultiplier) * gridSize }
     internal var frameIndex: Int = 0
     
-    // Number of simulation substeps per frame
-    public var simulationSubsteps: Int {
-        get{
-            switch currentMaterialMode {
-            case .fluid:
-                return 2
-            case .neoHookeanElastic:
-                return 1
-            case .rigidBody:
-                return 1  // Rigid body is stable with single substep
-            }
-        }
-    }
-    
     // Render mode state
     public var currentRenderMode: RenderMode = .particles
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
-    
-    // Material mode state
-    public var currentMaterialMode: MaterialMode = .fluid
-    public var youngsModulus: Float = 2e7  // Young's modulus (Pa) - Increased significantly for gravity resistance
-    public var poissonsRatio: Float = 0.15  // Poisson's ratio - Lower for stiffer response
     
     // AR state
     public var isAREnabled: Bool = false
@@ -496,10 +513,10 @@ class MPMFluidRenderer: NSObject {
     
     // Particle size multiplier for smooth scaling
     public var particleSizeMultiplier: Float = 1.0
-    
     // Mass scale multiplier for particle mass scaling
     public var massScale: Float = 1.0
-    
+
+    public let gridSpacing: Float = 1.0
     // MLS-MPM parameters - Public for testing
     public func getGridRes()->SIMD3<Int32>{
         return SIMD3<Int32>(
@@ -508,23 +525,6 @@ class MPMFluidRenderer: NSObject {
             Int32(gridSize)
         )
     }
-    public let particleMass: Float = 1
-    public let restDensity: Float = 4.0
-    let stiffness: Float = 3.0
-    let dynamic_viscosity: Float = 0.1
-    public var gravity: Float {
-        get{
-            switch currentMaterialMode{
-            case .fluid:
-                return  -2.5 //-9.81
-            case .neoHookeanElastic:
-                return -1.0
-            case .rigidBody:
-                return -2.0  // Standard gravity for rigid body
-            }
-        }
-    }
-    public let gridSpacing: Float = 1.0
     func getRenderScale(scale:Float) -> Float{
         return scale / gridSpacing / Float(gridSize) * 2
     }
@@ -747,7 +747,7 @@ class MPMFluidRenderer: NSObject {
             gridSpacing: gridSpacing,
             physicalDomainOrigin: domainOrigin,
             gridResolution: gridRes,
-            rest_density: restDensity,
+            rest_density: materialParameters.restDensity,
             particleSizeMultiplier: particleSizeMultiplier,
             sphere_size: 0.025 * particleSizeMultiplier  // Same calculation as WebGPU
         )
@@ -893,22 +893,22 @@ class MPMFluidRenderer: NSObject {
         computeUniformPointer[0] = ComputeShaderUniforms(
             deltaTime: timeStep,
             particleCount: UInt32(particleCount),
-            gravity: gravity,
+            gravity: materialParameters.gravity,
             gridSpacing: gridSpacing,
             domainOrigin: domainOrigin,
             gridResolution: gridRes,
             gridNodeCount: nodeCount,
             boundaryMin: boundaryMin,
             boundaryMax: boundaryMax,
-            stiffness: stiffness,
-            rest_density: restDensity,
-            dynamic_viscosity: dynamic_viscosity,
+            stiffness: materialParameters.stiffness,
+            rest_density: materialParameters.restDensity,
+            dynamic_viscosity: materialParameters.dynamic_viscosity,
             massScale: massScale,
             timeSalt: timeSalt,
-            materialMode: UInt32(currentMaterialMode == .fluid ? 0 : (currentMaterialMode == .neoHookeanElastic ? 1 : 2)),  // 0: fluid, 1: elastic, 2: rigid
-            youngsModulus: youngsModulus,
-            poissonsRatio: poissonsRatio,
-            rigidBodyCount: currentMaterialMode == .rigidBody ? 1 : 0
+            materialMode: UInt32(materialParameters.currentMaterialMode == .fluid ? 0 : (materialParameters.currentMaterialMode == .neoHookeanElastic ? 1 : 2)),  // 0: fluid, 1: elastic, 2: rigid
+            youngsModulus: materialParameters.youngsModulus,
+            poissonsRatio: materialParameters.poissonsRatio,
+            rigidBodyCount: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
         )
     }
     

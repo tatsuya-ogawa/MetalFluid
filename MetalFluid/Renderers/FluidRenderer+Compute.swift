@@ -231,11 +231,11 @@ extension MPMFluidRenderer {
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
         
-        if currentMaterialMode == .neoHookeanElastic {
+        if materialParameters.currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
             setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
             
-        } else if currentMaterialMode == .rigidBody{
+        } else if materialParameters.currentMaterialMode == .rigidBody{
             setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
             // Initialize rigid body states if in rigid body mode
             initializeRigidBodyStates()
@@ -288,9 +288,9 @@ extension MPMFluidRenderer {
                         position: pos + randomOffset,
                         velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                         C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                        mass: particleMass,
-                        rigidId: currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                        initialOffset: currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
+                        mass: materialParameters.particleMass,
+                        rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                        initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
                     )
                     
                     particleIndex += 1
@@ -312,9 +312,9 @@ extension MPMFluidRenderer {
                 position: pos,
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                 C: simd_float3x3(0.0),
-                mass: particleMass,
-                rigidId: currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                initialOffset: currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
+                mass: materialParameters.particleMass,
+                rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
             )
             
             particleIndex += 1
@@ -365,7 +365,7 @@ extension MPMFluidRenderer {
                 position: finalPos,
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
                 C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                mass: particleMass,
+                mass: materialParameters.particleMass,
                 rigidId: 0,  // Fluid particles don't belong to rigid bodies
                 initialOffset: SIMD3<Float>(0, 0, 0)
             )
@@ -393,7 +393,7 @@ extension MPMFluidRenderer {
                 computeEncoder.setBuffer(particleBuffer, offset: 0, index: 1)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
                 
-                let rigidBodyCount = currentMaterialMode == .rigidBody ? 1 : 0
+                let rigidBodyCount = materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
                 let threadgroupSize = min(initPipelineState.maxTotalThreadsPerThreadgroup, 256)
                 let threadgroups = MTLSize(
                     width: (rigidBodyCount + threadgroupSize - 1) / threadgroupSize,
@@ -497,7 +497,7 @@ extension MPMFluidRenderer {
         )
 
         // Use multiple simulation substeps per frame for better stability.
-        let substeps = max(1, simulationSubsteps)
+        let substeps = max(1, materialParameters.simulationSubsteps)
 
         for _ in 0..<substeps {
             // 1. Clear grid
@@ -513,7 +513,7 @@ extension MPMFluidRenderer {
             }
 
             // 2. Particle to Grid (P2G) - Material-dependent transfer
-            if currentMaterialMode == .fluid {
+            if materialParameters.currentMaterialMode == .fluid {
                 // Fluid P2G Phase 1: Transfer mass and momentum from particles to grid
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
@@ -542,7 +542,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.endEncoding()
                 }
-            } else if currentMaterialMode == .neoHookeanElastic {
+            } else if materialParameters.currentMaterialMode == .neoHookeanElastic {
                 // Elastic P2G: Neo-Hookean elastic material transfer
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
@@ -589,7 +589,7 @@ extension MPMFluidRenderer {
             }
 
             // 4. Grid to Particles (G2P) - Material-dependent transfer
-            if currentMaterialMode == .fluid {
+            if materialParameters.currentMaterialMode == .fluid {
                 // Fluid G2P: Transfer velocity and affine momentum from grid to particles
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
@@ -614,7 +614,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.endEncoding()
                 }
-            } else if currentMaterialMode == .neoHookeanElastic {
+            } else if materialParameters.currentMaterialMode == .neoHookeanElastic {
                 // Elastic G2P: Neo-Hookean elastic material transfer
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                     computeEncoder.setComputePipelineState(
@@ -682,7 +682,7 @@ extension MPMFluidRenderer {
                 }
                 
                 // Rigid Body G2P Stage 3: Update rigid body dynamics (gridToParticlesRigid3)
-                let rigidBodyCount = currentMaterialMode == .rigidBody ? 1 : 0
+                let rigidBodyCount = materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
                 if rigidBodyCount > 0 {
                     if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                         computeEncoder.setComputePipelineState(
