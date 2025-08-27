@@ -352,6 +352,7 @@ extension MPMFluidRenderer{
             
             // Swap particle buffers
             swap(&particleBuffer, &radixSortedParticleBuffer)
+        case .none: break
         }
         
         commandBuffer.commit()
@@ -566,7 +567,9 @@ extension MPMFluidRenderer{
         case .bitonicSort:
             setSortingAlgorithm(.radixSort)
         case .radixSort:
-            setSortingAlgorithm(.bitonicSort)
+            setSortingAlgorithm(.none)
+        case .none:
+            setSortingAlgorithm(.radixSort)
         }
     }
     
@@ -576,6 +579,8 @@ extension MPMFluidRenderer{
             return "Bitonic Sort"
         case .radixSort:
             return "One-sweep Radix Sort"
+        case .none:
+            return "None"
         }
     }
 

@@ -133,6 +133,7 @@ enum ParticleRenderMode {
 }
 
 enum SortingAlgorithm {
+    case none
     case bitonicSort
     case radixSort
 }
@@ -478,7 +479,7 @@ class MPMFluidRenderer: NSObject {
     // Particle sorting configuration
     public var enableParticleSorting: Bool = false
     public var sortingFrequency: Int = 4  // Sort every N frames
-    public var currentSortingAlgorithm: SortingAlgorithm = .radixSort
+    public var currentSortingAlgorithm: SortingAlgorithm = .none
     
     // Render mode state
     public var currentRenderMode: RenderMode = .particles
