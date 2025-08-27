@@ -251,17 +251,6 @@ extension MPMFluidRenderer {
         projectionMatrix: float4x4,
         viewMatrix: float4x4
     ) {
-        // Guard against concurrent rendering
-        guard renderSemaphore.wait(timeout: DispatchTime.now()) == .success else {
-            print("⚠️ Skipping render frame - previous render still in progress")
-            return
-        }
-        
-        // Wait for available buffer
-        _ = inflightSemaphore.wait(timeout: DispatchTime.distantFuture)
-        
-        // Mark as rendering
-        isRendering = true
         // Render AR background if enabled
         if isAREnabled, let arRenderer = arRenderer {
             renderARBackground(renderPassDescriptor: renderPassDescriptor, arRenderer: arRenderer)
@@ -294,31 +283,6 @@ extension MPMFluidRenderer {
                         projectionMatrix: projectionMatrix,
                         viewMatrix: viewMatrix)
         }
-        
-        // Setup command buffer completion synchronization
-        setupRenderCompletionHandler(renderPassDescriptor: renderPassDescriptor)
-    }
-    
-    
-    private func setupRenderCompletionHandler(renderPassDescriptor: MTLRenderPassDescriptor) {
-        // Create a command buffer for completion tracking
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            print("❌ Failed to create completion tracking command buffer")
-            completeRender()
-            return
-        }
-        
-        commandBuffer.label = "Render Completion Tracker"
-        
-        // Add completion handler
-        commandBuffer.addCompletedHandler { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.completeRender()
-            }
-        }
-        
-        // Commit the tracking buffer
-        commandBuffer.commit()
     }
     
     // MARK: - AR Rendering Functions
