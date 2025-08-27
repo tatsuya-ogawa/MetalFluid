@@ -196,14 +196,14 @@ extension MPMFluidRenderer {
         
         // Copy initial data from compute buffer to render buffer
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-    let renderParticlePointer = renderParticleBuffer.contents()
-    memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
+        let renderParticlePointer = renderParticleBuffer.contents()
+        memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
 
-    // Copy rigid info to render rigid info buffer
-    let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-    let computeRigidPtr = computeRigidInfoBuffer.contents()
-    let renderRigidPtr = renderRigidInfoBuffer.contents()
-    memcpy(renderRigidPtr, computeRigidPtr, rigidInfoSize)
+        // Copy rigid info to render rigid info buffer
+        let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
+        let computeRigidPtr = computeRigidInfoBuffer.contents()
+        let renderRigidPtr = renderRigidInfoBuffer.contents()
+        memcpy(renderRigidPtr, computeRigidPtr, rigidInfoSize)
         
         print("🔄 Initialized particles in both compute and render buffers")
     }
