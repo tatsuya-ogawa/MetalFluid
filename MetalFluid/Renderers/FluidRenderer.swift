@@ -231,13 +231,6 @@ class ParticleRenderer: ModeRenderer {
             renderEncoder.endEncoding()
         }
         
-        // Add completion handler for proper synchronization
-        commandBuffer.addCompletedHandler { commandBuffer in
-            if commandBuffer.status == .error {
-                print("❌ ParticleRenderer command buffer error: \(commandBuffer.error?.localizedDescription ?? "Unknown")")
-            }
-        }
-        
         commandBuffer.commit()
     }
 }
@@ -355,13 +348,6 @@ class WaterRenderer: ModeRenderer {
         
         renderEncoder.endEncoding()
         
-        // Add completion handler for proper synchronization
-        commandBuffer.addCompletedHandler { commandBuffer in
-            if commandBuffer.status == .error {
-                print("❌ WaterRenderer command buffer error: \(commandBuffer.error?.localizedDescription ?? "Unknown")")
-            }
-        }
-        
         commandBuffer.commit()
     }
 }
@@ -469,39 +455,12 @@ class MPMFluidRenderer: NSObject {
     private var arSDFTexture: MTLTexture?
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
     
-    // Additional safety checks
-    public func isRenderingSafe() -> Bool {
-        return !isRendering
-    }
-    
-    public func forceRenderingComplete() {
-        if isRendering {
-            print("⚠️ Force completing stuck render operation")
-            completeRender()
-        }
-    }
-    
-    internal func completeRender() {
-        isRendering = false
-        inflightSemaphore.signal()
-        renderSemaphore.signal()
-    }
-    
     // Performance settings - Public for testing
     public var particleCount: Int
     public var gridSize: Int
     private let gridHeightMultiplier: Float
     public var gridNodes: Int { gridSize * Int(Float(gridSize) * gridHeightMultiplier) * gridSize }
     internal var frameIndex: Int = 0
-    
-    // Rendering synchronization
-    internal let renderSemaphore = DispatchSemaphore(value: 1)
-    internal var isRendering: Bool = false
-    private let renderQueue = DispatchQueue(label: "com.metalfluid.render", qos: .userInteractive)
-    
-    // Metal synchronization
-    internal var inflightSemaphore: DispatchSemaphore
-    private let maxBuffersInFlight = 3
     
     // Number of simulation substeps per frame
     public var simulationSubsteps: Int {
@@ -624,7 +583,6 @@ class MPMFluidRenderer: NSObject {
         self.particleCount = particleCount
         self.gridSize = gridSize
         self.gridHeightMultiplier = gridHeightMultiplier
-        self.inflightSemaphore = DispatchSemaphore(value: maxBuffersInFlight)
         super.init()
         setupMetal()
         setupCollisionManager()  // Initialize collision manager once
