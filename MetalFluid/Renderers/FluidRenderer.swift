@@ -401,6 +401,11 @@ class MaterialParameters {
             }
         }
     }
+    public var materialMode: UInt32{
+        get{
+            return (currentMaterialMode == .fluid ? 0 : (currentMaterialMode == .neoHookeanElastic ? 1 : 2))  // 0: fluid, 1: elastic, 2: rigid
+        }
+    }
 }
 
 class MPMFluidRenderer: NSObject {
@@ -905,7 +910,7 @@ class MPMFluidRenderer: NSObject {
             dynamic_viscosity: materialParameters.dynamic_viscosity,
             massScale: massScale,
             timeSalt: timeSalt,
-            materialMode: UInt32(materialParameters.currentMaterialMode == .fluid ? 0 : (materialParameters.currentMaterialMode == .neoHookeanElastic ? 1 : 2)),  // 0: fluid, 1: elastic, 2: rigid
+            materialMode: materialParameters.materialMode,
             youngsModulus: materialParameters.youngsModulus,
             poissonsRatio: materialParameters.poissonsRatio,
             rigidBodyCount: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
