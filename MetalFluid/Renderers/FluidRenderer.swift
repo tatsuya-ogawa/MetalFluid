@@ -434,18 +434,18 @@ class MPMFluidRenderer: NSObject {
     internal var isComputing: Bool = false
     
     // Depth textures and buffers
-    internal var depthTexture: MTLTexture!
-    internal var tempDepthTexture: MTLTexture!
-    internal var filteredDepthTexture: MTLTexture!
+//    internal var depthTexture: MTLTexture!
+//    internal var tempDepthTexture: MTLTexture!
+//    internal var filteredDepthTexture: MTLTexture!
     internal var filterUniformBuffer: MTLBuffer!
     
     // Fluid surface rendering buffers and textures
     internal var fluidRenderUniformBuffer: MTLBuffer!
-    internal var thicknessTexture: MTLTexture!
-    internal var tempThicknessTexture: MTLTexture!
-    internal var filteredThicknessTexture: MTLTexture!
+//    internal var thicknessTexture: MTLTexture!
+//    internal var tempThicknessTexture: MTLTexture!
+//    internal var filteredThicknessTexture: MTLTexture!
     internal var gaussianUniformBuffer: MTLBuffer!
-    internal var environmentTexture: MTLTexture!
+//    internal var environmentTexture: MTLTexture!
     
     // Cube index buffer for instanced rendering
     internal var cubeIndexBuffer: MTLBuffer?
@@ -674,8 +674,8 @@ class MPMFluidRenderer: NSObject {
         setupFluidSurfacePipeline()
         setupThicknessPipelines()
         setupBuffers()
-        setupDepthTextures(screenSize: screenSize)
-        setupFluidTextures(screenSize: screenSize)
+//        setupDepthTextures(screenSize: screenSize)
+//        setupFluidTextures(screenSize: screenSize)
         setupSortManager()
     }
     

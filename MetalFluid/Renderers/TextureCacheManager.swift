@@ -22,7 +22,7 @@ internal class TextureCacheManager<T> {
     /// - Parameters:
     ///   - maxSize: 最大キャッシュサイズ（デフォルト: 3）
     ///   - name: キャッシュの名前（ログ用）
-    internal init(maxSize: Int = 3, name: String = "TextureCache") {
+    internal init(maxSize: Int = 2, name: String = "TextureCache") {
         self.maxCacheSize = maxSize
         self.cacheName = name
         self.queue = DispatchQueue(
