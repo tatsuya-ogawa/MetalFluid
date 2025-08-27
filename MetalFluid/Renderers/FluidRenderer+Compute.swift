@@ -220,7 +220,8 @@ extension MPMFluidRenderer {
     }
     
     internal func setupParticles() {
-        let particlePointer = particleBuffer.contents().bindMemory(
+        // Setup particles in compute buffer (primary)
+        let computeParticlePointer = computeParticleBuffer.contents().bindMemory(
             to: MPMParticle.self,
             capacity: particleCount
         )
@@ -232,16 +233,23 @@ extension MPMFluidRenderer {
         
         if currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
-            setupElasticCube(particlePointer: particlePointer, center: center, range: range)
+            setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
             
         } else if currentMaterialMode == .rigidBody{
-            setupElasticCube(particlePointer: particlePointer, center: center, range: range)
+            setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
             // Initialize rigid body states if in rigid body mode
             initializeRigidBodyStates()
         } else {
             // Original spherical distribution for fluid
-            setupFluidSphere(particlePointer: particlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
+            setupFluidSphere(particlePointer: computeParticlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
         }
+        
+        // Copy initial data from compute buffer to render buffer
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        let renderParticlePointer = renderParticleBuffer.contents()
+        memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
+        
+        print("🔄 Initialized particles in both compute and render buffers")
     }
     
     private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>) {
@@ -418,14 +426,17 @@ extension MPMFluidRenderer {
     // MARK: - Main Compute Function
     
     func compute(commandBuffer: MTLCommandBuffer) {
-        // Sort particles periodically for better cache locality
+        // Begin compute stage - use compute buffers only
+        beginCompute()
+        
+        // Sort particles periodically for better cache locality (compute buffer only)
         if enableParticleSorting && frameIndex % sortingFrequency == 0 {
             do {
                 let startTime = CACurrentMediaTime()
                 try sortParticlesByGridIndexSafe()
                 let sortTime = CACurrentMediaTime() - startTime
                 if frameIndex % (sortingFrequency * 10) == 0 {
-                    print("🔄 Particle sort took: \(String(format: "%.2f", sortTime * 1000))ms")
+                    print("🔄 Particle sort took: \(String(format: "%.2f", sortTime * 1000))ms (compute buffer)")
                 }
             } catch {
                 print("⚠️ Sorting error: \(error), disabling particle sorting")
@@ -434,6 +445,9 @@ extension MPMFluidRenderer {
         }
         
         computeSimulation(commandBuffer: commandBuffer)
+        
+        // End compute and copy results to render buffers
+        endComputeAndCopyToRender()
     }
     
     // MARK: - MPM Simulation Pipeline

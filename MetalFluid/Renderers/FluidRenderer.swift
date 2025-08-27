@@ -409,11 +409,28 @@ class MPMFluidRenderer: NSObject {
     internal var reorderParticlesRadixPipelineState: MTLComputePipelineState!
     internal var verifyRadixSortPipelineState: MTLComputePipelineState!
     
-    // Buffers - compute
-    internal var particleBuffer: MTLBuffer!
+    // Fixed 2-stage pipeline: Compute -> Rendering
+    
+    // Compute buffers (calculation only)
+    internal var computeParticleBuffer: MTLBuffer!
     internal var computeUniformBuffer: MTLBuffer!
+    
+    // Rendering buffers (display only)  
+    internal var renderParticleBuffer: MTLBuffer!
+    internal var renderUniformBuffer: MTLBuffer!
+    
+    // Static buffers
     internal var vertexUniformBuffer: MTLBuffer!
     internal var gridBuffer: MTLBuffer!
+    
+    // Buffer accessors for different stages
+    internal var particleBuffer: MTLBuffer {
+        // Use compute buffer during compute, render buffer during render
+        return isComputing ? computeParticleBuffer : renderParticleBuffer
+    }
+    
+    // Compute/Render state tracking
+    private var isComputing: Bool = false
     
     // Depth textures and buffers
     internal var depthTexture: MTLTexture!
@@ -455,6 +472,57 @@ class MPMFluidRenderer: NSObject {
     public var useARCollision: Bool = false
     private var arSDFTexture: MTLTexture?
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
+    
+    // 2-stage pipeline management
+    public func beginCompute() {
+        isComputing = true
+    }
+    
+    public func endComputeAndCopyToRender() {
+        guard isComputing else {
+            print("⚠️ endComputeAndCopyToRender called but not computing")
+            return
+        }
+        
+        // Copy computed data to render buffers
+        copyComputeBuffersToRender()
+        isComputing = false
+    }
+    
+    private func copyComputeBuffersToRender() {
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        let uniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
+        
+        // Copy particle data
+        let computePtr = computeParticleBuffer.contents()
+        let renderPtr = renderParticleBuffer.contents()
+        memcpy(renderPtr, computePtr, particleBufferSize)
+        
+        // Copy uniform data
+        let computeUniformPtr = computeUniformBuffer.contents()
+        let renderUniformPtr = renderUniformBuffer.contents()
+        memcpy(renderUniformPtr, computeUniformPtr, uniformBufferSize)
+        
+        print("🔄 Copied compute buffers to render buffers (\(particleBufferSize + uniformBufferSize) bytes)")
+    }
+    
+    public func swapParticleBufferWith(_ otherBuffer: inout MTLBuffer) {
+        // During compute, swap with compute buffer
+        if isComputing {
+            swap(&computeParticleBuffer, &otherBuffer)
+        } else {
+            // During render, this shouldn't happen but handle gracefully
+            print("⚠️ Attempted buffer swap during render phase")
+        }
+    }
+    
+    public func getCurrentBufferInfo() -> (stage: String, computeBuffer: String, renderBuffer: String) {
+        return (
+            stage: isComputing ? "Computing" : "Rendering",
+            computeBuffer: computeParticleBuffer?.label ?? "nil",
+            renderBuffer: renderParticleBuffer?.label ?? "nil"
+        )
+    }
     
     // Performance settings - Public for testing
     public var particleCount: Int
@@ -632,20 +700,47 @@ class MPMFluidRenderer: NSObject {
     }
     
     internal func setupBuffers() {
-        // MPM Particle buffer
-        let particleBufferSize =
-        MemoryLayout<MPMParticle>.stride * particleCount
-        particleBuffer = device.makeBuffer(
+        // Setup fixed 2-stage pipeline buffers
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        let computeUniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
+        
+        // Create compute buffers (calculation stage)
+        guard let computeParticles = device.makeBuffer(
             length: particleBufferSize,
             options: .storageModeShared
-        )!
+        ) else {
+            fatalError("Failed to create compute particle buffer")
+        }
+        computeParticles.label = "ComputeParticleBuffer"
+        computeParticleBuffer = computeParticles
         
-        // Compute shader uniform buffer
-        let computeUniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
-        computeUniformBuffer = device.makeBuffer(
+        guard let computeUniforms = device.makeBuffer(
             length: computeUniformBufferSize,
             options: .storageModeShared
-        )!
+        ) else {
+            fatalError("Failed to create compute uniform buffer")
+        }
+        computeUniforms.label = "ComputeUniformBuffer"
+        computeUniformBuffer = computeUniforms
+        
+        // Create rendering buffers (display stage)
+        guard let renderParticles = device.makeBuffer(
+            length: particleBufferSize,
+            options: .storageModeShared
+        ) else {
+            fatalError("Failed to create render particle buffer")
+        }
+        renderParticles.label = "RenderParticleBuffer"
+        renderParticleBuffer = renderParticles
+        
+        guard let renderUniforms = device.makeBuffer(
+            length: computeUniformBufferSize,
+            options: .storageModeShared
+        ) else {
+            fatalError("Failed to create render uniform buffer")
+        }
+        renderUniforms.label = "RenderUniformBuffer"
+        renderUniformBuffer = renderUniforms
         
         // Vertex shader uniform buffer
         let vertexUniformBufferSize = MemoryLayout<VertexShaderUniforms>.stride
@@ -725,7 +820,8 @@ class MPMFluidRenderer: NSObject {
     
     // For interaction (add force on tap)
     func addForce(at position: SIMD2<Float>, force: SIMD2<Float>) {
-        let particlePointer = particleBuffer.contents().bindMemory(
+        // Always apply force to compute buffer (active simulation data)
+        let particlePointer = computeParticleBuffer.contents().bindMemory(
             to: MPMParticle.self,
             capacity: particleCount
         )

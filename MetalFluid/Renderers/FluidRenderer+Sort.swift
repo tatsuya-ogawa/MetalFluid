@@ -177,7 +177,7 @@ extension MPMFluidRenderer{
         commandBuffer.waitUntilCompleted()
         
         // Swap particle buffers
-        swap(&particleBuffer, &sortedParticleBuffer)
+        swapParticleBufferWith(&sortedParticleBuffer)
     }
     
     internal func bitonicSort(commandBuffer: MTLCommandBuffer) {
@@ -338,7 +338,7 @@ extension MPMFluidRenderer{
             reorderParticles(commandBuffer: commandBuffer)
             
             // Swap particle buffers
-            swap(&particleBuffer, &sortedParticleBuffer)
+            swapParticleBufferWith(&sortedParticleBuffer)
             
         case .radixSort:
             // 1. Extract sort keys for radix sort
@@ -351,7 +351,7 @@ extension MPMFluidRenderer{
             reorderParticlesRadix(commandBuffer: commandBuffer)
             
             // Swap particle buffers
-            swap(&particleBuffer, &radixSortedParticleBuffer)
+            swapParticleBufferWith(&radixSortedParticleBuffer)
         case .none: break
         }
         
