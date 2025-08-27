@@ -422,25 +422,62 @@ class MPMFluidRenderer: NSObject {
     internal var reorderParticlesRadixPipelineState: MTLComputePipelineState!
     internal var verifyRadixSortPipelineState: MTLComputePipelineState!
     
-    // Buffers - compute
-    internal var particleBuffer: MTLBuffer!
-    internal var computeUniformBuffer: MTLBuffer!
-    internal var vertexUniformBuffer: MTLBuffer!
+    // Multi-buffered resources for smooth rendering
+    private let bufferCount = 3  // Triple buffering
+    private var currentBufferIndex = 0
+    
+    // Buffers - compute (multi-buffered)
+    internal var particleBuffers: [MTLBuffer] = []
+    internal var computeUniformBuffers: [MTLBuffer] = []
+    internal var vertexUniformBuffers: [MTLBuffer] = []
+    
+    // Single buffers (static data)
     internal var gridBuffer: MTLBuffer!
     
-    // Depth textures and buffers
+    // Current buffer accessors
+    internal var particleBuffer: MTLBuffer {
+        return particleBuffers[currentBufferIndex]
+    }
+    internal var computeUniformBuffer: MTLBuffer {
+        return computeUniformBuffers[currentBufferIndex]
+    }
+    internal var vertexUniformBuffer: MTLBuffer {
+        return vertexUniformBuffers[currentBufferIndex]
+    }
+    
+    // Single textures (not multi-buffered for now due to complexity)
     internal var depthTexture: MTLTexture!
     internal var tempDepthTexture: MTLTexture!
     internal var filteredDepthTexture: MTLTexture!
-    internal var filterUniformBuffer: MTLBuffer!
-    
-    // Fluid surface rendering buffers and textures
-    internal var fluidRenderUniformBuffer: MTLBuffer!
     internal var thicknessTexture: MTLTexture!
     internal var tempThicknessTexture: MTLTexture!
     internal var filteredThicknessTexture: MTLTexture!
-    internal var gaussianUniformBuffer: MTLBuffer!
+    
+    // Multi-buffered uniform buffers
+    internal var filterUniformBuffers: [MTLBuffer] = []
+    internal var fluidRenderUniformBuffers: [MTLBuffer] = []
+    internal var gaussianUniformBuffers: [MTLBuffer] = []
+    
+    // Static resources
     internal var environmentTexture: MTLTexture!
+    internal var filterUniformBuffer: MTLBuffer {
+        guard !filterUniformBuffers.isEmpty else {
+            fatalError("Filter uniform buffers not initialized")
+        }
+        return filterUniformBuffers[currentBufferIndex]
+    }
+    internal var fluidRenderUniformBuffer: MTLBuffer {
+        guard !fluidRenderUniformBuffers.isEmpty else {
+            fatalError("Fluid render uniform buffers not initialized")
+        }
+        return fluidRenderUniformBuffers[currentBufferIndex]
+    }
+    internal var gaussianUniformBuffer: MTLBuffer {
+        guard !gaussianUniformBuffers.isEmpty else {
+            fatalError("Gaussian uniform buffers not initialized")
+        }
+        return gaussianUniformBuffers[currentBufferIndex]
+    }
     
     // Cube index buffer for instanced rendering
     internal var cubeIndexBuffer: MTLBuffer?
@@ -482,9 +519,42 @@ class MPMFluidRenderer: NSObject {
     }
     
     internal func completeRender() {
+        // Rotate to next buffer
+        currentBufferIndex = (currentBufferIndex + 1) % bufferCount
+        
         isRendering = false
         inflightSemaphore.signal()
         renderSemaphore.signal()
+    }
+    
+    // Manual buffer rotation for specific scenarios
+    public func rotateBuffers() {
+        currentBufferIndex = (currentBufferIndex + 1) % bufferCount
+    }
+    
+    // Get specific buffer for advanced usage
+    public func getParticleBuffer(index: Int) -> MTLBuffer? {
+        guard index < particleBuffers.count else { return nil }
+        return particleBuffers[index]
+    }
+    
+    // Buffer swap operations for sorting
+    internal func swapParticleBufferWith(_ otherBuffer: inout MTLBuffer) {
+        let temp = particleBuffers[currentBufferIndex]
+        particleBuffers[currentBufferIndex] = otherBuffer
+        otherBuffer = temp
+    }
+    
+    // Buffer state monitoring
+    public func getBufferInfo() -> (currentIndex: Int, totalBuffers: Int, bufferSize: Int) {
+        let bufferSize = particleBuffers.first?.length ?? 0
+        return (currentIndex: currentBufferIndex, totalBuffers: bufferCount, bufferSize: bufferSize)
+    }
+    
+    public func printBufferStatus() {
+        let info = getBufferInfo()
+        print("🔄 Buffer Status: \(info.currentIndex)/\(info.totalBuffers-1), Size: \(info.bufferSize) bytes")
+        print("📊 Rendering: \(isRendering ? "Yes" : "No")")
     }
     
     // Performance settings - Public for testing
@@ -674,26 +744,47 @@ class MPMFluidRenderer: NSObject {
     
     internal func setupBuffers() {
         // MPM Particle buffer
-        let particleBufferSize =
-        MemoryLayout<MPMParticle>.stride * particleCount
-        particleBuffer = device.makeBuffer(
-            length: particleBufferSize,
-            options: .storageModeShared
-        )!
-        
-        // Compute shader uniform buffer
+        // Setup multi-buffered resources
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         let computeUniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
-        computeUniformBuffer = device.makeBuffer(
-            length: computeUniformBufferSize,
-            options: .storageModeShared
-        )!
-        
-        // Vertex shader uniform buffer
         let vertexUniformBufferSize = MemoryLayout<VertexShaderUniforms>.stride
-        vertexUniformBuffer = device.makeBuffer(
-            length: vertexUniformBufferSize,
-            options: .storageModeShared
-        )!
+        
+        // Create multiple buffers for smooth rendering
+        particleBuffers.removeAll()
+        computeUniformBuffers.removeAll()
+        vertexUniformBuffers.removeAll()
+        
+        for i in 0..<bufferCount {
+            // Particle buffers
+            guard let particleBuffer = device.makeBuffer(
+                length: particleBufferSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create particle buffer \(i)")
+            }
+            particleBuffer.label = "ParticleBuffer_\(i)"
+            particleBuffers.append(particleBuffer)
+            
+            // Compute uniform buffers
+            guard let computeBuffer = device.makeBuffer(
+                length: computeUniformBufferSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create compute uniform buffer \(i)")
+            }
+            computeBuffer.label = "ComputeUniformBuffer_\(i)"
+            computeUniformBuffers.append(computeBuffer)
+            
+            // Vertex uniform buffers
+            guard let vertexBuffer = device.makeBuffer(
+                length: vertexUniformBufferSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create vertex uniform buffer \(i)")
+            }
+            vertexBuffer.label = "VertexUniformBuffer_\(i)"
+            vertexUniformBuffers.append(vertexBuffer)
+        }
         
         // Grid buffer - Using correct struct size
         let gridBufferSize = MemoryLayout<MPMGridNode>.stride * gridNodes
@@ -708,27 +799,46 @@ class MPMFluidRenderer: NSObject {
             options: .storageModeShared
         )!
         
-        // Filter uniform buffer
+        // Setup multi-buffered uniform buffers
         let filterUniformSize = MemoryLayout<FilterUniforms>.stride
-        filterUniformBuffer = device.makeBuffer(
-            length: filterUniformSize,
-            options: .storageModeShared
-        )!
-        
-        // Fluid render uniform buffer
         let fluidRenderUniformSize = MemoryLayout<FluidRenderUniforms>.stride
-        fluidRenderUniformBuffer = device.makeBuffer(
-            length: fluidRenderUniformSize,
-            options: .storageModeShared
-        )!
-        
-        
-        // Gaussian uniform buffer
         let gaussianUniformSize = MemoryLayout<GaussianUniforms>.stride
-        gaussianUniformBuffer = device.makeBuffer(
-            length: gaussianUniformSize,
-            options: .storageModeShared
-        )!
+        
+        filterUniformBuffers.removeAll()
+        fluidRenderUniformBuffers.removeAll()
+        gaussianUniformBuffers.removeAll()
+        
+        for i in 0..<bufferCount {
+            // Filter uniform buffers
+            guard let filterBuffer = device.makeBuffer(
+                length: filterUniformSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create filter uniform buffer \(i)")
+            }
+            filterBuffer.label = "FilterUniformBuffer_\(i)"
+            filterUniformBuffers.append(filterBuffer)
+            
+            // Fluid render uniform buffers
+            guard let fluidBuffer = device.makeBuffer(
+                length: fluidRenderUniformSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create fluid render uniform buffer \(i)")
+            }
+            fluidBuffer.label = "FluidRenderUniformBuffer_\(i)"
+            fluidRenderUniformBuffers.append(fluidBuffer)
+            
+            // Gaussian uniform buffers
+            guard let gaussianBuffer = device.makeBuffer(
+                length: gaussianUniformSize,
+                options: .storageModeShared
+            ) else {
+                fatalError("Failed to create gaussian uniform buffer \(i)")
+            }
+            gaussianBuffer.label = "GaussianUniformBuffer_\(i)"
+            gaussianUniformBuffers.append(gaussianBuffer)
+        }
         
         // Rigid body state buffer
         let maxRigidBodies = 10  // Maximum number of rigid bodies
