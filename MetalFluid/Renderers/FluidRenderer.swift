@@ -477,7 +477,7 @@ class MPMFluidRenderer: NSObject {
     
     // Rendering buffers (display only)  
     internal var renderParticleBuffer: MTLBuffer!
-    internal var renderUniformBuffer: MTLBuffer!
+//    internal var renderUniformBuffer: MTLBuffer!
     
     // Static buffers
     internal var vertexUniformBuffer: MTLBuffer!
@@ -706,14 +706,14 @@ class MPMFluidRenderer: NSObject {
         renderRigid.label = "RenderRigidInfoBuffer"
         renderRigidInfoBuffer = renderRigid
         
-        guard let renderUniforms = device.makeBuffer(
-            length: computeUniformBufferSize,
-            options: .storageModeShared
-        ) else {
-            fatalError("Failed to create render uniform buffer")
-        }
-        renderUniforms.label = "RenderUniformBuffer"
-        renderUniformBuffer = renderUniforms
+//        guard let renderUniforms = device.makeBuffer(
+//            length: computeUniformBufferSize,
+//            options: .storageModeShared
+//        ) else {
+//            fatalError("Failed to create render uniform buffer")
+//        }
+//        renderUniforms.label = "RenderUniformBuffer"
+//        renderUniformBuffer = renderUniforms
         
         // Vertex shader uniform buffer
         let vertexUniformBufferSize = MemoryLayout<VertexShaderUniforms>.stride

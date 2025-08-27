@@ -428,7 +428,7 @@ extension MPMFluidRenderer {
         computeSimulation(commandBuffer: commandBuffer)
         
         // End compute and copy results to render buffers
-        endComputeAndCopyToRender()
+        endComputeAndSwapToRender()
     }
     
     // MARK: - MPM Simulation Pipeline
@@ -699,37 +699,88 @@ extension MPMFluidRenderer {
         }
     }
     
-    // 2-stage pipeline management
-    public func beginCompute() {
-        isComputing = true
-    }
-    
-    public func endComputeAndCopyToRender() {
-        guard isComputing else {
-            print("⚠️ endComputeAndCopyToRender called but not computing")
+    // MARK: - Buffer Copy Helper
+    private func copyBuffersWithBlit(from sourceBuffer: MTLBuffer, to destinationBuffer: MTLBuffer, size: Int, label: String) {
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+            print("⚠️ Failed to create command buffer or blit encoder for \(label)")
             return
         }
         
-        // Copy computed data to render buffers
-        copyComputeBuffersToRender()
+        blitEncoder.copy(
+            from: sourceBuffer,
+            sourceOffset: 0,
+            to: destinationBuffer,
+            destinationOffset: 0,
+            size: size
+        )
+        blitEncoder.endEncoding()
+        
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+    }
+    
+    // 2-stage pipeline management
+    public func beginCompute() {
+        // Copy render buffers to compute buffers before starting computation
+        copyRenderBuffersToCompute()
+        isComputing = true
+    }
+    
+    public func endComputeAndSwapToRender() {
+        guard isComputing else {
+            print("⚠️ endComputeAndSwapToRender called but not computing")
+            return
+        }
+        
+        // Swap compute and render buffers instead of copying
+        swapComputeAndRenderBuffers()
         isComputing = false
     }
     
-    private func copyComputeBuffersToRender() {
+    private func copyRenderBuffersToCompute() {
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         let uniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
+        let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
         
-        // Copy particle data
-        let computePtr = computeParticleBuffer.contents()
-        let renderPtr = renderParticleBuffer.contents()
-        memcpy(renderPtr, computePtr, particleBufferSize)
+        // Copy particle data from render to compute
+        copyBuffersWithBlit(
+            from: renderParticleBuffer,
+            to: computeParticleBuffer,
+            size: particleBufferSize,
+            label: "render to compute particles"
+        )
         
-        // Copy uniform data
-        let computeUniformPtr = computeUniformBuffer.contents()
-        let renderUniformPtr = renderUniformBuffer.contents()
-        memcpy(renderUniformPtr, computeUniformPtr, uniformBufferSize)
+        // Copy uniform data from render to compute
+//        copyBuffersWithBlit(
+//            from: renderUniformBuffer,
+//            to: computeUniformBuffer,
+//            size: uniformBufferSize,
+//            label: "render to compute uniforms"
+//        )
         
-        print("🔄 Copied compute buffers to render buffers (\(particleBufferSize + uniformBufferSize) bytes)")
+        // Copy rigid info from render to compute
+        copyBuffersWithBlit(
+            from: renderRigidInfoBuffer,
+            to: computeRigidInfoBuffer,
+            size: rigidInfoSize,
+            label: "render to compute rigid info"
+        )        
+        print("🔄 Copied render buffers to compute buffers (\(particleBufferSize + uniformBufferSize + rigidInfoSize) bytes)")
+    }
+    
+    private func swapComputeAndRenderBuffers() {
+        // Swap particle buffers using Swift's swap function
+        swap(&computeParticleBuffer, &renderParticleBuffer)
+        
+        // Swap rigid info buffers using Swift's swap function
+        swap(&computeRigidInfoBuffer, &renderRigidInfoBuffer)
+        
+        // Update buffer labels for debugging
+        computeParticleBuffer.label = "ComputeParticleBuffer"
+        renderParticleBuffer.label = "RenderParticleBuffer"
+        computeRigidInfoBuffer.label = "ComputeRigidInfoBuffer"
+        renderRigidInfoBuffer.label = "RenderRigidInfoBuffer"
     }
     
     
