@@ -9,11 +9,16 @@ struct MPMParticle {
     var velocity: SIMD3<Float>  // Velocity
     var C: simd_float3x3  // Affine momentum matrix (3D)
     var mass: Float  // Mass
-    var rigidId: UInt32  // Rigid body ID (0 = no rigid body, >0 = rigid body index)
-    var initialOffset: SIMD3<Float>  // Initial relative position from rigid body center of mass
+    // Note: rigidId and initialOffset moved to separate MPMParticleRigidInfo
     //    var volume: Float             // Volume
     //    var Jp: Float  // Plastic deformation determinant
     //    var color: SIMD3<Float>  // Rendering color
+}
+
+// Separate compact rigid-related info per particle
+struct MPMParticleRigidInfo {
+    var rigidId: UInt32
+    var initialOffset: SIMD3<Float>
 }
 
 // Match MPMTypes.h exactly to keep CPU/GPU strides aligned
@@ -450,6 +455,10 @@ class MPMFluidRenderer: NSObject {
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
     
+    // Separate rigid info buffers (compute / render)
+    internal var computeRigidInfoBuffer: MTLBuffer!
+    internal var renderRigidInfoBuffer: MTLBuffer!
+    
     // Sort manager for particle sorting operations
     internal var sortManager: SortManager!
     
@@ -655,6 +664,14 @@ class MPMFluidRenderer: NSObject {
         }
         computeParticles.label = "ComputeParticleBuffer"
         computeParticleBuffer = computeParticles
+
+        // Create compute rigid info buffer
+        let rigidInfoBufferSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
+        guard let computeRigid = device.makeBuffer(length: rigidInfoBufferSize, options: .storageModeShared) else {
+            fatalError("Failed to create compute rigid info buffer")
+        }
+        computeRigid.label = "ComputeRigidInfoBuffer"
+        computeRigidInfoBuffer = computeRigid
         
         guard let computeUniforms = device.makeBuffer(
             length: computeUniformBufferSize,
@@ -674,6 +691,13 @@ class MPMFluidRenderer: NSObject {
         }
         renderParticles.label = "RenderParticleBuffer"
         renderParticleBuffer = renderParticles
+
+        // Create render rigid info buffer
+        guard let renderRigid = device.makeBuffer(length: rigidInfoBufferSize, options: .storageModeShared) else {
+            fatalError("Failed to create render rigid info buffer")
+        }
+        renderRigid.label = "RenderRigidInfoBuffer"
+        renderRigidInfoBuffer = renderRigid
         
         guard let renderUniforms = device.makeBuffer(
             length: computeUniformBufferSize,

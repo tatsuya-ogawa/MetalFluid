@@ -18,12 +18,17 @@ typedef struct {
     float3 velocity;        // Velocity
     metal::float3x3 C;            // Affine momentum matrix
     float mass;           // Mass
-    uint32_t rigidId;     // Rigid body ID (0 = no rigid body, >0 = rigid body index)
-    float3 initialOffset; // Initial relative position from rigid body center of mass
+    // Rigid-related fields moved to separate struct MPMParticleRigidInfo
 //    float volume;         // Volume
 //    float Jp;             // Plastic deformation determinant
 //    float3 color;         // Rendering color
 } MPMParticle;
+
+// Rigid-related particle info stored separately for compact particle arrays
+typedef struct {
+    uint32_t rigidId;     // Rigid body ID (0 = no rigid body, >0 = rigid body index)
+    float3 initialOffset; // Initial relative position from rigid body center of mass
+} MPMParticleRigidInfo;
 
 // MLS-MPM grid node struct (shared between Swift and Metal)
 typedef struct {

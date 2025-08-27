@@ -175,12 +175,18 @@ extension MPMFluidRenderer {
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
         
+        // Rigid info pointer
+        let computeRigidInfoPointer = computeRigidInfoBuffer.contents().bindMemory(
+            to: MPMParticleRigidInfo.self,
+            capacity: particleCount
+        )
+
         if materialParameters.currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
             setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
             
         } else if materialParameters.currentMaterialMode == .rigidBody{
-            setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
+            setupElasticCube(particlePointer: computeParticlePointer,center: center, range: range, rigidInfoPointer: computeRigidInfoPointer)
             // Initialize rigid body states if in rigid body mode
             initializeRigidBodyStates()
         } else {
@@ -190,13 +196,19 @@ extension MPMFluidRenderer {
         
         // Copy initial data from compute buffer to render buffer
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        let renderParticlePointer = renderParticleBuffer.contents()
-        memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
+    let renderParticlePointer = renderParticleBuffer.contents()
+    memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
+
+    // Copy rigid info to render rigid info buffer
+    let rigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
+    let computeRigidPtr = computeRigidInfoBuffer.contents()
+    let renderRigidPtr = renderRigidInfoBuffer.contents()
+    memcpy(renderRigidPtr, computeRigidPtr, rigidInfoSize)
         
         print("🔄 Initialized particles in both compute and render buffers")
     }
     
-    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>) {
+    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {
         // Calculate cube dimensions based on particle count
         let particlesPerDim = Int(ceil(pow(Float(particleCount), 1.0/3.0)))
         
@@ -233,9 +245,13 @@ extension MPMFluidRenderer {
                         velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                         C: simd_float3x3(0.0),  // Affine momentum matrix initialization
                         mass: materialParameters.particleMass,
-                        rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                        initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
                     )
+                    if let rigidInfoPointer{
+                        rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
+                            rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                            initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
+                        )
+                    }
                     
                     particleIndex += 1
                 }
@@ -257,9 +273,13 @@ extension MPMFluidRenderer {
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                 C: simd_float3x3(0.0),
                 mass: materialParameters.particleMass,
-                rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
             )
+            if let rigidInfoPointer{
+                rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
+                    rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                    initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
+                )
+            }
             
             particleIndex += 1
         }
@@ -267,7 +287,7 @@ extension MPMFluidRenderer {
         print("🟦 Created elastic cube: \(particlesPerDim)³ lattice, spacing: \(spacing)")
     }
     
-    private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>) {
+    private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {
         let maxRadius = min(range.x, range.y, range.z)
         
         func randn() -> Float {
@@ -310,9 +330,13 @@ extension MPMFluidRenderer {
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
                 C: simd_float3x3(0.0),  // Affine momentum matrix initialization
                 mass: materialParameters.particleMass,
-                rigidId: 0,  // Fluid particles don't belong to rigid bodies
-                initialOffset: SIMD3<Float>(0, 0, 0)
             )
+            if let rigidInfoPointer{
+                rigidInfoPointer[i] = MPMParticleRigidInfo(
+                    rigidId: 0,  // Fluid particles don't belong to rigid bodies
+                    initialOffset: randomOffset
+                )
+            }
         }
         
         print("🌊 Created fluid sphere: radius \(maxRadius)")
@@ -336,6 +360,8 @@ extension MPMFluidRenderer {
                 computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
                 computeEncoder.setBuffer(particleBuffer, offset: 0, index: 1)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
+                // Rigid info buffer now required by initializeRigidBodies kernel
+                computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
                 
                 let rigidBodyCount = materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
                 let threadgroupSize = min(initPipelineState.maxTotalThreadsPerThreadgroup, 256)
@@ -385,6 +411,7 @@ extension MPMFluidRenderer {
                 let startTime = CACurrentMediaTime()
                 try sortManager.sortParticlesByGridIndexSafe(
                     computeParticleBuffer: &computeParticleBuffer,
+                    computeRigidInfoBuffer: &computeRigidInfoBuffer,
                     uniformBuffer: computeUniformBuffer
                 )
                 let sortTime = CACurrentMediaTime() - startTime
@@ -616,6 +643,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
                     
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,
@@ -656,6 +684,8 @@ extension MPMFluidRenderer {
                     computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
+                    // gridToParticlesRigid4 uses the per-particle rigidInfo for initial offsets
+                    computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
                     
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,

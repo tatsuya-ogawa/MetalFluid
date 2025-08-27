@@ -1144,16 +1144,19 @@ kernel void gridToParticlesRigid2(
     device const MPMParticle* particles [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     device RigidBodyState* rigidBodies [[buffer(2)]],
+    device const MPMParticleRigidInfo* rigidInfo [[buffer(3)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.particleCount) return;
     
     MPMParticle p = particles[id];
+    // Read rigid info separately
+    uint rigidId = rigidInfo[id].rigidId;
     
     // Skip particles that don't belong to any rigid body
-    if (p.rigidId == 0) return;
+    if (rigidId == 0) return;
     
-    uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
+    uint rigidBodyIdx = rigidId - 1; // Convert to 0-based index
     if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
     
     // Calculate force on this particle from MPM interactions
@@ -1247,15 +1250,17 @@ kernel void gridToParticlesRigid4(
     device MPMParticle* particles [[buffer(0)]],
     device const RigidBodyState* rigidBodies [[buffer(1)]],
     constant ComputeShaderUniforms& uniforms [[buffer(2)]],
+    device const MPMParticleRigidInfo* rigidInfo [[buffer(3)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.particleCount) return;
     device MPMParticle& p = particles[id];
+    uint rigidId = rigidInfo[id].rigidId;
     
     // Skip particles that don't belong to any rigid body
-    if (p.rigidId == 0) return;
+    if (rigidId == 0) return;
     
-    uint rigidBodyIdx = p.rigidId - 1; // Convert to 0-based index
+    uint rigidBodyIdx = rigidId - 1; // Convert to 0-based index
     if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
     
     device const RigidBodyState& rb = rigidBodies[rigidBodyIdx];
@@ -1265,7 +1270,7 @@ kernel void gridToParticlesRigid4(
     float3x3 R = quatToMatrix(rb.orientation);
     
     // Calculate new particle position: x_p = x_cm + R * r_p0
-    float3 rotatedOffset = R * p.initialOffset;
+    float3 rotatedOffset = R * rigidInfo[id].initialOffset;
     float3 newPosition = rb.centerOfMass + rotatedOffset;
     
     // Calculate new particle velocity: v_p = v_cm + ω × (R * r_p0)
@@ -1294,6 +1299,7 @@ kernel void gridToParticlesRigid4(
 kernel void initializeRigidBodies(
     device RigidBodyState* rigidBodies [[buffer(0)]],
     device const MPMParticle* particles [[buffer(1)]],
+    device const MPMParticleRigidInfo* rigidInfo [[buffer(3)]],
     constant ComputeShaderUniforms& uniforms [[buffer(2)]],
     uint rigidBodyId [[thread_position_in_grid]]
 ) {
@@ -1308,7 +1314,7 @@ kernel void initializeRigidBodies(
     uint particleCount = 0;
     
     for (uint i = 0; i < uniforms.particleCount; ++i) {
-        if (particles[i].rigidId == actualRigidId) {
+        if (rigidInfo[i].rigidId == actualRigidId) {
             centerOfMass += particles[i].position * particles[i].mass;
             totalMass += particles[i].mass;
             particleCount++;
@@ -1340,7 +1346,7 @@ kernel void initializeRigidBodies(
     // Calculate the extent of the rigid body
     float3 minPos = float3(1e6), maxPos = float3(-1e6);
     for (uint i = 0; i < uniforms.particleCount; ++i) {
-        if (particles[i].rigidId == actualRigidId) {
+        if (rigidInfo[i].rigidId == actualRigidId) {
             minPos = min(minPos, particles[i].position);
             maxPos = max(maxPos, particles[i].position);
         }
