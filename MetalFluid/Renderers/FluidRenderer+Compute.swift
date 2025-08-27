@@ -751,21 +751,13 @@ extension MPMFluidRenderer {
             label: "render to compute particles"
         )
         
-        // Copy uniform data from render to compute
-//        copyBuffersWithBlit(
-//            from: renderUniformBuffer,
-//            to: computeUniformBuffer,
-//            size: uniformBufferSize,
-//            label: "render to compute uniforms"
-//        )
-        
         // Copy rigid info from render to compute
         copyBuffersWithBlit(
             from: renderRigidInfoBuffer,
             to: computeRigidInfoBuffer,
             size: rigidInfoSize,
             label: "render to compute rigid info"
-        )        
+        )
         print("🔄 Copied render buffers to compute buffers (\(particleBufferSize + uniformBufferSize + rigidInfoSize) bytes)")
     }
     
