@@ -361,7 +361,7 @@ extension MPMFluidRenderer {
             if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                 computeEncoder.setComputePipelineState(initPipelineState)
                 computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(particleBuffer, offset: 0, index: 1)
+                computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 1)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
                 // Rigid info buffer now required by initializeRigidBodies kernel
                 computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
@@ -491,7 +491,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         particlesToGridFluid1PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
@@ -505,7 +505,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         particlesToGridFluid2PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
@@ -520,7 +520,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         particlesToGridElasticPipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
@@ -535,7 +535,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         particlesToGridRigidPipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
@@ -567,7 +567,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesFluid1PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     
@@ -592,7 +592,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesElasticPipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     
@@ -617,7 +617,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesRigid1PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
                     
@@ -642,7 +642,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesRigid2PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 2)
                     computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
@@ -683,7 +683,7 @@ extension MPMFluidRenderer {
                     computeEncoder.setComputePipelineState(
                         gridToParticlesRigid4PipelineState
                     )
-                    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 1)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
                     // gridToParticlesRigid4 uses the per-particle rigidInfo for initial offsets

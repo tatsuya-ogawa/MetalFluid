@@ -269,37 +269,7 @@ extension MPMFluidRenderer {
         textureCacheManager.handleMemoryWarning()
     }
     
-    // Backward compatibility methods - deprecated
-    @available(*, deprecated, message: "Use renderDepthMap(commandBuffer:textures:) instead")
-    internal func renderDepthMap(commandBuffer: MTLCommandBuffer) {
-        let textures = getTexturesForScreenSize(screenSize)
-        renderDepthMap(commandBuffer: commandBuffer, textures: textures)
-    }
-    
-    @available(*, deprecated, message: "Use applyDepthFilter(commandBuffer:textures:depthThreshold:filterRadius:) instead")
-    internal func applyDepthFilter(
-        commandBuffer: MTLCommandBuffer,
-        depthThreshold: Float,
-        filterRadius: Int
-    ) {
-        let textures = getTexturesForScreenSize(screenSize)
-        applyDepthFilter(commandBuffer: commandBuffer, textures: textures, depthThreshold: depthThreshold, filterRadius: filterRadius)
-    }
-    
-    @available(*, deprecated, message: "Use renderThicknessMap(commandBuffer:textures:) instead")
-    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer) {
-        let textures = getTexturesForScreenSize(screenSize)
-        renderThicknessMap(commandBuffer: commandBuffer, textures: textures)
-    }
-    
-    @available(*, deprecated, message: "Use applyThicknessFilter(commandBuffer:textures:filterRadius:) instead")
-    internal func applyThicknessFilter(commandBuffer: MTLCommandBuffer, filterRadius: Int = 4) {
-        let textures = getTexturesForScreenSize(screenSize)
-        applyThicknessFilter(commandBuffer: commandBuffer, textures: textures, filterRadius: filterRadius)
-    }
-        
     // MARK: - Main Render Function
-    
     func render(
         renderPassDescriptor: MTLRenderPassDescriptor,
         performCompute: Bool,
@@ -376,7 +346,7 @@ extension MPMFluidRenderer {
     
     // MARK: - Water Rendering Pipeline
     
-    internal func renderDepthMap(commandBuffer: MTLCommandBuffer, textures: FluidRenderTextures) {
+    internal func renderDepthMap(commandBuffer: MTLCommandBuffer,particleBuffer:MTLBuffer,textures: FluidRenderTextures) {
         let depthPassDescriptor = MTLRenderPassDescriptor()
         depthPassDescriptor.colorAttachments[0].texture = textures.depthTexture
         depthPassDescriptor.colorAttachments[0].loadAction = .clear
@@ -491,7 +461,7 @@ extension MPMFluidRenderer {
         }
     }
     
-    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer, textures: FluidRenderTextures) {
+    internal func renderThicknessMap(commandBuffer: MTLCommandBuffer,particleBuffer:MTLBuffer,textures: FluidRenderTextures) {
         let thicknessPassDescriptor = MTLRenderPassDescriptor()
         thicknessPassDescriptor.colorAttachments[0].texture = textures.thicknessTexture
         thicknessPassDescriptor.colorAttachments[0].loadAction = .clear

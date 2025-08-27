@@ -185,6 +185,10 @@ class ParticleRenderer: ModeRenderer {
             return
         }
         
+        guard let particleBuffer = self.fluidRenderer?.renderParticleBuffer else{
+            return
+        }
+        
         if performCompute {
             renderer.compute(commandBuffer: commandBuffer)
         }
@@ -233,7 +237,7 @@ class ParticleRenderer: ModeRenderer {
             
             renderEncoder.setRenderPipelineState(pipelineState)
             renderEncoder.setDepthStencilState(particleDepthStencilState)
-            renderEncoder.setVertexBuffer(renderer.particleBuffer, offset: 0, index: 0)
+            renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
             renderEncoder.setVertexBuffer(renderer.vertexUniformBuffer, offset: 0, index: 1)
             
             // For pressure heatmap mode, also bind the grid buffer
@@ -272,7 +276,9 @@ class WaterRenderer: ModeRenderer {
               let commandBuffer = renderer.commandQueue.makeCommandBuffer() else {
             return
         }
-        
+        guard let particleBuffer = self.fluidRenderer?.renderParticleBuffer else{
+            return
+        }
         if performCompute {
             renderer.compute(commandBuffer: commandBuffer)
         }
@@ -286,7 +292,7 @@ class WaterRenderer: ModeRenderer {
         let textures = renderer.getTexturesForScreenSize(screenSize)
         
         // Step 1: Render depth map
-        renderer.renderDepthMap(commandBuffer: commandBuffer, textures: textures)
+        renderer.renderDepthMap(commandBuffer: commandBuffer, particleBuffer: particleBuffer, textures: textures)
         
         // Step 2: Apply bilateral filter to depth (4 iterations)
         for _ in 0..<4 {
@@ -299,7 +305,7 @@ class WaterRenderer: ModeRenderer {
         }
         
         // Step 3: Render thickness map
-        renderer.renderThicknessMap(commandBuffer: commandBuffer, textures: textures)
+        renderer.renderThicknessMap(commandBuffer: commandBuffer,particleBuffer: particleBuffer, textures: textures)
         
         // Step 4: Apply Gaussian filter to thickness (1 iteration)
         renderer.applyThicknessFilter(commandBuffer: commandBuffer, textures: textures, filterRadius: 4)
@@ -478,10 +484,10 @@ class MPMFluidRenderer: NSObject {
     internal var gridBuffer: MTLBuffer!
     
     // Buffer accessors for different stages
-    internal var particleBuffer: MTLBuffer {
-        // Use compute buffer during compute, render buffer during render
-        return isComputing ? computeParticleBuffer : renderParticleBuffer
-    }
+//    internal var particleBuffer: MTLBuffer {
+//        // Use compute buffer during compute, render buffer during render
+//        return isComputing ? computeParticleBuffer : renderParticleBuffer
+//    }
     
     // Compute/Render state tracking
     internal var isComputing: Bool = false
