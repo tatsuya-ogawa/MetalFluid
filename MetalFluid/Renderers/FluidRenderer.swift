@@ -430,7 +430,7 @@ class MPMFluidRenderer: NSObject {
     }
     
     // Compute/Render state tracking
-    private var isComputing: Bool = false
+    internal var isComputing: Bool = false
     
     // Depth textures and buffers
     internal var depthTexture: MTLTexture!

@@ -426,6 +426,12 @@ extension MPMFluidRenderer {
     // MARK: - Main Compute Function
     
     func compute(commandBuffer: MTLCommandBuffer) {
+        // Skip if compute is already in progress
+        if isComputing {
+            print("⚠️ Skipping compute request - compute already in progress")
+            return
+        }
+        
         // Begin compute stage - use compute buffers only
         beginCompute()
         
