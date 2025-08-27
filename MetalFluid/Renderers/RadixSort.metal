@@ -227,8 +227,6 @@ kernel void reorderParticlesRadix(
     device MPMParticle* outputParticles [[buffer(1)]],
     device const SortKey* sortedKeys [[buffer(2)]],
     constant uint& numParticles [[buffer(3)]],
-    device const MPMParticleRigidInfo* inputRigidInfo [[buffer(4)]],
-    device MPMParticleRigidInfo* outputRigidInfo [[buffer(5)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= numParticles) return;
@@ -238,9 +236,7 @@ kernel void reorderParticlesRadix(
     // Bounds check for safety
     if (originalIndex < numParticles) {
         outputParticles[id] = inputParticles[originalIndex];
-        if (inputRigidInfo && outputRigidInfo) {
-            outputRigidInfo[id] = inputRigidInfo[originalIndex];
-        }
+    // Do not reorder rigid info; particles contain originalIndex to fetch rigid info
     }
 }
 

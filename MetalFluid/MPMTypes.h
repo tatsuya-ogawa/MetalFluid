@@ -18,6 +18,7 @@ typedef struct {
     float3 velocity;        // Velocity
     metal::float3x3 C;            // Affine momentum matrix
     float mass;           // Mass
+    uint32_t originalIndex; // Original particle index (used to fetch unsorted rigid info)
     // Rigid-related fields moved to separate struct MPMParticleRigidInfo
 //    float volume;         // Volume
 //    float Jp;             // Plastic deformation determinant

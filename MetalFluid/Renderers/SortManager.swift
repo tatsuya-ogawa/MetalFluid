@@ -31,14 +31,12 @@ class SortManager {
     // Bitonic sort buffers
     internal var sortKeysBuffer: MTLBuffer!
     internal var sortedParticleBuffer: MTLBuffer!
-    internal var sortedRigidInfoBuffer: MTLBuffer!
     
     // Radix sort buffers
     internal var radixSortKeysBuffer: MTLBuffer!
     internal var radixTempKeysBuffer: MTLBuffer!
     internal var radixHistogramBuffer: MTLBuffer!
     internal var radixSortedParticleBuffer: MTLBuffer!
-    internal var radixSortedRigidInfoBuffer: MTLBuffer!
     
     // Sort constants
     internal var maxThreadsPerGroup: Int = 256
@@ -240,9 +238,7 @@ class SortManager {
             length: sortedParticleBufferSize,
             options: .storageModeShared
         )!
-    // Sorted rigid info buffer
-    let sortedRigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-    sortedRigidInfoBuffer = device.makeBuffer(length: sortedRigidInfoSize, options: .storageModeShared)!
+    // (No sorted rigid info buffer; rigid info remains in original order)
         
         print("🔍 Bitonic sort buffer sizes:")
         print("   Sort keys buffer: \(sortKeysBufferSize) bytes")
@@ -277,8 +273,7 @@ class SortManager {
             length: radixSortedParticleBufferSize,
             options: .storageModeShared
         )!
-    let radixSortedRigidInfoSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-    radixSortedRigidInfoBuffer = device.makeBuffer(length: radixSortedRigidInfoSize, options: .storageModeShared)!
+    // (No radix sorted rigid info buffer; rigid info remains in original order)
         
         print("🔍 Radix sort buffer sizes:")
         print("   Radix sort keys buffer: \(radixSortKeysBufferSize) bytes")
@@ -291,7 +286,6 @@ class SortManager {
     
     func sortParticlesByGridIndexSafe(
         computeParticleBuffer: inout MTLBuffer,
-        computeRigidInfoBuffer: inout MTLBuffer,
         uniformBuffer: MTLBuffer
     ) throws {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -307,11 +301,10 @@ class SortManager {
             bitonicSort(commandBuffer: commandBuffer)
             
             // 3. Reorder particles and rigid info based on sorted keys
-            reorderParticles(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, inputRigidInfo: computeRigidInfoBuffer, outputRigidInfo: sortedRigidInfoBuffer)
+            reorderParticles(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
 
-            // Swap particle + rigid info buffers
+            // Swap particle buffers only; rigid info stays in place
             swap(&computeParticleBuffer, &sortedParticleBuffer)
-            swap(&computeRigidInfoBuffer, &sortedRigidInfoBuffer)
             
         case .radixSort:
             // 1. Extract sort keys for radix sort
@@ -321,11 +314,10 @@ class SortManager {
             radixSort(commandBuffer: commandBuffer)
             
             // 3. Reorder particles and rigid info based on sorted keys
-            reorderParticlesRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, inputRigidInfo: computeRigidInfoBuffer, outputRigidInfo: radixSortedRigidInfoBuffer)
+            reorderParticlesRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
 
-            // Swap particle + rigid info buffers
+            // Swap particle buffers only; rigid info stays in place
             swap(&computeParticleBuffer, &radixSortedParticleBuffer)
-            swap(&computeRigidInfoBuffer, &radixSortedRigidInfoBuffer)
         case .none: break
         }
         
@@ -413,7 +405,7 @@ class SortManager {
         computeEncoder.endEncoding()
     }
     
-    internal func reorderParticles(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer, inputRigidInfo: MTLBuffer, outputRigidInfo: MTLBuffer) {
+    internal func reorderParticles(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
@@ -421,9 +413,8 @@ class SortManager {
         computeEncoder.setComputePipelineState(reorderParticlesPipelineState)
         computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
         computeEncoder.setBuffer(sortedParticleBuffer, offset: 0, index: 1)
-        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 2) // Use bitonic sorted keys
-        computeEncoder.setBuffer(inputRigidInfo, offset: 0, index: 4)
-        computeEncoder.setBuffer(outputRigidInfo, offset: 0, index: 5)
+    computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 2) // Use bitonic sorted keys
+    computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
         
         let threadsPerThreadgroup = MTLSize(
             width: maxThreadsPerGroup,
@@ -511,7 +502,7 @@ class SortManager {
         }
     }
     
-    internal func reorderParticlesRadix(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer, inputRigidInfo: MTLBuffer, outputRigidInfo: MTLBuffer) {
+    internal func reorderParticlesRadix(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
@@ -521,8 +512,6 @@ class SortManager {
     computeEncoder.setBuffer(radixSortedParticleBuffer, offset: 0, index: 1)
     computeEncoder.setBuffer(radixSortKeysBuffer, offset: 0, index: 2)
     computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
-    computeEncoder.setBuffer(inputRigidInfo, offset: 0, index: 4)
-    computeEncoder.setBuffer(outputRigidInfo, offset: 0, index: 5)
         
         let threadsPerThreadgroup = MTLSize(
             width: maxThreadsPerGroup,
@@ -635,14 +624,12 @@ class SortManager {
     
     public func forceSortParticles(
     computeParticleBuffer: inout MTLBuffer,
-    computeRigidInfoBuffer: inout MTLBuffer,
     uniformBuffer: MTLBuffer
     ) {
         let startTime = CACurrentMediaTime()
         do {
             try sortParticlesByGridIndexSafe(
         computeParticleBuffer: &computeParticleBuffer,
-        computeRigidInfoBuffer: &computeRigidInfoBuffer,
         uniformBuffer: uniformBuffer
             )
         } catch {

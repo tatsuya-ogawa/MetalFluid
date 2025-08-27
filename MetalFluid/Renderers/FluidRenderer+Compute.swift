@@ -245,6 +245,7 @@ extension MPMFluidRenderer {
                         velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                         C: simd_float3x3(0.0),  // Affine momentum matrix initialization
                         mass: materialParameters.particleMass,
+                        originalIndex: UInt32(particleIndex),
                     )
                     if let rigidInfoPointer{
                         rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
@@ -273,6 +274,7 @@ extension MPMFluidRenderer {
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),
                 C: simd_float3x3(0.0),
                 mass: materialParameters.particleMass,
+                originalIndex: UInt32(particleIndex),
             )
             if let rigidInfoPointer{
                 rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
@@ -330,6 +332,7 @@ extension MPMFluidRenderer {
                 velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
                 C: simd_float3x3(0.0),  // Affine momentum matrix initialization
                 mass: materialParameters.particleMass,
+                originalIndex: UInt32(i),
             )
             if let rigidInfoPointer{
                 rigidInfoPointer[i] = MPMParticleRigidInfo(
@@ -411,7 +414,6 @@ extension MPMFluidRenderer {
                 let startTime = CACurrentMediaTime()
                 try sortManager.sortParticlesByGridIndexSafe(
                     computeParticleBuffer: &computeParticleBuffer,
-                    computeRigidInfoBuffer: &computeRigidInfoBuffer,
                     uniformBuffer: computeUniformBuffer
                 )
                 let sortTime = CACurrentMediaTime() - startTime

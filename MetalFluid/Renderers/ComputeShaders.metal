@@ -1150,8 +1150,9 @@ kernel void gridToParticlesRigid2(
     if (id >= uniforms.particleCount) return;
     
     MPMParticle p = particles[id];
-    // Read rigid info separately
-    uint rigidId = rigidInfo[id].rigidId;
+    // Read rigid info via particle.originalIndex (rigidInfo remains unsorted)
+    uint origIdx = p.originalIndex;
+    uint rigidId = rigidInfo[origIdx].rigidId;
     
     // Skip particles that don't belong to any rigid body
     if (rigidId == 0) return;
@@ -1255,7 +1256,8 @@ kernel void gridToParticlesRigid4(
 ) {
     if (id >= uniforms.particleCount) return;
     device MPMParticle& p = particles[id];
-    uint rigidId = rigidInfo[id].rigidId;
+    uint origIdx = p.originalIndex;
+    uint rigidId = rigidInfo[origIdx].rigidId;
     
     // Skip particles that don't belong to any rigid body
     if (rigidId == 0) return;
@@ -1270,7 +1272,7 @@ kernel void gridToParticlesRigid4(
     float3x3 R = quatToMatrix(rb.orientation);
     
     // Calculate new particle position: x_p = x_cm + R * r_p0
-    float3 rotatedOffset = R * rigidInfo[id].initialOffset;
+    float3 rotatedOffset = R * rigidInfo[origIdx].initialOffset;
     float3 newPosition = rb.centerOfMass + rotatedOffset;
     
     // Calculate new particle velocity: v_p = v_cm + ω × (R * r_p0)

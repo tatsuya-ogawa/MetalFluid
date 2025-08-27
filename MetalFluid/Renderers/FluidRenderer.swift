@@ -9,6 +9,7 @@ struct MPMParticle {
     var velocity: SIMD3<Float>  // Velocity
     var C: simd_float3x3  // Affine momentum matrix (3D)
     var mass: Float  // Mass
+    var originalIndex: UInt32 // Original particle index used to fetch unsorted rigid info
     // Note: rigidId and initialOffset moved to separate MPMParticleRigidInfo
     //    var volume: Float             // Volume
     //    var Jp: Float  // Plastic deformation determinant
