@@ -254,6 +254,9 @@ extension MPMFluidRenderer {
         // Render AR background if enabled
         if isAREnabled, let arRenderer = arRenderer {
             renderARBackground(renderPassDescriptor: renderPassDescriptor, arRenderer: arRenderer)
+            
+            // Update AR SDF for collision detection if needed
+            updateARSDF(from: arRenderer)
         }
         
         switch currentRenderMode {

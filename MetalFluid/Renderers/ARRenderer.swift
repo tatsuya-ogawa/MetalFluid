@@ -38,7 +38,13 @@ class ARRenderer {
     
     #if canImport(ARKit)
     private var arSession: ARSession?
+    private var currentMeshAnchors: [ARMeshAnchor] = []
     #endif
+    
+    // SDF generation
+    private var sdfGenerator: SDFGenerator?
+    private var currentARSDF: MTLTexture?
+    private var sdfBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
     
     // Uniforms structure matching Metal shader
     struct ARMeshUniforms {
@@ -68,6 +74,9 @@ class ARRenderer {
         var cache: CVMetalTextureCache?
         CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &cache)
         self.cameraImageTextureCache = cache
+        
+        // Initialize SDF generator
+        sdfGenerator = SDFGenerator(device: device)
         
         setupPipelineStates()
         setupCameraBackgroundGeometry()
@@ -310,6 +319,69 @@ class ARRenderer {
         meshIndexCount = faces.count * 3 // Triangles
         
         print("📐 Updated mesh: \\(meshVertexCount) vertices, \\(meshIndexCount) indices")
+        
+        // Update current mesh anchors for SDF generation
+        currentMeshAnchors = [meshAnchor]
+    }
+    
+    @available(iOS 13.4, macOS 10.15.4, *)
+    func updateMeshGeometryFromSession(meshAnchors: [ARMeshAnchor]) {
+        currentMeshAnchors = meshAnchors
+        
+        // For rendering, use the first mesh anchor (existing behavior)
+        if let firstMesh = meshAnchors.first {
+            updateMeshGeometry(from: [firstMesh])
+        }
+    }
+    #endif
+    
+    // MARK: - SDF Generation
+    
+    #if canImport(ARKit)
+    @available(iOS 13.4, macOS 10.15.4, *)
+    func generateSDFFromCurrentMeshes(resolution: SIMD3<Int32>? = nil, forceRegenerate: Bool = false) -> MTLTexture? {
+        guard let sdfGenerator = sdfGenerator else {
+            print("❌ SDF generator not available")
+            return nil
+        }
+        
+        guard !currentMeshAnchors.isEmpty else {
+            print("⚠️ No AR mesh anchors available for SDF generation")
+            return nil
+        }
+        
+        // Return existing SDF if available and not forced to regenerate
+        if !forceRegenerate, let existingSDF = currentARSDF {
+            return existingSDF
+        }
+        
+        print("🔄 Generating SDF from \(currentMeshAnchors.count) AR mesh anchors...")
+        
+        let sdfTexture = sdfGenerator.generateCombinedSDFFromARMeshes(currentMeshAnchors, resolution: resolution)
+        
+        if let sdf = sdfTexture {
+            currentARSDF = sdf
+            print("✅ AR SDF generation successful")
+        } else {
+            print("❌ AR SDF generation failed")
+        }
+        
+        return sdfTexture
+    }
+    
+    @available(iOS 13.4, macOS 10.15.4, *)
+    func getCurrentARSDF() -> MTLTexture? {
+        return currentARSDF
+    }
+    
+    @available(iOS 13.4, macOS 10.15.4, *)
+    func getARSDFBoundingBox() -> (min: SIMD3<Float>, max: SIMD3<Float>)? {
+        return sdfBoundingBox
+    }
+    
+    @available(iOS 13.4, macOS 10.15.4, *)
+    func hasARMeshData() -> Bool {
+        return !currentMeshAnchors.isEmpty
     }
     #endif
     

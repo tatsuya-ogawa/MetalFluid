@@ -450,6 +450,11 @@ class MPMFluidRenderer: NSObject {
     // Collision detection
     internal var collisionManager: CollisionManager?
     
+    // AR SDF collision
+    public var useARCollision: Bool = false
+    private var arSDFTexture: MTLTexture?
+    private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
+    
     // Performance settings - Public for testing
     public var particleCount: Int
     public var gridSize: Int
@@ -741,6 +746,62 @@ class MPMFluidRenderer: NSObject {
     func reset() {
         setupParticles()
         frameIndex = 0
+    }
+    
+    // MARK: - AR SDF Integration
+    
+    func updateARSDF(from arRenderer: ARRenderer?) {
+        guard let arRenderer = arRenderer else {
+            useARCollision = false
+            arSDFTexture = nil
+            arSDFBoundingBox = nil
+            return
+        }
+        
+        #if canImport(ARKit)
+        if #available(iOS 13.4, macOS 10.15.4, *) {
+            guard arRenderer.hasARMeshData() else {
+                useARCollision = false
+                arSDFTexture = nil
+                arSDFBoundingBox = nil
+                return
+            }
+            
+            // Generate or get existing AR SDF
+            let sdfTexture = arRenderer.generateSDFFromCurrentMeshes(resolution: SIMD3<Int32>(64, 64, 64))
+            
+            if let sdf = sdfTexture {
+                arSDFTexture = sdf
+                arSDFBoundingBox = arRenderer.getARSDFBoundingBox()
+                useARCollision = true
+                print("✅ AR SDF updated for collision detection")
+            } else {
+                useARCollision = false
+                arSDFTexture = nil
+                arSDFBoundingBox = nil
+                print("❌ Failed to update AR SDF")
+            }
+        }
+        #endif
+    }
+    
+    func enableARCollision(_ enable: Bool) {
+        guard enable else {
+            useARCollision = false
+            return
+        }
+        
+        // Only enable if we have valid AR SDF data
+        useARCollision = (arSDFTexture != nil)
+        if useARCollision {
+            print("🔄 AR collision enabled")
+        } else {
+            print("⚠️ Cannot enable AR collision - no SDF data available")
+        }
+    }
+    
+    func getARCollisionInfo() -> (isEnabled: Bool, hasData: Bool) {
+        return (useARCollision, arSDFTexture != nil)
     }
     
     // Helper method to render collision mesh within an existing render encoder
