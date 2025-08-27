@@ -384,7 +384,6 @@ extension MPMFluidRenderer {
             do {
                 let startTime = CACurrentMediaTime()
                 try sortManager.sortParticlesByGridIndexSafe(
-                    particleBuffer: particleBuffer,
                     computeParticleBuffer: &computeParticleBuffer,
                     uniformBuffer: computeUniformBuffer
                 )

@@ -20,7 +20,6 @@ extension MPMFluidRenderer {
     
     public func forceSortParticles() {
         sortManager.forceSortParticles(
-            particleBuffer: particleBuffer,
             computeParticleBuffer: &computeParticleBuffer,
             uniformBuffer: computeUniformBuffer
         )

@@ -283,7 +283,6 @@ class SortManager {
     // MARK: - Sorting Operations
     
     func sortParticlesByGridIndexSafe(
-        particleBuffer: MTLBuffer,
         computeParticleBuffer: inout MTLBuffer,
         uniformBuffer: MTLBuffer
     ) throws {
@@ -294,26 +293,26 @@ class SortManager {
         switch currentSortingAlgorithm {
         case .bitonicSort:
             // 1. Extract sort keys (grid indices)
-            extractSortKeys(commandBuffer: commandBuffer, particleBuffer: particleBuffer, uniformBuffer: uniformBuffer)
+            extractSortKeys(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, uniformBuffer: uniformBuffer)
             
             // 2. Perform bitonic sort
             bitonicSort(commandBuffer: commandBuffer)
             
             // 3. Reorder particles based on sorted keys
-            reorderParticles(commandBuffer: commandBuffer, particleBuffer: particleBuffer)
+            reorderParticles(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
             
             // Swap particle buffers
             swap(&computeParticleBuffer, &sortedParticleBuffer)
             
         case .radixSort:
             // 1. Extract sort keys for radix sort
-            extractSortKeysRadix(commandBuffer: commandBuffer, particleBuffer: particleBuffer, uniformBuffer: uniformBuffer)
+            extractSortKeysRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, uniformBuffer: uniformBuffer)
             
             // 2. Perform radix sort
             radixSort(commandBuffer: commandBuffer)
             
             // 3. Reorder particles based on sorted keys
-            reorderParticlesRadix(commandBuffer: commandBuffer, particleBuffer: particleBuffer)
+            reorderParticlesRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
             
             // Swap particle buffers
             swap(&computeParticleBuffer, &radixSortedParticleBuffer)
@@ -621,14 +620,12 @@ class SortManager {
     }
     
     public func forceSortParticles(
-        particleBuffer: MTLBuffer,
         computeParticleBuffer: inout MTLBuffer,
         uniformBuffer: MTLBuffer
     ) {
         let startTime = CACurrentMediaTime()
         do {
             try sortParticlesByGridIndexSafe(
-                particleBuffer: particleBuffer,
                 computeParticleBuffer: &computeParticleBuffer,
                 uniformBuffer: uniformBuffer
             )
