@@ -407,20 +407,8 @@ class MPMFluidRenderer: NSObject {
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
     
-    // Bitonic sort pipeline states
-    internal var extractSortKeysPipelineState: MTLComputePipelineState!
-    internal var bitonicSortPipelineState: MTLComputePipelineState!
-    internal var reorderParticlesPipelineState: MTLComputePipelineState!
-    internal var verifySortPipelineState: MTLComputePipelineState!
-    
-    // Radix sort pipeline states
-    internal var extractSortKeysRadixPipelineState: MTLComputePipelineState!
-    internal var radixSortPassPipelineState: MTLComputePipelineState!
-    internal var radixSortLocalPipelineState: MTLComputePipelineState!
-    internal var initializeRadixHistogramPipelineState: MTLComputePipelineState!
-    internal var computePrefixSumsPipelineState: MTLComputePipelineState!
-    internal var reorderParticlesRadixPipelineState: MTLComputePipelineState!
-    internal var verifyRadixSortPipelineState: MTLComputePipelineState!
+    // Sort manager for particle sorting operations
+    internal var sortManager: SortManager!
     
     // Fixed 2-stage pipeline: Compute -> Rendering
     
@@ -465,18 +453,6 @@ class MPMFluidRenderer: NSObject {
     // Screen size for depth filtering
     internal var screenSize: SIMD2<Float> = SIMD2<Float>(800, 600)
     
-    // Bitonic sort buffers
-    internal var sortKeysBuffer: MTLBuffer!
-    internal var sortedParticleBuffer: MTLBuffer!
-    
-    // Radix sort buffers
-    internal var radixSortKeysBuffer: MTLBuffer!
-    internal var radixTempKeysBuffer: MTLBuffer!
-    internal var radixHistogramBuffer: MTLBuffer!
-    internal var radixSortedParticleBuffer: MTLBuffer!
-    
-    // Sort constants
-    internal var maxThreadsPerGroup: Int = 256
     
     // Collision detection
     internal var collisionManager: CollisionManager?
@@ -551,10 +527,6 @@ class MPMFluidRenderer: NSObject {
             }
         }
     }
-    // Particle sorting configuration
-    public var enableParticleSorting: Bool = false
-    public var sortingFrequency: Int = 4  // Sort every N frames
-    public var currentSortingAlgorithm: SortingAlgorithm = .none
     
     // Render mode state
     public var currentRenderMode: RenderMode = .particles
@@ -697,23 +669,26 @@ class MPMFluidRenderer: NSObject {
         self.commandQueue = commandQueue
         
         setupComputePipelines()
-        setupBitonicSortPipelines()
-        setupRadixSortPipelines()
         setupRenderPipeline()
         setupDepthPipelines()
         setupFluidSurfacePipeline()
         setupThicknessPipelines()
         setupBuffers()
-        setupBitonicSortBuffers()
-        setupRadixSortBuffers()
         setupDepthTextures(screenSize: screenSize)
         setupFluidTextures(screenSize: screenSize)
+        setupSortManager()
     }
     
     private func setupCollisionManager() {
         guard let device = device else { return }
         // Initialize collision manager (only once)
         collisionManager = CollisionManager(device: device)
+    }
+    
+    private func setupSortManager() {
+        guard let device = device,
+              let commandQueue = commandQueue else { return }
+        sortManager = SortManager(device: device, commandQueue: commandQueue, particleCount: particleCount)
     }
     
     internal func setupBuffers() {
@@ -953,6 +928,7 @@ class MPMFluidRenderer: NSObject {
             setupMetal()
             setupParticles()
             setupModeRenderers()
+            sortManager?.updateParticleCount(count)
         }
     }
     
@@ -1009,6 +985,8 @@ class MPMFluidRenderer: NSObject {
                 gridBoundaryMin: boundaryMin,
                 gridBoundaryMax: boundaryMax
             )
+            
+            sortManager?.updateParticleCount(particleCount)
         }
     }
 }

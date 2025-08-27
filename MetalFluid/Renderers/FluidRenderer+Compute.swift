@@ -436,17 +436,20 @@ extension MPMFluidRenderer {
         beginCompute()
         
         // Sort particles periodically for better cache locality (compute buffer only)
-        if enableParticleSorting && frameIndex % sortingFrequency == 0 {
+        if sortManager.enableParticleSorting && frameIndex % sortManager.sortingFrequency == 0 {
             do {
                 let startTime = CACurrentMediaTime()
-                try sortParticlesByGridIndexSafe()
+                try sortManager.sortParticlesByGridIndexSafe(
+                    particleBuffer: particleBuffer,
+                    computeParticleBuffer: &computeParticleBuffer,
+                    uniformBuffer: computeUniformBuffer
+                )
                 let sortTime = CACurrentMediaTime() - startTime
-                if frameIndex % (sortingFrequency * 10) == 0 {
+                if frameIndex % (sortManager.sortingFrequency * 10) == 0 {
                     print("🔄 Particle sort took: \(String(format: "%.2f", sortTime * 1000))ms (compute buffer)")
                 }
             } catch {
-                print("⚠️ Sorting error: \(error), disabling particle sorting")
-                disableSortingOnError()
+                // Error handling is done inside sortManager
             }
         }
         
@@ -723,33 +726,5 @@ extension MPMFluidRenderer {
     
     // MARK: - Particle Sorting Support
     
-    internal func reorderParticles(commandBuffer: MTLCommandBuffer) {
-        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            return
-        }
-        
-        computeEncoder.setComputePipelineState(reorderParticlesPipelineState)
-        computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(sortedParticleBuffer, offset: 0, index: 1)
-        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 2) // Use bitonic sorted keys
-        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
-        
-        let threadsPerThreadgroup = MTLSize(
-            width: maxThreadsPerGroup,
-            height: 1,
-            depth: 1
-        )
-        let threadgroups = MTLSize(
-            width: (particleCount + maxThreadsPerGroup - 1) / maxThreadsPerGroup,
-            height: 1,
-            depth: 1
-        )
-        
-        computeEncoder.dispatchThreadgroups(
-            threadgroups,
-            threadsPerThreadgroup: threadsPerThreadgroup
-        )
-        computeEncoder.endEncoding()
-    }
 
 }
