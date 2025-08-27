@@ -54,6 +54,7 @@ class ViewController: UIViewController {
     private var collisionToggleButton: UIButton!
     private var meshVisibilityButton: UIButton!
     private var wireframeButton: UIButton!
+    private var materialModeButton: UIButton!
     
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
@@ -245,6 +246,18 @@ class ViewController: UIViewController {
             action: #selector(toggleRenderMode),
             for: .touchUpInside
         )
+
+        // Material mode button
+        materialModeButton = UIButton(type: .system)
+        materialModeButton.setTitle("Fluid", for: .normal)
+        materialModeButton.setTitleColor(.white, for: .normal)
+        materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        materialModeButton.layer.cornerRadius = 8
+        materialModeButton.addTarget(
+            self,
+            action: #selector(toggleMaterialMode),
+            for: .touchUpInside
+        )
         
         // Particle size slider
         particleSizeSlider = UISlider()
@@ -323,6 +336,7 @@ class ViewController: UIViewController {
         controlPanel.addSubview(stepButton)
         controlPanel.addSubview(resetButton)
         controlPanel.addSubview(renderModeButton)
+        controlPanel.addSubview(materialModeButton)
         controlPanel.addSubview(particleSizeSlider)
         controlPanel.addSubview(particleSizeLabel)
         controlPanel.addSubview(massScaleSlider)
@@ -338,6 +352,7 @@ class ViewController: UIViewController {
         stepButton.translatesAutoresizingMaskIntoConstraints = false
         resetButton.translatesAutoresizingMaskIntoConstraints = false
         renderModeButton.translatesAutoresizingMaskIntoConstraints = false
+        materialModeButton.translatesAutoresizingMaskIntoConstraints = false
         particleSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
         massScaleSlider.translatesAutoresizingMaskIntoConstraints = false
@@ -419,9 +434,24 @@ class ViewController: UIViewController {
             ),
             renderModeButton.heightAnchor.constraint(equalToConstant: 40),
             
+            // Material mode button constraints
+            materialModeButton.topAnchor.constraint(
+                equalTo: renderModeButton.bottomAnchor,
+                constant: 10
+            ),
+            materialModeButton.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            materialModeButton.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            materialModeButton.heightAnchor.constraint(equalToConstant: 40),
+            
             // Particle size label constraints
             particleSizeLabel.topAnchor.constraint(
-                equalTo: renderModeButton.bottomAnchor,
+                equalTo: materialModeButton.bottomAnchor,
                 constant: 10
             ),
             particleSizeLabel.leadingAnchor.constraint(
@@ -703,6 +733,30 @@ class ViewController: UIViewController {
             renderModeButton.setTitle("Water", for: .normal)
             renderModeButton.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.8)
         }
+    }
+
+    @objc private func toggleMaterialMode() {
+        guard let renderer = fluidRenderer else { return }
+        
+        // Cycle through material modes
+        switch renderer.materialParameters.currentMaterialMode {
+        case .fluid:
+            renderer.materialParameters.currentMaterialMode = .neoHookeanElastic
+            materialModeButton.setTitle("Elastic", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.8)
+        case .neoHookeanElastic:
+            renderer.materialParameters.currentMaterialMode = .rigidBody
+            materialModeButton.setTitle("Rigid Body", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemBrown.withAlphaComponent(0.8)
+        case .rigidBody:
+            renderer.materialParameters.currentMaterialMode = .fluid
+            materialModeButton.setTitle("Fluid", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        }
+        
+        // Reset simulation when material mode changes
+        renderer.reset()
+        print("🔄 Material mode changed to: \(renderer.materialParameters.currentMaterialMode)")
     }
 
     @objc private func toggleMode() {
