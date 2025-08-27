@@ -190,11 +190,21 @@ extension MPMFluidRenderer {
     }
     
     private func createTexturesForSize(_ size: SIMD2<Float>) -> FluidRenderTextures {
+        // Ensure even dimensions to prevent crashes with certain GPU operations
+        #if targetEnvironment(macCatalyst) || os(macOS)
+        let maxTextureSize = 2048
+        #else
+        // for prevent ipad hangup
+        let maxTextureSize = 1024
+        #endif
+        let adjustedWidth = min(max(Int(size.x) + (Int(size.x) % 2),Int(size.y) + (Int(size.y) % 2)), maxTextureSize)
+        let adjustedHeight = adjustedWidth
+        
         // Create depth textures
         let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .r32Float,
-            width: Int(size.x),
-            height: Int(size.y),
+            width: adjustedWidth,
+            height: adjustedHeight,
             mipmapped: false
         )
         depthTextureDescriptor.usage = [.renderTarget, .shaderRead]
@@ -206,8 +216,8 @@ extension MPMFluidRenderer {
         // Create thickness textures
         let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .r16Float,
-            width: Int(size.x),
-            height: Int(size.y),
+            width: adjustedWidth,
+            height: adjustedHeight,
             mipmapped: false
         )
         thicknessDescriptor.usage = [.renderTarget, .shaderRead]
@@ -239,7 +249,7 @@ extension MPMFluidRenderer {
             tempThicknessTexture: newTempThicknessTexture,
             filteredThicknessTexture: newFilteredThicknessTexture,
             environmentTexture: newEnvironmentTexture,
-            screenSize: size
+            screenSize: SIMD2<Float>(Float(adjustedWidth), Float(adjustedHeight))
         )
     }
     
