@@ -724,7 +724,46 @@ extension MPMFluidRenderer {
         }
     }
     
-    // MARK: - Particle Sorting Support
+    // 2-stage pipeline management
+    public func beginCompute() {
+        isComputing = true
+    }
     
+    public func endComputeAndCopyToRender() {
+        guard isComputing else {
+            print("⚠️ endComputeAndCopyToRender called but not computing")
+            return
+        }
+        
+        // Copy computed data to render buffers
+        copyComputeBuffersToRender()
+        isComputing = false
+    }
+    
+    private func copyComputeBuffersToRender() {
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        let uniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
+        
+        // Copy particle data
+        let computePtr = computeParticleBuffer.contents()
+        let renderPtr = renderParticleBuffer.contents()
+        memcpy(renderPtr, computePtr, particleBufferSize)
+        
+        // Copy uniform data
+        let computeUniformPtr = computeUniformBuffer.contents()
+        let renderUniformPtr = renderUniformBuffer.contents()
+        memcpy(renderUniformPtr, computeUniformPtr, uniformBufferSize)
+        
+        print("🔄 Copied compute buffers to render buffers (\(particleBufferSize + uniformBufferSize) bytes)")
+    }
+    
+    
+    public func getCurrentBufferInfo() -> (stage: String, computeBuffer: String, renderBuffer: String) {
+        return (
+            stage: isComputing ? "Computing" : "Rendering",
+            computeBuffer: computeParticleBuffer?.label ?? "nil",
+            renderBuffer: renderParticleBuffer?.label ?? "nil"
+        )
+    }
 
 }

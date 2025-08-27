@@ -433,27 +433,14 @@ class MPMFluidRenderer: NSObject {
     // Compute/Render state tracking
     internal var isComputing: Bool = false
     
-    // Depth textures and buffers
-//    internal var depthTexture: MTLTexture!
-//    internal var tempDepthTexture: MTLTexture!
-//    internal var filteredDepthTexture: MTLTexture!
+    // buffers
     internal var filterUniformBuffer: MTLBuffer!
-    
-    // Fluid surface rendering buffers and textures
     internal var fluidRenderUniformBuffer: MTLBuffer!
-//    internal var thicknessTexture: MTLTexture!
-//    internal var tempThicknessTexture: MTLTexture!
-//    internal var filteredThicknessTexture: MTLTexture!
     internal var gaussianUniformBuffer: MTLBuffer!
-//    internal var environmentTexture: MTLTexture!
-    
     // Cube index buffer for instanced rendering
     internal var cubeIndexBuffer: MTLBuffer?
-    
     // Screen size for depth filtering
     internal var screenSize: SIMD2<Float> = SIMD2<Float>(800, 600)
-    
-    
     // Collision detection
     internal var collisionManager: CollisionManager?
     
@@ -465,47 +452,7 @@ class MPMFluidRenderer: NSObject {
     // Texture cache for screen size optimization
     internal let textureCacheManager: TextureCacheManager<FluidRenderTextures>
     
-    // 2-stage pipeline management
-    public func beginCompute() {
-        isComputing = true
-    }
-    
-    public func endComputeAndCopyToRender() {
-        guard isComputing else {
-            print("⚠️ endComputeAndCopyToRender called but not computing")
-            return
-        }
-        
-        // Copy computed data to render buffers
-        copyComputeBuffersToRender()
-        isComputing = false
-    }
-    
-    private func copyComputeBuffersToRender() {
-        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        let uniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
-        
-        // Copy particle data
-        let computePtr = computeParticleBuffer.contents()
-        let renderPtr = renderParticleBuffer.contents()
-        memcpy(renderPtr, computePtr, particleBufferSize)
-        
-        // Copy uniform data
-        let computeUniformPtr = computeUniformBuffer.contents()
-        let renderUniformPtr = renderUniformBuffer.contents()
-        memcpy(renderUniformPtr, computeUniformPtr, uniformBufferSize)
-        
-        print("🔄 Copied compute buffers to render buffers (\(particleBufferSize + uniformBufferSize) bytes)")
-    }
-    
-    
-    public func getCurrentBufferInfo() -> (stage: String, computeBuffer: String, renderBuffer: String) {
-        return (
-            stage: isComputing ? "Computing" : "Rendering",
-            computeBuffer: computeParticleBuffer?.label ?? "nil",
-            renderBuffer: renderParticleBuffer?.label ?? "nil"
-        )
-    }
+   
     
     // Performance settings - Public for testing
     public var particleCount: Int
