@@ -674,8 +674,6 @@ class MPMFluidRenderer: NSObject {
         setupFluidSurfacePipeline()
         setupThicknessPipelines()
         setupBuffers()
-//        setupDepthTextures(screenSize: screenSize)
-//        setupFluidTextures(screenSize: screenSize)
         setupSortManager()
     }
     

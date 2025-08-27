@@ -188,53 +188,6 @@ extension MPMFluidRenderer {
             fatalError("Could not create fluid surface pipeline state: \(error)")
         }
     }
-
-//    internal func setupDepthTextures(screenSize: SIMD2<Float>) {
-//        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-//            pixelFormat: .r32Float,
-//            width: Int(screenSize.x),
-//            height: Int(screenSize.y),
-//            mipmapped: false
-//        )
-//        textureDescriptor.usage = [.renderTarget, .shaderRead]
-//        
-//        // Create depth textures
-//        depthTexture = device.makeTexture(descriptor: textureDescriptor)!
-//        tempDepthTexture = device.makeTexture(descriptor: textureDescriptor)!
-//        filteredDepthTexture = device.makeTexture(descriptor: textureDescriptor)!
-//        
-//        self.screenSize = screenSize
-//    }
-    
-//    internal func setupFluidTextures(screenSize: SIMD2<Float>) {
-//        // Thickness textures
-//        let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-//            pixelFormat: .r16Float,
-//            width: Int(screenSize.x),
-//            height: Int(screenSize.y),
-//            mipmapped: false
-//        )
-//        thicknessDescriptor.usage = [.renderTarget, .shaderRead]
-//        thicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
-//        tempThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
-//        filteredThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
-//        
-//        // Create a simple cube environment texture
-//        let envDescriptor = MTLTextureDescriptor.textureCubeDescriptor(
-//            pixelFormat: .rgba8Unorm,
-//            size: 64,
-//            mipmapped: false
-//        )
-//        envDescriptor.usage = .shaderRead
-//        environmentTexture = device.makeTexture(descriptor: envDescriptor)!
-//        
-//        // Fill environment texture with a simple sky color
-//        let envRegion = MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0), size: MTLSize(width: 64, height: 64, depth: 1))
-//        let skyData = Array(repeating: UInt8(200), count: 64 * 64 * 4) // Light blue-ish
-//        for face in 0..<6 {
-//            environmentTexture.replace(region: envRegion, mipmapLevel: 0, slice: face, withBytes: skyData, bytesPerRow: 64 * 4, bytesPerImage: 64 * 64 * 4)
-//        }
-//    }
     
     private func createTexturesForSize(_ size: SIMD2<Float>) -> FluidRenderTextures {
         // Create depth textures
@@ -413,8 +366,8 @@ extension MPMFluidRenderer {
         
         // Render AR mesh
         arRenderer.renderARMesh(commandEncoder: renderEncoder,
-                              viewMatrix: simd_float4x4(viewMatrix),
-                              projectionMatrix: simd_float4x4(projectionMatrix),
+                              viewMatrix: viewMatrix,
+                              projectionMatrix: projectionMatrix,
                               wireframe: arMeshWireframe)
         
         renderEncoder.endEncoding()
