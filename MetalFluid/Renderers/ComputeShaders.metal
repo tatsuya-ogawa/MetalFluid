@@ -1139,55 +1139,74 @@ inline float4 integrateAngularVelocity(float4 q, float3 omega, float dt) {
     return normalizeQuat(result);
 }
 
-// Stage 1: Accumulate forces and torques from particles to rigid bodies
+// Stage 1: Accumulate forces and torques from particles to rigid bodies using threadgroup memory
 kernel void gridToParticlesRigid2(
     device const MPMParticle* particles [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     device RigidBodyState* rigidBodies [[buffer(2)]],
     device const MPMParticleRigidInfo* rigidInfo [[buffer(3)]],
-    uint id [[thread_position_in_grid]]
+    uint id [[thread_position_in_grid]],
+    uint tid [[thread_position_in_threadgroup]],
+    uint threadgroup_size [[threads_per_threadgroup]]
 ) {
-    if (id >= uniforms.particleCount) return;
+    // Use threadgroup memory for reduction
+    threadgroup float3 local_forces[64];   // Assuming max 64 threads per group
+    threadgroup float3 local_torques[64];
+    threadgroup uint local_rigid_ids[64];
     
-    MPMParticle p = particles[id];
-    // Read rigid info via particle.originalIndex (rigidInfo remains unsorted)
-    uint origIdx = p.originalIndex;
-    uint rigidId = rigidInfo[origIdx].rigidId;
+    // Initialize threadgroup memory
+    local_forces[tid] = float3(0);
+    local_torques[tid] = float3(0);
+    local_rigid_ids[tid] = 0;
     
-    // Skip particles that don't belong to any rigid body
-    if (rigidId == 0) return;
+    if (id < uniforms.particleCount) {
+        MPMParticle p = particles[id];
+        uint origIdx = p.originalIndex;
+        uint rigidId = rigidInfo[origIdx].rigidId;
+        
+        // Process particles that belong to a rigid body
+        if (rigidId > 0) {
+            uint rigidBodyIdx = rigidId - 1;
+            if (rigidBodyIdx < uniforms.rigidBodyCount) {
+                // Calculate forces
+                float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
+                float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
+                float3 total_force = grid_force + gravity_force;
+                
+                // Calculate torque
+                float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
+                float3 torque = cross(r, total_force) * 0.05;
+                
+                // Store in threadgroup memory
+                local_forces[tid] = total_force;
+                local_torques[tid] = torque;
+                local_rigid_ids[tid] = rigidId;
+            }
+        }
+    }
     
-    uint rigidBodyIdx = rigidId - 1; // Convert to 0-based index
-    if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     
-    // Calculate force on this particle from MPM interactions
-    // Use the velocity from G2P stage as indication of forces applied through grid
-    float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
-    
-    // Add gravity force only for rigid bodies (since updateGridVelocity skips it)
-    float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
-    
-    float3 total_force = grid_force + gravity_force;
-    
-    // Accumulate linear force - use separate atomic additions for each component
-    device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
-    atomic_fetch_add_explicit(&forcePtr[0], total_force.x, memory_order_relaxed);
-    atomic_fetch_add_explicit(&forcePtr[1], total_force.y, memory_order_relaxed);
-    atomic_fetch_add_explicit(&forcePtr[2], total_force.z, memory_order_relaxed);
-    
-    // Calculate torque: τ = r × F (following taichi-mpm approach)
-    float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
-    float3 torque = cross(r, total_force);
-    
-    // Apply torque scaling based on taichi-mpm approach
-    const float torque_scale = 0.05;  // Further reduce torque sensitivity
-    torque *= torque_scale;    
-    
-    // Accumulate angular torque - use separate atomic additions for each component
-    device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
-    atomic_fetch_add_explicit(&torquePtr[0], torque.x, memory_order_relaxed);
-    atomic_fetch_add_explicit(&torquePtr[1], torque.y, memory_order_relaxed);
-    atomic_fetch_add_explicit(&torquePtr[2], torque.z, memory_order_relaxed);
+    // Only first thread in threadgroup performs atomic operations
+    if (tid == 0) {
+        // Accumulate all forces and torques for each rigid body
+        for (uint i = 0; i < threadgroup_size; i++) {
+            if (local_rigid_ids[i] > 0) {
+                uint bodyIdx = local_rigid_ids[i] - 1;
+                if (bodyIdx < uniforms.rigidBodyCount) {
+                    device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedForce;
+                    atomic_fetch_add_explicit(&forcePtr[0], local_forces[i].x, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&forcePtr[1], local_forces[i].y, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&forcePtr[2], local_forces[i].z, memory_order_relaxed);
+                    
+                    device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedTorque;
+                    atomic_fetch_add_explicit(&torquePtr[0], local_torques[i].x, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&torquePtr[1], local_torques[i].y, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&torquePtr[2], local_torques[i].z, memory_order_relaxed);
+                }
+            }
+        }
+    }
 }
 
 // Stage 2: Update rigid body dynamics (one thread per rigid body)
