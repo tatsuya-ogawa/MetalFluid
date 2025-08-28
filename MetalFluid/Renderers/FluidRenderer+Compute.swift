@@ -188,7 +188,7 @@ extension MPMFluidRenderer {
         } else if materialParameters.currentMaterialMode == .rigidBody{
             setupElasticCube(particlePointer: computeParticlePointer,center: center, range: range, rigidInfoPointer: computeRigidInfoPointer)
             // Initialize rigid body states if in rigid body mode
-            initializeRigidBodyStates()
+            initializeRigidBodyStatesCPU(particlePointer: computeParticlePointer, rigidInfoPointer: computeRigidInfoPointer, center: center)
         } else {
             // Original spherical distribution for fluid
             setupFluidSphere(particlePointer: computeParticlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
@@ -388,6 +388,49 @@ extension MPMFluidRenderer {
         } catch {
             print("⚠️ Could not create rigid body initialization pipeline: \(error)")
         }
+    }
+    // CPU-side rigid body initialization
+    private func initializeRigidBodyStatesCPU(particlePointer: UnsafeMutablePointer<MPMParticle>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>, center: SIMD3<Float>) {
+        let rigidBodyStatePointer = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 1)
+        let rigidBodyId: UInt32 = 1 // We're initializing rigid body with ID 1
+        
+        // Calculate center of mass and total mass
+        var centerOfMass = SIMD3<Float>(0, 0, 0)
+        var totalMass: Float = 0.0
+        var particleCount: UInt32 = 0
+        
+        for i in 0..<self.particleCount {
+            if rigidInfoPointer[i].rigidId == rigidBodyId {
+                let particle = particlePointer[i]
+                centerOfMass += particle.position * particle.mass
+                totalMass += particle.mass
+                particleCount += 1
+            }
+        }
+        
+        if totalMass > 0.0 {
+            centerOfMass /= totalMass
+        }
+        
+        // Initialize rigid body state
+        var rigidBodyState = RigidBodyState(
+            centerOfMass: centerOfMass,
+            linearVelocity: SIMD3<Float>(0, 0, 0),
+            angularVelocity: SIMD3<Float>(0, 0, 0),
+            orientation: SIMD4<Float>(0, 0, 0, 1), // Identity quaternion
+            totalMass: totalMass,
+            invInertiaTensor: simd_float3x3(1.0), // Identity matrix for now
+            accumulatedForce: SIMD3<Float>(0, 0, 0),
+            accumulatedTorque: SIMD3<Float>(0, 0, 0),
+            particleCount: particleCount,
+            isActive: (particleCount > 0) ? 1 : 0,
+            linearDamping: 0.99,
+            angularDamping: 0.99,
+            restitution: 0.5,
+            friction: 0.3
+        )
+        // Write to buffer
+        rigidBodyStatePointer[0] = rigidBodyState
     }
     
     // MARK: - Main Compute Function
