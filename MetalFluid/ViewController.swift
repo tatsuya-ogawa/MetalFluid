@@ -298,7 +298,7 @@ class ViewController: UIViewController {
         // Particle count slider
         particleCountSlider = UISlider()
         particleCountSlider.minimumValue = 1000
-        particleCountSlider.maximumValue = 300000
+        particleCountSlider.maximumValue = 400000
         particleCountSlider.value = initialParticleCount
         particleCountSlider.addTarget(
             self,

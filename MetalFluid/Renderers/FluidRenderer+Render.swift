@@ -192,13 +192,13 @@ extension MPMFluidRenderer {
     private func createTexturesForSize(_ size: SIMD2<Float>) -> FluidRenderTextures {
         // Ensure even dimensions to prevent crashes with certain GPU operations
         #if targetEnvironment(macCatalyst) || os(macOS)
-        let maxTextureSize = 2048
+        let maxTextureSize = Int(max(size.x,size.y))
         #else
         // for prevent ipad hangup
         let maxTextureSize = 1024
         #endif
-        let adjustedWidth = min(max(Int(size.x) + (Int(size.x) % 2),Int(size.y) + (Int(size.y) % 2)), maxTextureSize)
-        let adjustedHeight = adjustedWidth
+        let adjustedWidth = min(Int(size.x), maxTextureSize)
+        let adjustedHeight = min(Int(size.y), maxTextureSize)
         
         // Create depth textures
         let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
