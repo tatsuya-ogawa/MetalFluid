@@ -6,123 +6,39 @@ import simd
 extension MPMFluidRenderer {
     
     // MARK: - Setup Functions
-    internal func setupComputePipelinesFluid(library:MTLLibrary){
-        // Particles to grid 1 pipeline
-        guard
-            let particlesToGridFluid1Function = library.makeFunction(
-                name: "particlesToGridFluid1"
-            )
-        else {
-            fatalError("Could not find function 'particlesToGridFluid1'")
+    
+    private func createComputePipelineState(library: MTLLibrary, functionName: String) -> MTLComputePipelineState {
+        guard let function = library.makeFunction(name: functionName) else {
+            fatalError("Could not find function '\(functionName)'")
         }
         do {
-            particlesToGridFluid1PipelineState = try device.makeComputePipelineState(
-                function: particlesToGridFluid1Function
-            )
+            return try device.makeComputePipelineState(function: function)
         } catch {
-            fatalError(
-                "Could not create particlesToGridFluid1 pipeline state: \(error)"
-            )
-        }
-        // Particles to grid 2 pipeline
-        guard
-            let particlesToGridFluid2Function = library.makeFunction(
-                name: "particlesToGridFluid2"
-            )
-        else {
-            fatalError("Could not find function 'particlesToGridFluid2'")
-        }
-        do {
-            particlesToGridFluid2PipelineState = try device.makeComputePipelineState(
-                function: particlesToGridFluid2Function
-            )
-        } catch {
-            fatalError(
-                "Could not create particlesToGridFluid2 pipeline state: \(error)"
-            )
-        }
-        // Grid to particles pipeline
-        guard
-            let gridToParticlesFluid1Function = library.makeFunction(
-                name: "gridToParticlesFluid1"
-            )
-        else {
-            fatalError("Could not find function 'gridToParticlesFluid1'")
-        }
-        do {
-            gridToParticlesFluid1PipelineState = try device.makeComputePipelineState(
-                function: gridToParticlesFluid1Function
-            )
-        } catch {
-            fatalError(
-                "Could not create gridToParticlesFluid1 pipeline state: \(error)"
-            )
+            fatalError("Could not create \(functionName) pipeline state: \(error)")
         }
     }
+    
+    internal func setupComputePipelinesFluid(library: MTLLibrary) {
+        particlesToGridFluid1PipelineState = createComputePipelineState(library: library, functionName: "particlesToGridFluid1")
+        particlesToGridFluid2PipelineState = createComputePipelineState(library: library, functionName: "particlesToGridFluid2")
+        gridToParticlesFluid1PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesFluid1")
+    }
+    
     internal func setupComputePipelinesElastic(library: MTLLibrary) {
-        // Elastic material pipeline states
-        guard let particlesToGridElasticFunction = library.makeFunction(name: "particlesToGridElastic") else {
-            fatalError("Could not find function 'particlesToGridElastic'")
-        }
-        do {
-            particlesToGridElasticPipelineState = try device.makeComputePipelineState(function: particlesToGridElasticFunction)
-        } catch {
-            fatalError("Could not create particlesToGridElastic pipeline state: \(error)")
-        }
-        guard let gridToParticlesElasticFunction = library.makeFunction(name: "gridToParticlesElastic") else {
-            fatalError("Could not find function 'gridToParticlesElastic'")
-        }
-        do {
-            gridToParticlesElasticPipelineState = try device.makeComputePipelineState(function: gridToParticlesElasticFunction)
-        } catch {
-            fatalError("Could not create gridToParticlesElastic pipeline state: \(error)")
-        }
+        particlesToGridElasticPipelineState = createComputePipelineState(library: library, functionName: "particlesToGridElastic")
+        gridToParticlesElasticPipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesElastic")
     }
+    
     internal func setupComputePipelinesRigid(library: MTLLibrary) {
-        // Rigid body material pipeline states
-        guard let particlesToGridRigidFunction = library.makeFunction(name: "particlesToGridRigid") else {
-            fatalError("Could not find function 'particlesToGridRigid'")
-        }
-        do {
-            particlesToGridRigidPipelineState = try device.makeComputePipelineState(function: particlesToGridRigidFunction)
-        } catch {
-            fatalError("Could not create particlesToGridRigid pipeline state: \(error)")
-        }
-        guard let gridToParticlesRigid1Function = library.makeFunction(name: "gridToParticlesRigid1") else {
-            fatalError("Could not find function 'gridToParticlesRigid1'")
-        }
-        do {
-            gridToParticlesRigid1PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid1Function)
-        } catch {
-            fatalError("Could not create gridToParticlesRigid1 pipeline state: \(error)")
-        }
-        guard let gridToParticlesRigid2Function = library.makeFunction(name: "gridToParticlesRigid2") else {
-            fatalError("Could not find function 'gridToParticlesRigid2'")
-        }
-        do {
-            gridToParticlesRigid2PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid2Function)
-        } catch {
-            fatalError("Could not create gridToParticlesRigid2 pipeline state: \(error)")
-        }
-        guard let gridToParticlesRigid3Function = library.makeFunction(name: "gridToParticlesRigid3") else {
-            fatalError("Could not find function 'gridToParticlesRigid3'")
-        }
-        do {
-            gridToParticlesRigid3PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid3Function)
-        } catch {
-            fatalError("Could not create gridToParticlesRigid3 pipeline state: \(error)")
-        }
-        guard let gridToParticlesRigid4Function = library.makeFunction(name: "gridToParticlesRigid4") else {
-            fatalError("Could not find function 'gridToParticlesRigid4'")
-        }
-        do {
-            gridToParticlesRigid4PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid4Function)
-            // Optional collision solver (only used if multiple rigid bodies)
-            if let solveRigidBodyCollisionsFunction = library.makeFunction(name: "solveRigidBodyCollisions") {
-                solveRigidBodyCollisionsPipelineState = try device.makeComputePipelineState(function: solveRigidBodyCollisionsFunction)
-            }
-        } catch {
-            fatalError("Could not create gridToParticlesRigid4 pipeline state: \(error)")
+        particlesToGridRigidPipelineState = createComputePipelineState(library: library, functionName: "particlesToGridRigid")
+        gridToParticlesRigid1PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid1")
+        gridToParticlesRigid2PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid2")
+        gridToParticlesRigid3PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid3")
+        gridToParticlesRigid4PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid4")
+        
+        // Optional collision solver (only used if multiple rigid bodies)
+        if library.makeFunction(name: "solveRigidBodyCollisions") != nil {
+            solveRigidBodyCollisionsPipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyCollisions")
         }
     }
     internal func setupComputePipelines() {
@@ -130,38 +46,9 @@ extension MPMFluidRenderer {
             fatalError("Could not create default library")
         }
 
-        // Clear grid pipeline
-        guard let clearGridFunction = library.makeFunction(name: "clearGrid")
-        else {
-            fatalError("Could not find function 'clearGrid'")
-        }
-        do {
-            clearGridPipelineState = try device.makeComputePipelineState(
-                function: clearGridFunction
-            )
-        } catch {
-            fatalError("Could not create clear grid pipeline state: \(error)")
-        }
-
+        clearGridPipelineState = createComputePipelineState(library: library, functionName: "clearGrid")
+        updateGridVelocityPipelineState = createComputePipelineState(library: library, functionName: "updateGridVelocity")
         
-        // Update grid velocity pipeline
-        guard
-            let updateGridVelocityFunction = library.makeFunction(
-                name: "updateGridVelocity"
-            )
-        else {
-            fatalError("Could not find function 'updateGridVelocity'")
-        }
-        do {
-            updateGridVelocityPipelineState =
-                try device.makeComputePipelineState(
-                    function: updateGridVelocityFunction
-                )
-        } catch {
-            fatalError(
-                "Could not create update grid velocity pipeline state: \(error)"
-            )
-        }
         setupComputePipelinesFluid(library: library)
         setupComputePipelinesElastic(library: library)
         setupComputePipelinesRigid(library: library)
@@ -242,51 +129,48 @@ extension MPMFluidRenderer {
         print("💾 Blit copy completed: staging → private buffers")
     }
     
-    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {
-        // Calculate cube dimensions based on particle count
+    private func createParticle(at position: SIMD3<Float>, index: Int) -> MPMParticle {
+        return MPMParticle(
+            position: position,
+            velocity: SIMD3<Float>(0.0, 0.0, 0.0),
+            C: simd_float3x3(0.0),
+            mass: materialParameters.particleMass,
+            originalIndex: UInt32(index)
+        )
+    }
+    
+    private func createRigidInfo(rigidId: UInt32, initialOffset: SIMD3<Float>) -> MPMParticleRigidInfo {
+        return MPMParticleRigidInfo(rigidId: rigidId, initialOffset: initialOffset)
+    }
+    
+    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
         let particlesPerDim = Int(floor(pow(Float(particleCount), 1.0/3.0)))
-        
-        // Cube size - make it smaller than the boundary to leave space
-        let cubeSize = min(range.x, range.y, range.z) * 0.6  // 60% of available space
+        let cubeSize = min(range.x, range.y, range.z) * 0.6
         let spacing = cubeSize / Float(particlesPerDim - 1)
-        
-        // Calculate cube origin (bottom-left-back corner)
         let cubeOrigin = center - SIMD3<Float>(cubeSize * 0.5, cubeSize * 0.5, cubeSize * 0.5)
+        let isRigidBody = materialParameters.currentMaterialMode == .rigidBody
         
         var particleIndex = 0
         
+        // Create lattice particles
         for x in 0..<particlesPerDim {
             for y in 0..<particlesPerDim {
                 for z in 0..<particlesPerDim {
                     if particleIndex >= particleCount { break }
                     
-                    // Calculate position in the dense cube
-                    let pos = cubeOrigin + SIMD3<Float>(
-                        Float(x) * spacing,
-                        Float(y) * spacing,
-                        Float(z) * spacing
-                    )
-                    
-                    // Add very small random offset for numerical stability
+                    let pos = cubeOrigin + SIMD3<Float>(Float(x) * spacing, Float(y) * spacing, Float(z) * spacing)
                     let randomOffset = SIMD3<Float>(
                         Float.random(in: -0.001...0.001),
                         Float.random(in: -0.001...0.001),
                         Float.random(in: -0.001...0.001)
                     )
+                    let finalPos = pos + randomOffset
                     
-                    particlePointer[particleIndex] = MPMParticle(
-                        position: pos + randomOffset,
-                        velocity: SIMD3<Float>(0.0, 0.0, 0.0),
-                        C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                        mass: materialParameters.particleMass,
-                        originalIndex: UInt32(particleIndex),
+                    particlePointer[particleIndex] = createParticle(at: finalPos, index: particleIndex)
+                    rigidInfoPointer?[particleIndex] = createRigidInfo(
+                        rigidId: isRigidBody ? 1 : 0,
+                        initialOffset: isRigidBody ? (finalPos - center) : SIMD3<Float>(0, 0, 0)
                     )
-                    if let rigidInfoPointer{
-                        rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
-                            rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                            initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos + randomOffset - center) : SIMD3<Float>(0, 0, 0)
-                        )
-                    }
                     
                     particleIndex += 1
                 }
@@ -295,7 +179,7 @@ extension MPMFluidRenderer {
             if particleIndex >= particleCount { break }
         }
         
-        // Fill remaining particles with random positions within cube if needed
+        // Fill remaining particles randomly
         while particleIndex < particleCount {
             let pos = cubeOrigin + SIMD3<Float>(
                 Float.random(in: 0...cubeSize),
@@ -303,20 +187,11 @@ extension MPMFluidRenderer {
                 Float.random(in: 0...cubeSize)
             )
             
-            particlePointer[particleIndex] = MPMParticle(
-                position: pos,
-                velocity: SIMD3<Float>(0.0, 0.0, 0.0),
-                C: simd_float3x3(0.0),
-                mass: materialParameters.particleMass,
-                originalIndex: UInt32(particleIndex),
+            particlePointer[particleIndex] = createParticle(at: pos, index: particleIndex)
+            rigidInfoPointer?[particleIndex] = createRigidInfo(
+                rigidId: 0,
+                initialOffset: isRigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
             )
-            if let rigidInfoPointer{
-                rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
-//                    rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
-                    rigidId: 0,
-                    initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
-                )
-            }
             
             particleIndex += 1
         }
@@ -324,37 +199,28 @@ extension MPMFluidRenderer {
         print("🟦 Created elastic cube: \(particlesPerDim)³ lattice, spacing: \(spacing)")
     }
     
-    private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {
+    private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
         let maxRadius = min(range.x, range.y, range.z)
         
         func randn() -> Float {
-            // Standard normal distribution using Box-Muller method
             let u1 = Float.random(in: 0..<1)
             let u2 = Float.random(in: 0..<1)
             return sqrt(-2.0 * log(u1 + 1e-7)) * cos(2.0 * .pi * u2)
         }
         
         for i in 0..<particleCount {
-            // Spherical normal distribution sampling
             var pos: SIMD3<Float>
             while true {
-                // 3D normal distribution
-                let x = randn()
-                let y = randn()
-                let z = randn()
-                let v = SIMD3<Float>(x, y, z)
-                // Constrain to sphere (within maxRadius from center)
+                let v = SIMD3<Float>(randn(), randn(), randn())
                 let r = length(v)
-                if r > 3.0 { continue } // Discard outside 3σ
-                // Normalize sphere radius to maxRadius
+                if r > 3.0 { continue }
                 let scaled = v / r * (r / 3.0) * maxRadius
                 pos = center + scaled
-                // Accept if within boundaries
                 if all(pos .>= boundaryMin) && all(pos .<= boundaryMax) {
                     break
                 }
             }
-            // Small random noise
+            
             let randomOffset = SIMD3<Float>(
                 Float.random(in: -0.003...0.003),
                 Float.random(in: -0.003...0.003),
@@ -362,19 +228,8 @@ extension MPMFluidRenderer {
             )
             let finalPos = simd_clamp(pos + randomOffset, boundaryMin, boundaryMax)
             
-            particlePointer[i] = MPMParticle(
-                position: finalPos,
-                velocity: SIMD3<Float>(0.0, 0.0, 0.0),  // Initial velocity is 0
-                C: simd_float3x3(0.0),  // Affine momentum matrix initialization
-                mass: materialParameters.particleMass,
-                originalIndex: UInt32(i),
-            )
-            if let rigidInfoPointer{
-                rigidInfoPointer[i] = MPMParticleRigidInfo(
-                    rigidId: 0,  // Fluid particles don't belong to rigid bodies
-                    initialOffset: randomOffset
-                )
-            }
+            particlePointer[i] = createParticle(at: finalPos, index: i)
+            rigidInfoPointer?[i] = createRigidInfo(rigidId: 0, initialOffset: randomOffset)
         }
         
         print("🌊 Created fluid sphere: radius \(maxRadius)")

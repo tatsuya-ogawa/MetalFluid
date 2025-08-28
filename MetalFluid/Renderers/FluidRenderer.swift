@@ -202,25 +202,7 @@ class ParticleRenderer: ModeRenderer {
             Float(renderPassDescriptor.colorAttachments[0].texture!.height)
         )
         
-        // Only create depth buffer if the render pass descriptor doesn't have depth attachment
-        // AND the pipeline expects depth (which it does since depthAttachmentPixelFormat = .depth32Float)
-        if renderPassDescriptor.depthAttachment.texture == nil {
-            let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .depth32Float,
-                width: Int(screenSize.x),
-                height: Int(screenSize.y),
-                mipmapped: false
-            )
-            depthTextureDescriptor.usage = .renderTarget
-            depthTextureDescriptor.storageMode = .private  // Use private storage for GPU performance
-            let depthBuffer = renderer.device.makeTexture(descriptor: depthTextureDescriptor)!
-            depthBuffer.label = "ParticleRenderDepthBuffer"
-            
-            renderPassDescriptor.depthAttachment.texture = depthBuffer
-            renderPassDescriptor.depthAttachment.loadAction = .clear
-            renderPassDescriptor.depthAttachment.clearDepth = 1.0
-            renderPassDescriptor.depthAttachment.storeAction = .store
-        }
+        renderer.ensureDepthBuffer(for: renderPassDescriptor, screenSize: screenSize, label: "ParticleRenderDepthBuffer")
         
         // Render mesh and particles with new ordering
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(
@@ -337,24 +319,7 @@ class WaterRenderer: ModeRenderer {
             invViewMatrix: invViewMatrix
         )
         
-        // Ensure depth buffer is available for mesh rendering
-        if renderPassDescriptor.depthAttachment.texture == nil {
-            let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .depth32Float,
-                width: Int(screenSize.x),
-                height: Int(screenSize.y),
-                mipmapped: false
-            )
-            depthTextureDescriptor.usage = .renderTarget
-            depthTextureDescriptor.storageMode = .private  // Use private storage for GPU performance
-            let depthBuffer = renderer.device.makeTexture(descriptor: depthTextureDescriptor)!
-            depthBuffer.label = "ParticleRenderDepthBuffer"
-            
-            renderPassDescriptor.depthAttachment.texture = depthBuffer
-            renderPassDescriptor.depthAttachment.loadAction = .clear
-            renderPassDescriptor.depthAttachment.clearDepth = 1.0
-            renderPassDescriptor.depthAttachment.storeAction = .store
-        }
+        renderer.ensureDepthBuffer(for: renderPassDescriptor, screenSize: screenSize, label: "WaterRenderDepthBuffer")
         
         // Set background color for water renderer
         renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
@@ -995,5 +960,26 @@ class MPMFluidRenderer: NSObject {
             
             sortManager?.updateParticleCount(particleCount)
         }
+    }
+    
+    internal func ensureDepthBuffer(for renderPassDescriptor: MTLRenderPassDescriptor, screenSize: SIMD2<Float>, label: String) {
+        guard renderPassDescriptor.depthAttachment.texture == nil else { return }
+        
+        let depthTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .depth32Float,
+            width: Int(screenSize.x),
+            height: Int(screenSize.y),
+            mipmapped: false
+        )
+        depthTextureDescriptor.usage = .renderTarget
+        depthTextureDescriptor.storageMode = .private
+        
+        let depthBuffer = device.makeTexture(descriptor: depthTextureDescriptor)!
+        depthBuffer.label = label
+        
+        renderPassDescriptor.depthAttachment.texture = depthBuffer
+        renderPassDescriptor.depthAttachment.loadAction = .clear
+        renderPassDescriptor.depthAttachment.clearDepth = 1.0
+        renderPassDescriptor.depthAttachment.storeAction = .store
     }
 }
