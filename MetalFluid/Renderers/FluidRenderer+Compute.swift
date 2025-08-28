@@ -521,7 +521,7 @@ extension MPMFluidRenderer {
             // 1. Clear grid
             if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
                 computeEncoder.setComputePipelineState(clearGridPipelineState)
-                computeEncoder.setBuffer(gridBuffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 0)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                 computeEncoder.dispatchThreadgroups(
                     gridThreadgroups,
@@ -539,7 +539,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,
                         threadsPerThreadgroup: particleThreadsPerThreadgroup
@@ -553,7 +553,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,
                         threadsPerThreadgroup: particleThreadsPerThreadgroup
@@ -568,7 +568,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,
                         threadsPerThreadgroup: particleThreadsPerThreadgroup
@@ -583,7 +583,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     computeEncoder.dispatchThreadgroups(
                         particleThreadgroups,
                         threadsPerThreadgroup: particleThreadsPerThreadgroup
@@ -597,7 +597,7 @@ extension MPMFluidRenderer {
                 computeEncoder.setComputePipelineState(
                     updateGridVelocityPipelineState
                 )
-                computeEncoder.setBuffer(gridBuffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 0)
                 computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
                 computeEncoder.dispatchThreadgroups(
                     gridThreadgroups,
@@ -615,7 +615,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     
                     // Set collision resources if available
                     if let collisionManager {
@@ -640,7 +640,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     
                     // Set collision resources if available
                     if let collisionManager {
@@ -665,7 +665,7 @@ extension MPMFluidRenderer {
                     )
                     computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(gridBuffer, offset: 0, index: 2)
+                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
                     
                     // Set collision resources if available
                     if let collisionManager {
@@ -814,10 +814,15 @@ extension MPMFluidRenderer {
     private func swapComputeAndRenderBuffers() {
         // Swap particle buffers using Swift's swap function
         swap(&computeParticleBuffer, &renderParticleBuffer)
+        
+        // Swap grid buffers (no initial copy needed like particles)
+        swap(&computeGridBuffer, &renderGridBuffer)
                 
         // Update buffer labels for debugging
         computeParticleBuffer.label = "ComputeParticleBuffer"
         renderParticleBuffer.label = "RenderParticleBuffer"
+        computeGridBuffer.label = "ComputeGridBuffer"
+        renderGridBuffer.label = "RenderGridBuffer"
         computeRigidInfoBuffer.label = "ComputeRigidInfoBuffer"
     }
     

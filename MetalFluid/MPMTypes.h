@@ -20,9 +20,6 @@ typedef struct {
     float mass;           // Mass
     uint32_t originalIndex; // Original particle index (used to fetch unsorted rigid info)
     // Rigid-related fields moved to separate struct MPMParticleRigidInfo
-//    float volume;         // Volume
-//    float Jp;             // Plastic deformation determinant
-//    float3 color;         // Rendering color
 } MPMParticle;
 
 // Rigid-related particle info stored separately for compact particle arrays

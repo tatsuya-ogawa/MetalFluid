@@ -242,9 +242,9 @@ class ParticleRenderer: ModeRenderer {
             renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
             renderEncoder.setVertexBuffer(renderer.vertexUniformBuffer, offset: 0, index: 1)
             
-            // For pressure heatmap mode, also bind the grid buffer
+            // For pressure heatmap mode, also bind the render grid buffer
             if renderer.currentParticleRenderMode == .pressureHeatmap {
-                renderEncoder.setVertexBuffer(renderer.gridBuffer, offset: 0, index: 2)
+                renderEncoder.setVertexBuffer(renderer.renderGridBuffer, offset: 0, index: 2)
             }
             
             renderEncoder.drawPrimitives(
@@ -473,16 +473,18 @@ class MPMFluidRenderer: NSObject {
     
     // Fixed 2-stage pipeline: Compute -> Rendering
     
+    internal var computeUniformBuffer: MTLBuffer!
     // Compute buffers (calculation only)
     internal var computeParticleBuffer: MTLBuffer!
-    internal var computeUniformBuffer: MTLBuffer!
-    
     // Rendering buffers (display only)  
     internal var renderParticleBuffer: MTLBuffer!
     
     // Static buffers
     internal var vertexUniformBuffer: MTLBuffer!
-    internal var gridBuffer: MTLBuffer!
+    
+    // Grid double buffering (like particles)
+    internal var computeGridBuffer: MTLBuffer!  // For computation
+    internal var renderGridBuffer: MTLBuffer!   // For rendering
         
     // Compute/Render state tracking
     internal var isComputing: Bool = false
@@ -701,12 +703,19 @@ class MPMFluidRenderer: NSObject {
             options: .storageModeShared
         )!
         
-        // Grid buffer - Using correct struct size
+        // Grid double buffering - Using correct struct size  
         let gridBufferSize = MemoryLayout<MPMGridNode>.stride * gridNodes
-        gridBuffer = device.makeBuffer(
+        computeGridBuffer = device.makeBuffer(
             length: gridBufferSize,
             options: .storageModeShared
         )!
+        computeGridBuffer.label = "ComputeGridBuffer"
+        
+        renderGridBuffer = device.makeBuffer(
+            length: gridBufferSize,
+            options: .storageModeShared
+        )!
+        renderGridBuffer.label = "RenderGridBuffer"
         
         // Debug grid buffer
         debugGridBuffer = device.makeBuffer(
