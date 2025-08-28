@@ -208,10 +208,14 @@ extension MPMFluidRenderer {
             mipmapped: false
         )
         depthTextureDescriptor.usage = [.renderTarget, .shaderRead]
+        depthTextureDescriptor.storageMode = .private  // Use private storage for GPU performance
         
         let newDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        newDepthTexture.label = "FluidDepthTexture"
         let newTempDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        newTempDepthTexture.label = "FluidTempDepthTexture"
         let newFilteredDepthTexture = device.makeTexture(descriptor: depthTextureDescriptor)!
+        newFilteredDepthTexture.label = "FluidFilteredDepthTexture"
         
         // Create thickness textures
         let thicknessDescriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -221,9 +225,13 @@ extension MPMFluidRenderer {
             mipmapped: false
         )
         thicknessDescriptor.usage = [.renderTarget, .shaderRead]
+        thicknessDescriptor.storageMode = .private  // Use private storage for GPU performance
         let newThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        newThicknessTexture.label = "FluidThicknessTexture"
         let newTempThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        newTempThicknessTexture.label = "FluidTempThicknessTexture"
         let newFilteredThicknessTexture = device.makeTexture(descriptor: thicknessDescriptor)!
+        newFilteredThicknessTexture.label = "FluidFilteredThicknessTexture"
         
         // Create environment texture (size-independent, but included for completeness)
         let envDescriptor = MTLTextureDescriptor.textureCubeDescriptor(

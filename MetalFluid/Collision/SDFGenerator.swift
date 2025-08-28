@@ -86,11 +86,13 @@ class SDFGenerator {
         textureDescriptor.height = Int(resolution.y)
         textureDescriptor.depth = Int(resolution.z)
         textureDescriptor.usage = [.shaderRead, .shaderWrite]
+        textureDescriptor.storageMode = .private  // Use private storage for GPU performance
         
         guard let sdfTexture = device.makeTexture(descriptor: textureDescriptor) else {
             print("Failed to create SDF texture")
             return nil
         }
+        sdfTexture.label = "SDFTexture"
         
         // Setup compute parameters
         let voxelSize = (boundingBox.max - boundingBox.min) / SIMD3<Float>(resolution)
@@ -135,19 +137,26 @@ class SDFGenerator {
             return nil
         }
         
-        // Copy data to texture
-        let sdfDataPointer = sdfDataBuffer.contents().bindMemory(to: Float.self, capacity: totalVoxels)
-        let sdfDataArray = Array(UnsafeBufferPointer(start: sdfDataPointer, count: totalVoxels))
+        // Copy buffer data to texture using blit encoder (for private texture)
+        guard let blitCommandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = blitCommandBuffer.makeBlitCommandEncoder() else {
+            print("Failed to create blit command buffer/encoder")
+            return nil
+        }
         
-        let region = MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0),
-                              size: MTLSize(width: Int(resolution.x), height: Int(resolution.y), depth: Int(resolution.z)))
+        blitEncoder.copy(from: sdfDataBuffer,
+                        sourceOffset: 0,
+                        sourceBytesPerRow: Int(resolution.x) * MemoryLayout<Float>.size,
+                        sourceBytesPerImage: Int(resolution.x * resolution.y) * MemoryLayout<Float>.size,
+                        sourceSize: MTLSize(width: Int(resolution.x), height: Int(resolution.y), depth: Int(resolution.z)),
+                        to: sdfTexture,
+                        destinationSlice: 0,
+                        destinationLevel: 0,
+                        destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
         
-        sdfTexture.replace(region: region,
-                          mipmapLevel: 0,
-                          slice: 0,
-                          withBytes: sdfDataArray,
-                          bytesPerRow: Int(resolution.x) * MemoryLayout<Float>.size,
-                          bytesPerImage: Int(resolution.x * resolution.y) * MemoryLayout<Float>.size)
+        blitEncoder.endEncoding()
+        blitCommandBuffer.commit()
+        blitCommandBuffer.waitUntilCompleted()
         
         print("GPU SDF generation completed successfully")
         return sdfTexture

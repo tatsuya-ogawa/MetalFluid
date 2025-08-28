@@ -212,7 +212,9 @@ class ParticleRenderer: ModeRenderer {
                 mipmapped: false
             )
             depthTextureDescriptor.usage = .renderTarget
+            depthTextureDescriptor.storageMode = .private  // Use private storage for GPU performance
             let depthBuffer = renderer.device.makeTexture(descriptor: depthTextureDescriptor)!
+            depthBuffer.label = "ParticleRenderDepthBuffer"
             
             renderPassDescriptor.depthAttachment.texture = depthBuffer
             renderPassDescriptor.depthAttachment.loadAction = .clear
@@ -344,7 +346,9 @@ class WaterRenderer: ModeRenderer {
                 mipmapped: false
             )
             depthTextureDescriptor.usage = .renderTarget
+            depthTextureDescriptor.storageMode = .private  // Use private storage for GPU performance
             let depthBuffer = renderer.device.makeTexture(descriptor: depthTextureDescriptor)!
+            depthBuffer.label = "ParticleRenderDepthBuffer"
             
             renderPassDescriptor.depthAttachment.texture = depthBuffer
             renderPassDescriptor.depthAttachment.loadAction = .clear
@@ -752,10 +756,10 @@ class MPMFluidRenderer: NSObject {
         renderGridBuffer.label = "RenderGridBuffer"
         
         // Debug grid buffer
-        debugGridBuffer = device.makeBuffer(
-            length: gridBufferSize,
-            options: .storageModeShared
-        )!
+//        debugGridBuffer = device.makeBuffer(
+//            length: gridBufferSize,
+//            options: .storageModeShared
+//        )!
         
         // Filter uniform buffer
         let filterUniformSize = MemoryLayout<FilterUniforms>.stride
@@ -911,7 +915,7 @@ class MPMFluidRenderer: NSObject {
     }
     
     // --- Add grid debug buffer and methods ---
-    public var debugGridBuffer: MTLBuffer!
+//    public var debugGridBuffer: MTLBuffer!
     
     public func setParticleSizeMultiplier(_ multiplier: Float) {
         particleSizeMultiplier = multiplier
