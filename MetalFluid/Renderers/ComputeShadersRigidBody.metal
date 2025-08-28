@@ -347,10 +347,11 @@ kernel void gridToParticlesRigid3(
     
     // Angular dynamics: τ = Iα → α = I⁻¹τ (following taichi-mpm approach)
     // Apply angular damping first (exponential decay)
+//    rb.angularVelocity *= exp(-length(rb.angularVelocity) * dt);
     rb.angularVelocity *= exp(-rb.angularDamping * dt);
     
     // Integrate angular acceleration
-    float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque;
+    float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque / max(rb.totalMass, 1e-6);
     
     // Limit angular acceleration to prevent runaway rotation
     const float max_angular_accel = 50.0;

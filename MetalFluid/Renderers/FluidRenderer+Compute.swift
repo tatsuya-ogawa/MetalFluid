@@ -244,7 +244,7 @@ extension MPMFluidRenderer {
     
     private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {
         // Calculate cube dimensions based on particle count
-        let particlesPerDim = Int(ceil(pow(Float(particleCount), 1.0/3.0)))
+        let particlesPerDim = Int(floor(pow(Float(particleCount), 1.0/3.0)))
         
         // Cube size - make it smaller than the boundary to leave space
         let cubeSize = min(range.x, range.y, range.z) * 0.6  // 60% of available space
@@ -312,7 +312,8 @@ extension MPMFluidRenderer {
             )
             if let rigidInfoPointer{
                 rigidInfoPointer[particleIndex] = MPMParticleRigidInfo(
-                    rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+//                    rigidId: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0,  // Assign to rigid body 1 if rigid body mode
+                    rigidId: 0,
                     initialOffset: materialParameters.currentMaterialMode == .rigidBody ? (pos - center) : SIMD3<Float>(0, 0, 0)
                 )
             }
