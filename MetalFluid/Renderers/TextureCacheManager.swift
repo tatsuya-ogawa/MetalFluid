@@ -164,24 +164,28 @@ internal class TextureCacheManager<T> {
 internal struct ScreenSizeCacheKey: CacheKey {
     internal let x: Int
     internal let y: Int
+    internal let bufferIndex: Int
 
     /// Initialize from a SIMD2<Float> (screen size in points/pixels). We round to nearest Int.
-    internal init(_ size: SIMD2<Float>) {
+    internal init(_ size: SIMD2<Float>, bufferIndex: Int = 0) {
         self.x = Int(round(size.x))
         self.y = Int(round(size.y))
+        self.bufferIndex = bufferIndex
     }
 
-    internal init(x: Int, y: Int) {
+    internal init(x: Int, y: Int, bufferIndex: Int = 0) {
         self.x = x
         self.y = y
+        self.bufferIndex = bufferIndex
     }
 
     internal func hash(into hasher: inout Hasher) {
         hasher.combine(x)
         hasher.combine(y)
+        hasher.combine(bufferIndex)
     }
 
     internal static func == (lhs: ScreenSizeCacheKey, rhs: ScreenSizeCacheKey) -> Bool {
-        return lhs.x == rhs.x && lhs.y == rhs.y
+        return lhs.x == rhs.x && lhs.y == rhs.y && lhs.bufferIndex == rhs.bufferIndex
     }
 }

@@ -249,15 +249,64 @@ extension MPMFluidRenderer {
             tempThicknessTexture: newTempThicknessTexture,
             filteredThicknessTexture: newFilteredThicknessTexture,
             environmentTexture: newEnvironmentTexture,
-            screenSize: SIMD2<Float>(Float(adjustedWidth), Float(adjustedHeight))
+            screenSize: SIMD2<Float>(Float(adjustedWidth), Float(adjustedHeight)),
+            bufferIndex: 0  // Default buffer index
         )
     }
     
-    public func getTexturesForScreenSize(_ newSize: SIMD2<Float>) -> FluidRenderTextures {
-        let cacheKey = ScreenSizeCacheKey(newSize)
+    public func getTexturesForScreenSize(_ newSize: SIMD2<Float>) -> FluidRenderTextures? {
+        // Check if we've exceeded the maximum buffer limit (skip rendering to prevent G-Buffer corruption)
+        guard currentTextureBufferIndex < maxTextureBuffers else {
+            print("⚠️ Texture buffer limit exceeded (\(currentTextureBufferIndex)/\(maxTextureBuffers)), skipping render")
+            return nil
+        }
+        
+        // Create cache key with buffer index for double buffering
+        let cacheKey = ScreenSizeCacheKey(newSize, bufferIndex: currentTextureBufferIndex)
+        
+        let textures = textureCacheManager.getOrCreate(key: cacheKey) {
+            let baseTextures = createTexturesForSize(newSize)
+            return FluidRenderTextures(
+                depthTexture: baseTextures.depthTexture,
+                tempDepthTexture: baseTextures.tempDepthTexture,
+                filteredDepthTexture: baseTextures.filteredDepthTexture,
+                thicknessTexture: baseTextures.thicknessTexture,
+                tempThicknessTexture: baseTextures.tempThicknessTexture,
+                filteredThicknessTexture: baseTextures.filteredThicknessTexture,
+                environmentTexture: baseTextures.environmentTexture,
+                screenSize: baseTextures.screenSize,
+                bufferIndex: currentTextureBufferIndex
+            )
+        }
+        
+        // Advance buffer index for next frame (cycle between 0 and 1)
+        currentTextureBufferIndex = (currentTextureBufferIndex + 1) % maxTextureBuffers
+        
+        return textures
+    }
+    
+    // For G-Buffer multi-pass rendering - get stable texture buffer
+    public func getStableTexturesForScreenSize(_ newSize: SIMD2<Float>, bufferIndex: Int) -> FluidRenderTextures? {
+        guard bufferIndex < maxTextureBuffers else {
+            print("⚠️ Invalid buffer index (\(bufferIndex)/\(maxTextureBuffers))")
+            return nil
+        }
+        
+        let cacheKey = ScreenSizeCacheKey(newSize, bufferIndex: bufferIndex)
         
         return textureCacheManager.getOrCreate(key: cacheKey) {
-            return createTexturesForSize(newSize)
+            let baseTextures = createTexturesForSize(newSize)
+            return FluidRenderTextures(
+                depthTexture: baseTextures.depthTexture,
+                tempDepthTexture: baseTextures.tempDepthTexture,
+                filteredDepthTexture: baseTextures.filteredDepthTexture,
+                thicknessTexture: baseTextures.thicknessTexture,
+                tempThicknessTexture: baseTextures.tempThicknessTexture,
+                filteredThicknessTexture: baseTextures.filteredThicknessTexture,
+                environmentTexture: baseTextures.environmentTexture,
+                screenSize: baseTextures.screenSize,
+                bufferIndex: bufferIndex
+            )
         }
     }
     

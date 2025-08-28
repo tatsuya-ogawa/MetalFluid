@@ -115,6 +115,7 @@ internal struct FluidRenderTextures {
     let filteredThicknessTexture: MTLTexture
     let environmentTexture: MTLTexture
     let screenSize: SIMD2<Float>
+    let bufferIndex: Int  // Buffer index for double buffering
 }
 
 // Rigid Body state for complete rigid body dynamics
@@ -291,7 +292,10 @@ class WaterRenderer: ModeRenderer {
         }
         let screenSize = SIMD2<Float>(Float(colorTexture.width), Float(colorTexture.height))
         
-        let textures = renderer.getTexturesForScreenSize(screenSize)
+        guard let textures = renderer.getTexturesForScreenSize(screenSize) else {
+            // Skip rendering if texture buffer limit exceeded
+            return
+        }
         
         // Step 1: Render depth map
         renderer.renderDepthMap(commandBuffer: commandBuffer, particleBuffer: particleBuffer, textures: textures)
@@ -488,6 +492,10 @@ class MPMFluidRenderer: NSObject {
         
     // Compute/Render state tracking
     internal var isComputing: Bool = false
+    
+    // G-Buffer double buffering support
+    internal var currentTextureBufferIndex: Int = 0
+    internal let maxTextureBuffers: Int = 2
     
     // buffers
     internal var filterUniformBuffer: MTLBuffer!
