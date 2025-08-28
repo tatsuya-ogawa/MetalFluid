@@ -1385,4 +1385,145 @@ kernel void initializeRigidBodies(
         float3(0, 1.0/I, 0),
         float3(0, 0, 1.0/I)
     );
+
+    // Store half extents and bounding radius for broad-phase collision
+    rb.halfExtents = extent * 0.5;
+    rb.boundingRadius = length(rb.halfExtents);
+}
+
+// Broad-phase sphere test then narrow-phase AABB impulse resolution between rigid bodies
+kernel void solveRigidBodyCollisions(
+    device RigidBodyState* rigidBodies [[buffer(0)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+    uint id [[thread_position_in_grid]]
+) {
+    // Pair index mapping: id enumerates upper triangle (i<j)
+    uint n = uniforms.rigidBodyCount;
+    if (n < 2) return;
+    // Compute i,j from linear id: id in [0, n*(n-1)/2)
+    uint totalPairs = n * (n - 1) / 2;
+    if (id >= totalPairs) return;
+    // Invert triangular number
+    uint i = uint(floor((sqrt(8.0f * (float)id + 1.0f) - 1.0f) * 0.5f));
+    uint firstIndexOfRow = i * (n - 1) - (i * (i - 1)) / 2;
+    uint j = id - firstIndexOfRow + i + 1;
+    if (i >= n || j >= n) return;
+
+    device RigidBodyState &A = rigidBodies[i];
+    device RigidBodyState &B = rigidBodies[j];
+    if (!A.isActive || !B.isActive) return;
+
+    // Broad-phase sphere overlap (cheap test)
+    float3 d = B.centerOfMass - A.centerOfMass;
+    float dist2 = dot(d,d);
+    float rSum = A.boundingRadius + B.boundingRadius;
+    if (dist2 > rSum*rSum) return; // no overlap
+    float dist = sqrt(max(dist2, 1e-8f));
+    float3 normal = (dist > 1e-6f) ? d / dist : float3(0,1,0);
+
+    // Narrow-phase (very approximate) OBB-OBB along broad-phase normal.
+    // We build support points along the normal using oriented half extents (like GJK support but simplified)
+    float3x3 RA = quatToMatrix(A.orientation);
+    float3x3 RB = quatToMatrix(B.orientation);
+    // Columns of R are world axes of the box
+    float3 Ax = RA[0]; float3 Ay = RA[1]; float3 Az = RA[2];
+    float3 Bx = RB[0]; float3 By = RB[1]; float3 Bz = RB[2];
+
+    // Support point for A in direction of normal
+    float3 supA = A.centerOfMass
+        + Ax * (sign(dot(Ax, normal)) * A.halfExtents.x)
+        + Ay * (sign(dot(Ay, normal)) * A.halfExtents.y)
+        + Az * (sign(dot(Az, normal)) * A.halfExtents.z);
+    // Support point for B in direction opposite of normal
+    float3 supB = B.centerOfMass
+        - (Bx * (sign(dot(Bx, normal)) * B.halfExtents.x)
+        +   By * (sign(dot(By, normal)) * B.halfExtents.y)
+        +   Bz * (sign(dot(Bz, normal)) * B.halfExtents.z));
+
+    float3 separation = supB - supA; // along normal ideally
+    float penetration = -dot(separation, normal); // if negative, they overlap along normal
+    if (penetration <= 0.0f) {
+        // Fallback to sphere penetration if oriented test fails (e.g. parallel axes)
+        penetration = rSum - dist;
+        if (penetration <= 0) return;
+    }
+
+    // Contact point (midpoint of support points)
+    float3 contactPoint = 0.5f * (supA + supB);
+    float3 rA = contactPoint - A.centerOfMass;
+    float3 rB = contactPoint - B.centerOfMass;
+
+    // Relative velocity at contact point (including angular)
+    float3 vA = A.linearVelocity + cross(A.angularVelocity, rA);
+    float3 vB = B.linearVelocity + cross(B.angularVelocity, rB);
+    float3 relV = vB - vA;
+    float relVN = dot(relV, normal);
+
+    // Restitution & friction combine (geometric mean like Taichi)
+    float restitution = sqrt(A.restitution * B.restitution);
+    float friction = sqrt(A.friction * B.friction);
+
+    // Baumgarte positional correction factor (stabilizes penetration)
+    float baumgarte = 0.2f; // bias factor
+    float invMassA = (A.totalMass > 0) ? 1.0f / A.totalMass : 0.0f;
+    float invMassB = (B.totalMass > 0) ? 1.0f / B.totalMass : 0.0f;
+    float massSum = invMassA + invMassB;
+    if (massSum <= 0.0f) return;
+
+    // Positional correction (split based on inverse masses)
+    float3 correction = (baumgarte * penetration / massSum) * normal;
+    A.centerOfMass -= correction * invMassA;
+    B.centerOfMass += correction * invMassB;
+
+    // Recompute relative velocity at contact point after correction
+    vA = A.linearVelocity + cross(A.angularVelocity, rA);
+    vB = B.linearVelocity + cross(B.angularVelocity, rB);
+    relV = vB - vA;
+    relVN = dot(relV, normal);
+
+    // Only resolve if closing
+    if (relVN > 0.0f) return;
+
+    // Compute effective mass along normal including angular terms (following Taichi approach)
+    float3 rnA = cross(rA, normal);
+    float3 rnB = cross(rB, normal);
+    float3 angA = cross( (A.invInertiaTensor * rnA), rA );
+    float3 angB = cross( (B.invInertiaTensor * rnB), rB );
+    float angularDenom = dot(normal, angA + angB);
+    float denom = massSum + angularDenom;
+    if (denom < 1e-6f) return;
+    float J = -(1.0f + restitution) * relVN / denom;
+    if (J < 0.0f) return;
+    float3 impulse = J * normal;
+
+    // Apply linear & angular impulses
+    A.linearVelocity -= impulse * invMassA;
+    B.linearVelocity += impulse * invMassB;
+    A.angularVelocity -= A.invInertiaTensor * cross(rA, impulse);
+    B.angularVelocity += B.invInertiaTensor * cross(rB, impulse);
+
+    // Friction (Coulomb) using tangent at contact point
+    vA = A.linearVelocity + cross(A.angularVelocity, rA);
+    vB = B.linearVelocity + cross(B.angularVelocity, rB);
+    relV = vB - vA;
+    float3 vt = relV - dot(relV, normal) * normal;
+    float vtLen = length(vt);
+    if (vtLen > 1e-6f) {
+        float3 tangent = vt / vtLen;
+        float3 rtA = cross(rA, tangent);
+        float3 rtB = cross(rB, tangent);
+        float3 angTA = cross( (A.invInertiaTensor * rtA), rA );
+        float3 angTB = cross( (B.invInertiaTensor * rtB), rB );
+        float denomT = massSum + dot(tangent, angTA + angTB);
+        if (denomT > 1e-6f) {
+            float jt = -dot(relV, tangent) / denomT;
+            float maxFriction = friction * J;
+            jt = clamp(jt, -maxFriction, maxFriction);
+            float3 fImpulse = jt * tangent;
+            A.linearVelocity -= fImpulse * invMassA;
+            B.linearVelocity += fImpulse * invMassB;
+            A.angularVelocity -= A.invInertiaTensor * cross(rA, fImpulse);
+            B.angularVelocity += B.invInertiaTensor * cross(rB, fImpulse);
+        }
+    }
 }

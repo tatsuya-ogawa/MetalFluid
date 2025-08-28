@@ -61,6 +61,8 @@ typedef struct {
     float angularDamping;              // Angular damping coefficient
     float restitution;                 // Coefficient of restitution
     float friction;                    // Friction coefficient
+    float3 halfExtents;           // Local half extents (AABB in rest pose)
+    float boundingRadius;              // Bounding sphere radius
 } RigidBodyState;
 
 // Compute shader specific uniforms

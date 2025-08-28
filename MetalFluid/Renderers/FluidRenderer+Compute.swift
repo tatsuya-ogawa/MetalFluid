@@ -117,6 +117,10 @@ extension MPMFluidRenderer {
         }
         do {
             gridToParticlesRigid4PipelineState = try device.makeComputePipelineState(function: gridToParticlesRigid4Function)
+            // Optional collision solver (only used if multiple rigid bodies)
+            if let solveRigidBodyCollisionsFunction = library.makeFunction(name: "solveRigidBodyCollisions") {
+                solveRigidBodyCollisionsPipelineState = try device.makeComputePipelineState(function: solveRigidBodyCollisionsFunction)
+            }
         } catch {
             fatalError("Could not create gridToParticlesRigid4 pipeline state: \(error)")
         }
@@ -427,7 +431,9 @@ extension MPMFluidRenderer {
             linearDamping: 0.99,
             angularDamping: 0.99,
             restitution: 0.5,
-            friction: 0.3
+            friction: 0.3,
+            halfExtents: SIMD3<Float>(0, 0, 0),
+            boundingRadius: 0.5
         )
         // Write to buffer
         rigidBodyStatePointer[0] = rigidBodyState
@@ -715,6 +721,22 @@ extension MPMFluidRenderer {
                             threadsPerThreadgroup: particleThreadsPerThreadgroup
                         )
                         computeEncoder.endEncoding()
+                    }
+
+                    // Collision solve between rigid bodies (only if >1 bodies)
+                    if rigidBodyCount > 1, let collisionPSO = solveRigidBodyCollisionsPipelineState {
+                        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                            computeEncoder.setComputePipelineState(collisionPSO)
+                            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
+                            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                            let pairCount = rigidBodyCount * (rigidBodyCount - 1) / 2
+                            let tgSize = 64
+                            let tgCount = (pairCount + tgSize - 1) / tgSize
+                            let threadgroups = MTLSize(width: tgCount, height: 1, depth: 1)
+                            let threadsPerGroup = MTLSize(width: tgSize, height: 1, depth: 1)
+                            computeEncoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
+                            computeEncoder.endEncoding()
+                        }
                     }
                 }
                 

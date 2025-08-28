@@ -133,6 +133,8 @@ struct RigidBodyState {
     var angularDamping: Float               // Angular damping coefficient
     var restitution: Float                  // Coefficient of restitution
     var friction: Float                     // Friction coefficient
+    var halfExtents: SIMD3<Float>             // Local half extents (AABB in rest pose)
+    var boundingRadius: Float              // Bounding sphere radius
 }
 
 enum RenderMode {
@@ -458,6 +460,7 @@ class MPMFluidRenderer: NSObject {
     public var gridToParticlesRigid2PipelineState: MTLComputePipelineState!
     public var gridToParticlesRigid3PipelineState: MTLComputePipelineState!
     public var gridToParticlesRigid4PipelineState: MTLComputePipelineState!
+    public var solveRigidBodyCollisionsPipelineState: MTLComputePipelineState! // Collision solver between rigid bodies
     
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
