@@ -50,8 +50,12 @@ typedef struct {
     float4 orientation;                // Orientation quaternion (x, y, z, w)
     float totalMass;                   // Total mass of rigid body
     simd_float3x3 invInertiaTensor;    // Inverse inertia tensor (world space)
-    simd_float3 accumulatedForce;      // Accumulated force for this frame
-    simd_float3 accumulatedTorque;     // Accumulated torque for this frame
+    MPM_ATOMIC_FLOAT accumulatedForceX;  // Accumulated force X component
+    MPM_ATOMIC_FLOAT accumulatedForceY;  // Accumulated force Y component
+    MPM_ATOMIC_FLOAT accumulatedForceZ;  // Accumulated force Z component
+    MPM_ATOMIC_FLOAT accumulatedTorqueX; // Accumulated torque X component
+    MPM_ATOMIC_FLOAT accumulatedTorqueY; // Accumulated torque Y component
+    MPM_ATOMIC_FLOAT accumulatedTorqueZ; // Accumulated torque Z component
     uint32_t particleCount;            // Number of particles in this rigid body
     uint32_t isActive;                 // 1 if active, 0 if inactive
     float linearDamping;               // Linear damping coefficient

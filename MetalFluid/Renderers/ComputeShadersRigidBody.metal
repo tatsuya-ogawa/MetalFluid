@@ -303,15 +303,13 @@ kernel void gridToParticlesRigid2(
             if (local_rigid_ids[i] > 0) {
                 uint bodyIdx = local_rigid_ids[i] - 1;
                 if (bodyIdx < uniforms.rigidBodyCount) {
-                    device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedForce;
-                    atomic_fetch_add_explicit(&forcePtr[0], local_forces[i].x, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&forcePtr[1], local_forces[i].y, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&forcePtr[2], local_forces[i].z, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedForceX, local_forces[i].x, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedForceY, local_forces[i].y, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedForceZ, local_forces[i].z, memory_order_relaxed);
                     
-                    device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedTorque;
-                    atomic_fetch_add_explicit(&torquePtr[0], local_torques[i].x, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&torquePtr[1], local_torques[i].y, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&torquePtr[2], local_torques[i].z, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedTorqueX, local_torques[i].x, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedTorqueY, local_torques[i].y, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&rigidBodies[bodyIdx].accumulatedTorqueZ, local_torques[i].z, memory_order_relaxed);
                 }
             }
         }
@@ -333,7 +331,11 @@ kernel void gridToParticlesRigid3(
     
     // Linear dynamics: F = ma → a = F/m (following taichi-mpm approach)
     // Use accumulated force from Stage 2 (includes gravity and MPM forces)
-    float3 totalForce = rb.accumulatedForce;
+    float3 totalForce = float3(
+        atomic_load_explicit(&rb.accumulatedForceX, memory_order_relaxed),
+        atomic_load_explicit(&rb.accumulatedForceY, memory_order_relaxed),
+        atomic_load_explicit(&rb.accumulatedForceZ, memory_order_relaxed)
+    );
     
     // Apply linear damping (exponential decay)
     rb.linearVelocity *= exp(-rb.linearDamping * dt);
@@ -351,7 +353,12 @@ kernel void gridToParticlesRigid3(
     rb.angularVelocity *= exp(-rb.angularDamping * dt);
     
     // Integrate angular acceleration
-    float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque / max(rb.totalMass, 1e-6);
+    float3 totalTorque = float3(
+        atomic_load_explicit(&rb.accumulatedTorqueX, memory_order_relaxed),
+        atomic_load_explicit(&rb.accumulatedTorqueY, memory_order_relaxed),
+        atomic_load_explicit(&rb.accumulatedTorqueZ, memory_order_relaxed)
+    );
+    float3 angularAcceleration = rb.invInertiaTensor * totalTorque / max(rb.totalMass, 1e-6);
     
     // Limit angular acceleration to prevent runaway rotation
     const float max_angular_accel = 50.0;
@@ -371,8 +378,12 @@ kernel void gridToParticlesRigid3(
     rb.orientation = integrateAngularVelocity(rb.orientation, rb.angularVelocity, dt);
     
     // Clear accumulated forces and torques for next frame
-    rb.accumulatedForce = float3(0, 0, 0);
-    rb.accumulatedTorque = float3(0, 0, 0);
+    atomic_store_explicit(&rb.accumulatedForceX, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedForceY, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedForceZ, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueX, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueY, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueZ, 0.0, memory_order_relaxed);
 }
 
 // Stage 3: Project particles to maintain rigid body constraints
@@ -464,8 +475,12 @@ kernel void initializeRigidBodies(
     rb.totalMass = totalMass;
     rb.particleCount = particleCount;
     rb.isActive = (particleCount > 0) ? 1 : 0;
-    rb.accumulatedForce = float3(0, 0, 0);
-    rb.accumulatedTorque = float3(0, 0, 0);
+    atomic_store_explicit(&rb.accumulatedForceX, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedForceY, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedForceZ, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueX, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueY, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&rb.accumulatedTorqueZ, 0.0, memory_order_relaxed);
     
     // Set physical parameters similar to taichi-mpm
     rb.linearDamping = 0.1;    // Moderate linear damping

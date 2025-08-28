@@ -126,8 +126,12 @@ struct RigidBodyState {
     var orientation: SIMD4<Float>           // Orientation quaternion (x, y, z, w)
     var totalMass: Float                    // Total mass of rigid body
     var invInertiaTensor: simd_float3x3     // Inverse inertia tensor (world space)
-    var accumulatedForce: SIMD3<Float>      // Accumulated force for this frame
-    var accumulatedTorque: SIMD3<Float>     // Accumulated torque for this frame
+    var accumulatedForceX: Float            // Accumulated force X component (atomic)
+    var accumulatedForceY: Float            // Accumulated force Y component (atomic)  
+    var accumulatedForceZ: Float            // Accumulated force Z component (atomic)
+    var accumulatedTorqueX: Float           // Accumulated torque X component (atomic)
+    var accumulatedTorqueY: Float           // Accumulated torque Y component (atomic)
+    var accumulatedTorqueZ: Float           // Accumulated torque Z component (atomic)
     var particleCount: UInt32               // Number of particles in this rigid body
     var isActive: UInt32                    // 1 if active, 0 if inactive
     var linearDamping: Float                // Linear damping coefficient

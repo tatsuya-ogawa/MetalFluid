@@ -461,8 +461,12 @@ extension MPMFluidRenderer {
             orientation: SIMD4<Float>(0, 0, 0, 1), // Identity quaternion
             totalMass: totalMass,
             invInertiaTensor: simd_float3x3(1.0), // Identity matrix for now
-            accumulatedForce: SIMD3<Float>(0, 0, 0),
-            accumulatedTorque: SIMD3<Float>(0, 0, 0),
+            accumulatedForceX: 0.0,
+            accumulatedForceY: 0.0,
+            accumulatedForceZ: 0.0,
+            accumulatedTorqueX: 0.0,
+            accumulatedTorqueY: 0.0,
+            accumulatedTorqueZ: 0.0,
             particleCount: particleCount,
             isActive: (particleCount > 0) ? 1 : 0,
             linearDamping: 0.99,
