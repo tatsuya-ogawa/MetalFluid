@@ -4,18 +4,7 @@
 using namespace metal;
 
 // MARK: - Rigid Body Material Functions
-
-// Rigid body constraint forces to maintain shape
-inline float3x3 rigidBodyConstraintForce(float3x3 F) {
-    // For rigid body, F should remain close to identity (no deformation)
-    float3x3 I = float3x3(1.0);
-    float3x3 deviation = F - I;
-    
-    // Strong restoring force to maintain rigidity
-    float constraint_strength = 1000.0;  // Very high to enforce rigidity
-    return -constraint_strength * deviation;
-}
-// Rigid Body Particle to Grid Transfer (P2G)
+// Rigid Body Particle to Grid Transfer (P2G) - Clean MPM transfer only
 kernel void particlesToGridRigid(
                                 device MPMParticle* particles [[buffer(0)]],
                                 constant ComputeShaderUniforms& uniforms [[buffer(1)]],
@@ -27,7 +16,6 @@ kernel void particlesToGridRigid(
     MPMParticle particle = particles[id];
     float3 particlePosition = particle.position;
     float3 velocity = particle.velocity;
-    float3x3 C = particle.C;
     
     // Convert particle position to grid coordinates
     float3 position, cell_diff;
@@ -38,16 +26,7 @@ kernel void particlesToGridRigid(
     float3 weights[3];
     bsplineWeights(cell_diff, weights);
     
-    // Compute deformation gradient
-    float3x3 F = computeDeformationGradient(C, uniforms.deltaTime);
-    
-    // Apply rigid body constraints (very strong forces to prevent deformation)
-    float3x3 P = rigidBodyConstraintForce(F);
-    
-    // Particle volume (constant for rigid body)
-    float volume = uniforms.massScale / uniforms.rest_density;
-    
-    // Transfer to grid nodes
+    // Transfer mass and momentum only (no constraint forces)
     for (int gx = 0; gx < 3; gx++) {
         for (int gy = 0; gy < 3; gy++) {
             for (int gz = 0; gz < 3; gz++) {
@@ -57,29 +36,17 @@ kernel void particlesToGridRigid(
                     cell_idx.z >= 0 && cell_idx.z < uniforms.gridResolution.z) {
                     uint cell_index = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
                     
-                    float3 cell_dist = (float3(cell_idx) + 0.5) - position;
                     float weight = weights[gx].x * weights[gy].y * weights[gz].z;
                     
                     // Mass contribution
                     float mass_contrib = weight * uniforms.massScale;
                     atomicAddWithUniform(&grid[cell_index].mass, mass_contrib, uniforms);
                     
-                    // Momentum contribution (mass * velocity)
+                    // Momentum contribution (mass * velocity) - no artificial forces
                     float3 momentum = mass_contrib * velocity;
                     atomicAddWithUniform(&grid[cell_index].velocity_x, momentum.x, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_y, momentum.y, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_z, momentum.z, uniforms);
-                    
-                    // Rigid body constraint force: -volume * P * grad_w * dt
-                    float3 force = -volume * (P * cell_dist) * uniforms.deltaTime * weight;
-                    
-                    // Allow very strong forces for rigidity enforcement
-                    const float max_force = 1000.0;  // Very high for rigid body constraints
-                    force = clamp(force, float3(-max_force), float3(max_force));
-                    
-                    atomicAddWithUniform(&grid[cell_index].velocity_x, force.x, uniforms);
-                    atomicAddWithUniform(&grid[cell_index].velocity_y, force.y, uniforms);
-                    atomicAddWithUniform(&grid[cell_index].velocity_z, force.z, uniforms);
                 }
             }
         }
@@ -144,65 +111,18 @@ kernel void gridToParticlesRigid1(
         }
     }
     
-    // Update particle velocity
+    // Update particle velocity from grid
     particles[id].velocity = new_velocity;
     
-    // For rigid body, severely limit C matrix to prevent deformation
-    float3x3 newC = B * 4.0; // Scale factor for grid spacing
+    // Zero C matrix for rigid bodies (no deformation allowed)
+    particles[id].C = float3x3(0.0);
     
-    // Very strong constraints for rigid body - allow minimal deformation
-    const float max_C_rigid = 0.1;  // Very small to maintain rigidity
-    newC[0] = clamp(newC[0], float3(-max_C_rigid), float3(max_C_rigid));
-    newC[1] = clamp(newC[1], float3(-max_C_rigid), float3(max_C_rigid));
-    newC[2] = clamp(newC[2], float3(-max_C_rigid), float3(max_C_rigid));
+    // DO NOT update particle position here - this will be handled by rigid body projection
+    // Position updates are handled in gridToParticlesRigid4 (projection stage)
     
-    particles[id].C = newC;
-    
-    // Update particle position
-    particles[id].position += particles[id].velocity * uniforms.deltaTime;
-    
-    // Boundary conditions for rigid body materials
-    const float k = 3.0;
-    const float wall_stiffness = 0.8;  // Strong wall interaction for rigid body
-    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
-    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
-    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
-    
-    // Handle mesh collision detection
-    handleCollision(particles[id].position, particles[id].velocity,
-                   particles[id].position, sdfTexture, collision);
-    
-    // Wall collisions with strong response for rigid body
-    if (x_n.x < wall_min.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-    }
-    if (x_n.x > wall_max.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-    }
-    if (x_n.y < wall_min.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-    }
-    if (x_n.y > wall_max.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-    }
-    if (x_n.z < wall_min.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-    }
-    if (x_n.z > wall_max.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
-    }
-    
-    // Position clamping - Essential for rigid body
-//    particles[id].position = clamp(particles[id].position,
-//                                  uniforms.boundaryMin + uniforms.gridSpacing,
-//                                  uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
-    particles[id].position = position; //revert position for rigidbody update
-    
-//    // Velocity clamping for rigid body motion
-//    const float max_velocity = 50.0;  // Allow fast rigid body motion
-//    particles[id].velocity = clamp(particles[id].velocity,
-//                                  float3(-max_velocity),
-//                                  float3(max_velocity));
+    // Boundary and collision handling will be done at the rigid body level,
+    // not at individual particle level. Individual particles should not 
+    // have their positions updated in G2P for rigid body projection method.
 }
 
 // ==============================================
@@ -248,72 +168,43 @@ inline float4 integrateAngularVelocity(float4 q, float3 omega, float dt) {
     return normalizeQuat(result);
 }
 
-// Stage 1: Accumulate forces and torques from particles to rigid bodies using threadgroup memory
+// Stage 1: Accumulate forces and torques from particles to rigid bodies using atomic operations
 kernel void gridToParticlesRigid2(
     device const MPMParticle* particles [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     device RigidBodyState* rigidBodies [[buffer(2)]],
     device const MPMParticleRigidInfo* rigidInfo [[buffer(3)]],
-    uint id [[thread_position_in_grid]],
-    uint tid [[thread_position_in_threadgroup]],
-    uint threadgroup_size [[threads_per_threadgroup]]
+    uint id [[thread_position_in_grid]]
 ) {
-    // Use threadgroup memory for reduction
-    threadgroup float3 local_forces[64];   // Assuming max 64 threads per group
-    threadgroup float3 local_torques[64];
-    threadgroup uint local_rigid_ids[64];
+    if (id >= uniforms.particleCount) return;
     
-    // Initialize threadgroup memory
-    local_forces[tid] = float3(0);
-    local_torques[tid] = float3(0);
-    local_rigid_ids[tid] = 0;
+    MPMParticle p = particles[id];
+    uint origIdx = p.originalIndex;
+    uint rigidId = rigidInfo[origIdx].rigidId;
     
-    if (id < uniforms.particleCount) {
-        MPMParticle p = particles[id];
-        uint origIdx = p.originalIndex;
-        uint rigidId = rigidInfo[origIdx].rigidId;
-        
-        // Process particles that belong to a rigid body
-        if (rigidId > 0) {
-            uint rigidBodyIdx = rigidId - 1;
-            if (rigidBodyIdx < uniforms.rigidBodyCount) {
-                // Calculate forces
-                float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
-                float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
-                float3 total_force = grid_force + gravity_force;
-                
-                // Calculate torque
-                float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
-                float3 torque = cross(r, total_force) * 0.05;
-                
-                // Store in threadgroup memory
-                local_forces[tid] = total_force;
-                local_torques[tid] = torque;
-                local_rigid_ids[tid] = rigidId;
-            }
-        }
-    }
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    
-    // Only first thread in threadgroup performs atomic operations
-    if (tid == 0) {
-        // Accumulate all forces and torques for each rigid body
-        for (uint i = 0; i < threadgroup_size; i++) {
-            if (local_rigid_ids[i] > 0) {
-                uint bodyIdx = local_rigid_ids[i] - 1;
-                if (bodyIdx < uniforms.rigidBodyCount) {
-                    device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedForce;
-                    atomic_fetch_add_explicit(&forcePtr[0], local_forces[i].x, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&forcePtr[1], local_forces[i].y, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&forcePtr[2], local_forces[i].z, memory_order_relaxed);
-                    
-                    device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[bodyIdx].accumulatedTorque;
-                    atomic_fetch_add_explicit(&torquePtr[0], local_torques[i].x, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&torquePtr[1], local_torques[i].y, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&torquePtr[2], local_torques[i].z, memory_order_relaxed);
-                }
-            }
+    // Process particles that belong to a rigid body
+    if (rigidId > 0) {
+        uint rigidBodyIdx = rigidId - 1;
+        if (rigidBodyIdx < uniforms.rigidBodyCount) {
+            // Calculate forces from grid velocity and gravity
+            float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
+            float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
+            float3 total_force = grid_force + gravity_force;
+            
+            // Calculate torque around center of mass
+            float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
+            float3 torque = cross(r, total_force);
+            
+            // Directly accumulate using atomic operations (no threadgroup arrays)
+            device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
+            atomic_fetch_add_explicit(&forcePtr[0], total_force.x, memory_order_relaxed);
+            atomic_fetch_add_explicit(&forcePtr[1], total_force.y, memory_order_relaxed);
+            atomic_fetch_add_explicit(&forcePtr[2], total_force.z, memory_order_relaxed);
+            
+            device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
+            atomic_fetch_add_explicit(&torquePtr[0], torque.x, memory_order_relaxed);
+            atomic_fetch_add_explicit(&torquePtr[1], torque.y, memory_order_relaxed);
+            atomic_fetch_add_explicit(&torquePtr[2], torque.z, memory_order_relaxed);
         }
     }
 }
@@ -345,13 +236,16 @@ kernel void gridToParticlesRigid3(
     // Integrate position
     rb.centerOfMass += rb.linearVelocity * dt;
     
-    // Angular dynamics: τ = Iα → α = I⁻¹τ (following taichi-mpm approach)
+    // Angular dynamics: τ = Iα → α = I⁻¹τ (proper rigid body dynamics)
     // Apply angular damping first (exponential decay)
-//    rb.angularVelocity *= exp(-length(rb.angularVelocity) * dt);
     rb.angularVelocity *= exp(-rb.angularDamping * dt);
     
-    // Integrate angular acceleration
-    float3 angularAcceleration = rb.invInertiaTensor * rb.accumulatedTorque / max(rb.totalMass, 1e-6);
+    // Transform inertia tensor to world space: I_world = R * I_local * R^T
+    float3x3 R = quatToMatrix(rb.orientation);
+    float3x3 worldInvInertiaTensor = R * rb.invInertiaTensor * transpose(R);
+    
+    // Integrate angular acceleration using world-space inverse inertia tensor
+    float3 angularAcceleration = worldInvInertiaTensor * rb.accumulatedTorque;
     
     // Limit angular acceleration to prevent runaway rotation
     const float max_angular_accel = 50.0;
@@ -412,7 +306,7 @@ kernel void gridToParticlesRigid4(
     p.position = newPosition;
     p.velocity = newVelocity;
     
-    // Reset C matrix to prevent deformation in rigid bodies
+    // Always zero C matrix for rigid bodies (no deformation allowed)
     p.C = float3x3(0.0);
     
     // Apply boundary constraints
@@ -445,7 +339,8 @@ kernel void initializeRigidBodies(
     uint particleCount = 0;
     
     for (uint i = 0; i < uniforms.particleCount; ++i) {
-        if (rigidInfo[i].rigidId == actualRigidId) {
+        uint origIdx = particles[i].originalIndex;
+        if (rigidInfo[origIdx].rigidId == actualRigidId) {
             centerOfMass += particles[i].position * particles[i].mass;
             totalMass += particles[i].mass;
             particleCount++;
@@ -477,7 +372,8 @@ kernel void initializeRigidBodies(
     // Calculate the extent of the rigid body
     float3 minPos = float3(1e6), maxPos = float3(-1e6);
     for (uint i = 0; i < uniforms.particleCount; ++i) {
-        if (rigidInfo[i].rigidId == actualRigidId) {
+        uint origIdx = particles[i].originalIndex;
+        if (rigidInfo[origIdx].rigidId == actualRigidId) {
             minPos = min(minPos, particles[i].position);
             maxPos = max(maxPos, particles[i].position);
         }
@@ -594,11 +490,17 @@ kernel void solveRigidBodyCollisions(
     // Only resolve if closing
     if (relVN > 0.0f) return;
 
-    // Compute effective mass along normal including angular terms (following Taichi approach)
+    // Transform inertia tensors to world space for collision resolution
+    float3x3 R_A = quatToMatrix(A.orientation);
+    float3x3 R_B = quatToMatrix(B.orientation);
+    float3x3 worldInvInertiaTensorA = R_A * A.invInertiaTensor * transpose(R_A);
+    float3x3 worldInvInertiaTensorB = R_B * B.invInertiaTensor * transpose(R_B);
+
+    // Compute effective mass along normal including angular terms (using world-space tensors)
     float3 rnA = cross(rA, normal);
     float3 rnB = cross(rB, normal);
-    float3 angA = cross( (A.invInertiaTensor * rnA), rA );
-    float3 angB = cross( (B.invInertiaTensor * rnB), rB );
+    float3 angA = cross( (worldInvInertiaTensorA * rnA), rA );
+    float3 angB = cross( (worldInvInertiaTensorB * rnB), rB );
     float angularDenom = dot(normal, angA + angB);
     float denom = massSum + angularDenom;
     if (denom < 1e-6f) return;
@@ -606,11 +508,11 @@ kernel void solveRigidBodyCollisions(
     if (J < 0.0f) return;
     float3 impulse = J * normal;
 
-    // Apply linear & angular impulses
+    // Apply linear & angular impulses using world-space inverse inertia tensors
     A.linearVelocity -= impulse * invMassA;
     B.linearVelocity += impulse * invMassB;
-    A.angularVelocity -= A.invInertiaTensor * cross(rA, impulse);
-    B.angularVelocity += B.invInertiaTensor * cross(rB, impulse);
+    A.angularVelocity -= worldInvInertiaTensorA * cross(rA, impulse);
+    B.angularVelocity += worldInvInertiaTensorB * cross(rB, impulse);
 
     // Friction (Coulomb) using tangent at contact point
     vA = A.linearVelocity + cross(A.angularVelocity, rA);
@@ -622,8 +524,8 @@ kernel void solveRigidBodyCollisions(
         float3 tangent = vt / vtLen;
         float3 rtA = cross(rA, tangent);
         float3 rtB = cross(rB, tangent);
-        float3 angTA = cross( (A.invInertiaTensor * rtA), rA );
-        float3 angTB = cross( (B.invInertiaTensor * rtB), rB );
+        float3 angTA = cross( (worldInvInertiaTensorA * rtA), rA );
+        float3 angTB = cross( (worldInvInertiaTensorB * rtB), rB );
         float denomT = massSum + dot(tangent, angTA + angTB);
         if (denomT > 1e-6f) {
             float jt = -dot(relV, tangent) / denomT;
@@ -632,8 +534,8 @@ kernel void solveRigidBodyCollisions(
             float3 fImpulse = jt * tangent;
             A.linearVelocity -= fImpulse * invMassA;
             B.linearVelocity += fImpulse * invMassB;
-            A.angularVelocity -= A.invInertiaTensor * cross(rA, fImpulse);
-            B.angularVelocity += B.invInertiaTensor * cross(rB, fImpulse);
+            A.angularVelocity -= worldInvInertiaTensorA * cross(rA, fImpulse);
+            B.angularVelocity += worldInvInertiaTensorB * cross(rB, fImpulse);
         }
     }
 }
