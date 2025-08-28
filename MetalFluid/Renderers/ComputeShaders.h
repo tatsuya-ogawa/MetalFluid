@@ -125,3 +125,191 @@ inline void bsplineWeights(const float3 fx, thread float3 weights[3]) {
     weights[1] = 0.75 - fx * fx;
     weights[2] = 0.5 * (0.5 + fx) * (0.5 + fx);
 }
+
+// Compute deformation gradient from affine momentum matrix
+inline float3x3 computeDeformationGradient(float3x3 C, float dt) {
+    float3x3 I = float3x3(1.0);  // Identity matrix
+    return I + dt * C;  // F = I + dt * C
+}
+
+// Friction projection following taichi-mpm approach
+// Projects velocity considering boundary friction and normal constraints
+inline float3 frictionProject(float3 velocity, float3 baseVelocity, float3 normal, float friction) {
+    float3 relativeVel = velocity - baseVelocity;
+    
+    // Special case: sticky boundary (mu = -1)
+    if (friction == -1.0) {
+        return baseVelocity;  // Completely stick to boundary
+    }
+    
+    // Check for slip boundary (mu <= -2)
+    bool slip = friction <= -2.0;
+    if (slip) {
+        friction = -friction - 2.0;  // Extract actual friction value
+    }
+    
+    // Project relative velocity
+    float normalComponent = dot(normal, relativeVel);
+    float3 tangentialVel = relativeVel - normalComponent * normal;
+    float tangentialNorm = length(tangentialVel);
+    
+    // Compute tangential scaling factor (Coulomb friction law)
+    float tangentialScale = max(tangentialNorm + min(normalComponent, 0.0) * friction, 0.0) /
+                           max(1e-30, tangentialNorm);
+    
+    // Compute projected relative velocity
+    float3 projectedRelativeVel = tangentialScale * tangentialVel +
+                                 max(0.0, normalComponent * (slip ? 0.0 : 1.0)) * normal;
+    
+    return projectedRelativeVel + baseVelocity;
+}
+
+// --- SDF Collision Detection Utilities ---
+inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
+    
+    // Convert mesh space position to SDF texture coordinates
+    float3 texCoord = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    
+    // Check bounds
+    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
+        return 1.0; // Outside SDF volume, no collision
+    }
+    
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    return sdfTexture.sample(sdfSampler, texCoord).r;
+}
+
+inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+    const float eps = 0.01;
+    float3 gradient;
+    
+    gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) -
+                 sampleSDF(worldPos - float3(eps, 0, 0), sdfTexture, collision);
+    gradient.y = sampleSDF(worldPos + float3(0, eps, 0), sdfTexture, collision) -
+                 sampleSDF(worldPos - float3(0, eps, 0), sdfTexture, collision);
+    gradient.z = sampleSDF(worldPos + float3(0, 0, eps), sdfTexture, collision) -
+                 sampleSDF(worldPos - float3(0, 0, eps), sdfTexture, collision);
+    
+    gradient = gradient / (2.0 * eps);
+    
+    // Safely normalize gradient, avoid division by zero
+    float gradLength = length(gradient);
+    if (gradLength < 1e-6) {
+        return float3(0, 1, 0); // Default to up vector if gradient is too small
+    }
+    
+    return gradient / gradLength;
+}
+inline void handleCollision(device float3 &position, device float3 &velocity,
+                           float3 worldPos, texture3d<float> sdfTexture,
+                           constant CollisionUniforms &collision) {
+    if (!collision.enableCollision) return;
+    
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
+    
+    // Check if mesh space position is within reasonable bounds to avoid sampling issues
+    float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
+        return; // Outside SDF bounds, no collision
+    }
+    
+    float sdfValue = sampleSDF(worldPos, sdfTexture, collision);
+    
+    // Check for valid SDF value
+    if (!isfinite(sdfValue)) {
+        return; // Invalid SDF value, skip collision
+    }
+    
+    // Handle collision with larger detection threshold
+    const float collisionThreshold = 1.0; // Larger threshold for early detection
+    if (sdfValue < collisionThreshold) {
+        float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+        
+        // Move particle outside surface with safety margin
+        float pushDistance = max(-sdfValue + 0.5, 0.5); // Always push at least 0.5 units out
+        position += normal * pushDistance;
+        
+        // Strong collision response
+        const float restitution = 1.2;  // Strong bounce
+        const float friction = 0.1;     // Low friction for now
+        
+        // Decompose velocity into normal and tangential components
+        float vn = dot(velocity, normal);  // Normal component
+        float3 vt = velocity - normal * vn; // Tangential component
+        
+        // Always apply strong outward velocity
+        if (vn < 2.0) { // If not already moving fast outward
+            vn = max(vn * -restitution, 3.0); // Strong outward push
+        }
+        
+        // Apply minimal friction to tangential component
+        float vt_magnitude = length(vt);
+        if (vt_magnitude > 0.01) {
+            vt *= (1.0 - friction);
+        }
+        
+        // Recombine velocity components
+        velocity = normal * vn + vt;
+    }
+}
+// Improved collision handling following taichi-mpm approaches
+inline void handleCollisionTaichi(device float3 &position, device float3 &velocity,
+                           float3 worldPos, texture3d<float> sdfTexture,
+                           constant CollisionUniforms &collision) {
+    if (!collision.enableCollision) return;
+    
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
+    
+    // Check if mesh space position is within reasonable bounds
+    float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
+        return; // Outside SDF bounds, no collision
+    }
+    
+    float phi = sampleSDF(worldPos, sdfTexture, collision);
+    
+    // Check for valid SDF value
+    if (!isfinite(phi)) {
+        return; // Invalid SDF value, skip collision
+    }
+    
+    // Handle collision with larger detection threshold
+    const float collisionThreshold = 0.0; // Larger threshold for early detection
+    if (phi < collisionThreshold) {
+        float3 gradient = computeSDFNormal(worldPos, sdfTexture, collision);
+        
+        // Taichi-MPM position correction: p.pos -= gradient * phi * delta_x
+        // Move particle outside surface proportional to penetration depth
+        position -= gradient * phi;
+        
+        // Taichi-MPM velocity projection: v = v - dot(gradient, v) * gradient
+        // Remove normal component of velocity (no penetration)
+        float normalVelocity = dot(gradient, velocity);
+        velocity = velocity - normalVelocity * gradient;
+        
+        // Apply friction using improved friction projection
+        const float friction = collision.collisionStiffness * 0.1; // Use collision stiffness as base
+        const float restitution = 0.8; // Moderate restitution
+        
+        // Add slight restitution if particle was moving into surface
+        if (normalVelocity < 0.0) {
+            velocity += gradient * (-normalVelocity * restitution);
+        }
+        
+        // Apply friction to tangential velocity using frictionProject
+        float3 baseVelocity = float3(0.0); // Static surface
+        velocity = frictionProject(velocity, baseVelocity, gradient, friction);
+    }
+}
+
+
