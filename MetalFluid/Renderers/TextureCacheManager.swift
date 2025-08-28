@@ -61,7 +61,6 @@ internal class TextureCacheManager<T> {
             queue.async(flags: .barrier) {
                 self.updateAccessOrder(anyKey)
             }
-            print("💾 \(cacheName): Cache hit for key '\(keyString)'")
             return cachedItem
         }
         
