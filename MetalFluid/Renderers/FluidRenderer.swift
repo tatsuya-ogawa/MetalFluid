@@ -489,6 +489,10 @@ class MPMFluidRenderer: NSObject {
     // Grid double buffering (like particles)
     internal var computeGridBuffer: MTLBuffer!  // For computation
     internal var renderGridBuffer: MTLBuffer!   // For rendering
+    
+    // Staging buffers for initial data upload (shared memory for CPU access)
+    internal var particleStagingBuffer: MTLBuffer!
+    internal var rigidInfoStagingBuffer: MTLBuffer!
         
     // Compute/Render state tracking
     internal var isComputing: Bool = false
@@ -667,19 +671,41 @@ class MPMFluidRenderer: NSObject {
         let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         let computeUniformBufferSize = MemoryLayout<ComputeShaderUniforms>.stride
         
-        // Create compute buffers (calculation stage)
-        guard let computeParticles = device.makeBuffer(
+        // Create staging buffers for initial data upload (shared for CPU access)
+        guard let particleStaging = device.makeBuffer(
             length: particleBufferSize,
             options: .storageModeShared
+        ) else {
+            fatalError("Failed to create particle staging buffer")
+        }
+        particleStaging.label = "ParticleStagingBuffer"
+        particleStagingBuffer = particleStaging
+        
+        let rigidInfoBufferSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
+        guard let rigidInfoStaging = device.makeBuffer(
+            length: rigidInfoBufferSize,
+            options: .storageModeShared
+        ) else {
+            fatalError("Failed to create rigid info staging buffer")
+        }
+        rigidInfoStaging.label = "RigidInfoStagingBuffer"
+        rigidInfoStagingBuffer = rigidInfoStaging
+
+        // Create compute buffers (private for GPU performance)
+        guard let computeParticles = device.makeBuffer(
+            length: particleBufferSize,
+            options: .storageModePrivate
         ) else {
             fatalError("Failed to create compute particle buffer")
         }
         computeParticles.label = "ComputeParticleBuffer"
         computeParticleBuffer = computeParticles
 
-        // Create compute rigid info buffer
-        let rigidInfoBufferSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
-        guard let computeRigid = device.makeBuffer(length: rigidInfoBufferSize, options: .storageModeShared) else {
+        // Create compute rigid info buffer (private)
+        guard let computeRigid = device.makeBuffer(
+            length: rigidInfoBufferSize,
+            options: .storageModePrivate
+        ) else {
             fatalError("Failed to create compute rigid info buffer")
         }
         computeRigid.label = "ComputeRigidInfoBuffer"
@@ -694,10 +720,10 @@ class MPMFluidRenderer: NSObject {
         computeUniforms.label = "ComputeUniformBuffer"
         computeUniformBuffer = computeUniforms
         
-        // Create rendering buffers (display stage)
+        // Create rendering buffers (private for GPU performance)
         guard let renderParticles = device.makeBuffer(
             length: particleBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         ) else {
             fatalError("Failed to create render particle buffer")
         }
@@ -711,17 +737,17 @@ class MPMFluidRenderer: NSObject {
             options: .storageModeShared
         )!
         
-        // Grid double buffering - Using correct struct size  
+        // Grid double buffering - Using private storage for GPU performance  
         let gridBufferSize = MemoryLayout<MPMGridNode>.stride * gridNodes
         computeGridBuffer = device.makeBuffer(
             length: gridBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
         computeGridBuffer.label = "ComputeGridBuffer"
         
         renderGridBuffer = device.makeBuffer(
             length: gridBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
         renderGridBuffer.label = "RenderGridBuffer"
         

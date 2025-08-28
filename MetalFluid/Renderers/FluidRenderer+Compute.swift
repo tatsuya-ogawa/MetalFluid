@@ -168,8 +168,8 @@ extension MPMFluidRenderer {
     }
     
     internal func setupParticles() {
-        // Setup particles in compute buffer (primary)
-        let computeParticlePointer = computeParticleBuffer.contents().bindMemory(
+        // Setup particles in staging buffer (shared memory for CPU access)
+        let stagingParticlePointer = particleStagingBuffer.contents().bindMemory(
             to: MPMParticle.self,
             capacity: particleCount
         )
@@ -179,31 +179,67 @@ extension MPMFluidRenderer {
         let center = (boundaryMin + boundaryMax) * 0.5
         let range = (boundaryMax - boundaryMin) * 0.5
         
-        // Rigid info pointer
-        let computeRigidInfoPointer = computeRigidInfoBuffer.contents().bindMemory(
+        // Rigid info staging pointer
+        let stagingRigidInfoPointer = rigidInfoStagingBuffer.contents().bindMemory(
             to: MPMParticleRigidInfo.self,
             capacity: particleCount
         )
 
         if materialParameters.currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
-            setupElasticCube(particlePointer: computeParticlePointer, center: center, range: range)
+            setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range)
             
         } else if materialParameters.currentMaterialMode == .rigidBody{
-            setupElasticCube(particlePointer: computeParticlePointer,center: center, range: range, rigidInfoPointer: computeRigidInfoPointer)
+            setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range, rigidInfoPointer: stagingRigidInfoPointer)
             // Initialize rigid body states if in rigid body mode
-            initializeRigidBodyStatesCPU(particlePointer: computeParticlePointer, rigidInfoPointer: computeRigidInfoPointer, center: center)
+            initializeRigidBodyStatesCPU(particlePointer: stagingParticlePointer, rigidInfoPointer: stagingRigidInfoPointer, center: center)
         } else {
             // Original spherical distribution for fluid
-            setupFluidSphere(particlePointer: computeParticlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax)
+            setupFluidSphere(particlePointer: stagingParticlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax, rigidInfoPointer: stagingRigidInfoPointer)
         }
         
-        // Copy initial data from compute buffer to render buffer
-        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        let renderParticlePointer = renderParticleBuffer.contents()
-        memcpy(renderParticlePointer, computeParticlePointer, particleBufferSize)
+        // Copy staging data to private GPU buffers using blit encoder
+        blitStagingToPrivateBuffers()
         
-        print("🔄 Initialized particles in both compute and render buffers")
+        print("🔄 Initialized particles and copied to private GPU buffers")
+    }
+    
+    // MARK: - Blit Copy Functions
+    
+    private func blitStagingToPrivateBuffers() {
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+            print("⚠️ Failed to create command buffer or blit encoder for staging copy")
+            return
+        }
+        
+        let particleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        let rigidInfoBufferSize = MemoryLayout<MPMParticleRigidInfo>.stride * particleCount
+        
+        // Copy staging particle buffer to both compute and render private buffers
+        blitEncoder.copy(
+            from: particleStagingBuffer, sourceOffset: 0,
+            to: computeParticleBuffer, destinationOffset: 0,
+            size: particleBufferSize
+        )
+        blitEncoder.copy(
+            from: particleStagingBuffer, sourceOffset: 0,
+            to: renderParticleBuffer, destinationOffset: 0,
+            size: particleBufferSize
+        )
+        
+        // Copy staging rigid info to compute rigid info private buffer
+        blitEncoder.copy(
+            from: rigidInfoStagingBuffer, sourceOffset: 0,
+            to: computeRigidInfoBuffer, destinationOffset: 0,
+            size: rigidInfoBufferSize
+        )
+        
+        blitEncoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        
+        print("💾 Blit copy completed: staging → private buffers")
     }
     
     private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>,rigidInfoPointer:UnsafeMutablePointer<MPMParticleRigidInfo>?=nil) {

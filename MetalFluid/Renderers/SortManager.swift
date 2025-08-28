@@ -225,19 +225,21 @@ class SortManager {
     // MARK: - Buffer Setup
     
     internal func setupBitonicSortBuffers() {
-        // Sort keys buffer for bitonic sort (only need one)
+        // Sort keys buffer for bitonic sort (private for GPU performance)
         let sortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
         sortKeysBuffer = device.makeBuffer(
             length: sortKeysBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        sortKeysBuffer.label = "BitonicSortKeysBuffer"
         
-        // Sorted particle buffer
+        // Sorted particle buffer (private for GPU performance)
         let sortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         sortedParticleBuffer = device.makeBuffer(
             length: sortedParticleBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        sortedParticleBuffer.label = "BitonicSortedParticleBuffer"
     // (No sorted rigid info buffer; rigid info remains in original order)
         
         print("🔍 Bitonic sort buffer sizes:")
@@ -246,33 +248,37 @@ class SortManager {
     }
     
     internal func setupRadixSortBuffers() {
-        // Radix sort keys buffer
+        // Radix sort keys buffer (private for GPU performance)
         let radixSortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
         radixSortKeysBuffer = device.makeBuffer(
             length: radixSortKeysBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        radixSortKeysBuffer.label = "RadixSortKeysBuffer"
         
-        // Temporary keys buffer for radix sort
+        // Temporary keys buffer for radix sort (private for GPU performance)
         radixTempKeysBuffer = device.makeBuffer(
             length: radixSortKeysBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        radixTempKeysBuffer.label = "RadixTempKeysBuffer"
         
-        // Histogram buffer for radix sort (16 bins per threadgroup)
+        // Histogram buffer for radix sort (private for GPU performance)
         let maxThreadgroups = (particleCount + maxThreadsPerGroup - 1) / maxThreadsPerGroup
         let histogramSize = maxThreadgroups * 16 * MemoryLayout<UInt32>.stride
         radixHistogramBuffer = device.makeBuffer(
             length: histogramSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        radixHistogramBuffer.label = "RadixHistogramBuffer"
         
-        // Sorted particle buffer for radix sort
+        // Sorted particle buffer for radix sort (private for GPU performance)
         let radixSortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
         radixSortedParticleBuffer = device.makeBuffer(
             length: radixSortedParticleBufferSize,
-            options: .storageModeShared
+            options: .storageModePrivate
         )!
+        radixSortedParticleBuffer.label = "RadixSortedParticleBuffer"
     // (No radix sorted rigid info buffer; rigid info remains in original order)
         
         print("🔍 Radix sort buffer sizes:")
@@ -533,54 +539,54 @@ class SortManager {
     
     // MARK: - Validation
     
-    internal func validateSortOrder() {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            return
-        }
-        
-        // Clear error count
-        let errorCountBuffer = device.makeBuffer(length: MemoryLayout<UInt32>.size, options: .storageModeShared)!
-        let errorPointer = errorCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
-        errorPointer[0] = 0
-        
-        // Verify sort order
-        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            return
-        }
-        
-        computeEncoder.setComputePipelineState(verifySortPipelineState)
-        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(errorCountBuffer, offset: 0, index: 1)
-        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 2)
-        
-        let threadsPerThreadgroup = MTLSize(
-            width: min(maxThreadsPerGroup, particleCount),
-            height: 1,
-            depth: 1
-        )
-        let threadgroups = MTLSize(
-            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
-            height: 1,
-            depth: 1
-        )
-        
-        computeEncoder.dispatchThreadgroups(
-            threadgroups,
-            threadsPerThreadgroup: threadsPerThreadgroup
-        )
-        computeEncoder.endEncoding()
-        
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        
-        let errorCount = errorPointer[0]
-        if errorCount > 0 {
-            print("⚠️ Sort validation failed: \(errorCount) errors found")
-            disableSortingOnError()
-        } else {
-            print("✅ Sort validation passed")
-        }
-    }
+//    internal func validateSortOrder() {
+//        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+//            return
+//        }
+//        
+//        // Error count buffer for verification (shared for CPU readback)
+//        let errorCountBuffer = device.makeBuffer(length: MemoryLayout<UInt32>.size, options: .storageModeShared)!
+//        let errorPointer = errorCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
+//        errorPointer[0] = 0
+//        
+//        // Verify sort order
+//        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+//            return
+//        }
+//        
+//        computeEncoder.setComputePipelineState(verifySortPipelineState)
+//        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 0)
+//        computeEncoder.setBuffer(errorCountBuffer, offset: 0, index: 1)
+//        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 2)
+//        
+//        let threadsPerThreadgroup = MTLSize(
+//            width: min(maxThreadsPerGroup, particleCount),
+//            height: 1,
+//            depth: 1
+//        )
+//        let threadgroups = MTLSize(
+//            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+//            height: 1,
+//            depth: 1
+//        )
+//        
+//        computeEncoder.dispatchThreadgroups(
+//            threadgroups,
+//            threadsPerThreadgroup: threadsPerThreadgroup
+//        )
+//        computeEncoder.endEncoding()
+//        
+//        commandBuffer.commit()
+//        commandBuffer.waitUntilCompleted()
+//        
+//        let errorCount = errorPointer[0]
+//        if errorCount > 0 {
+//            print("⚠️ Sort validation failed: \(errorCount) errors found")
+//            disableSortingOnError()
+//        } else {
+//            print("✅ Sort validation passed")
+//        }
+//    }
     
     // MARK: - Public API
     
