@@ -413,7 +413,7 @@ extension MPMFluidRenderer {
         }
         
         // Initialize rigid body state
-        var rigidBodyState = RigidBodyState(
+        let rigidBodyState = RigidBodyState(
             centerOfMass: centerOfMass,
             linearVelocity: SIMD3<Float>(0, 0, 0),
             angularVelocity: SIMD3<Float>(0, 0, 0),
