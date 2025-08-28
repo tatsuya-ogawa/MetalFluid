@@ -689,11 +689,7 @@ kernel void particlesToGridElastic(
                     
                     // Elastic force contribution: -volume * P * grad_w * dt
                     float3 force = -volume * (P * cell_dist) * uniforms.deltaTime * weight;
-                    
-//                    // Allow strong elastic forces to resist gravity
-//                    const float max_force = 200.0;  // Much higher to combat gravity effectively
-//                    force = clamp(force, float3(-max_force), float3(max_force));
-                    
+                                        
                     atomicAddWithUniform(&grid[cell_index].velocity_x, force.x, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_y, force.y, uniforms);
                     atomicAddWithUniform(&grid[cell_index].velocity_z, force.z, uniforms);
@@ -921,17 +917,6 @@ kernel void gridToParticlesElastic(
     
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
-    
-//    // Add center-seeking force for elastic materials to resist gravity collapse
-//    float3 center = (uniforms.boundaryMin + uniforms.boundaryMax) * 0.5;
-//    float3 displacement = particles[id].position - center;
-//    float distance = length(displacement);
-//    
-//    // Apply gentle center-seeking force to maintain structure
-//    if (distance > 0.1) {
-//        float3 restoreForce = -displacement * 0.02;  // Gentle restoration
-//        particles[id].velocity += restoreForce;
-//    }
     
     // Boundary conditions for elastic materials - Essential for stability
     const float k = 3.0;
