@@ -194,8 +194,9 @@ extension MPMFluidRenderer {
         #if targetEnvironment(macCatalyst) || os(macOS)
         let maxTextureSize = Int(max(size.x,size.y))
         #else
+        let maxTextureForMobile = 1024
         // for prevent ipad hangup
-        let maxTextureSize = 1024
+        let maxTextureSize = maxTextureForMobile
         #endif
         let adjustedWidth = min(Int(size.x), maxTextureSize)
         let adjustedHeight = min(Int(size.y), maxTextureSize)
