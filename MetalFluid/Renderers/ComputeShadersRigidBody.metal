@@ -12,45 +12,7 @@ kernel void particlesToGridRigid(
                                 uint id [[thread_position_in_grid]]
                                 ) {
     if (id >= uniforms.particleCount) return;
-    
-    MPMParticle particle = particles[id];
-    float3 particlePosition = particle.position;
-    float3 velocity = particle.velocity;
-    
-    // Convert particle position to grid coordinates
-    float3 position, cell_diff;
-    int3 cell_ids;
-    particleToGridCoords(particlePosition, uniforms, position, cell_ids, cell_diff);
-    
-    // Quadratic B-spline weights
-    float3 weights[3];
-    bsplineWeights(cell_diff, weights);
-    
-    // Transfer mass and momentum only (no constraint forces)
-    for (int gx = 0; gx < 3; gx++) {
-        for (int gy = 0; gy < 3; gy++) {
-            for (int gz = 0; gz < 3; gz++) {
-                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
-                if (cell_idx.x >= 0 && cell_idx.x < uniforms.gridResolution.x &&
-                    cell_idx.y >= 0 && cell_idx.y < uniforms.gridResolution.y &&
-                    cell_idx.z >= 0 && cell_idx.z < uniforms.gridResolution.z) {
-                    uint cell_index = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
-                    
-                    float weight = weights[gx].x * weights[gy].y * weights[gz].z;
-                    
-                    // Mass contribution
-                    float mass_contrib = weight * uniforms.massScale;
-                    atomicAddWithUniform(&grid[cell_index].mass, mass_contrib, uniforms);
-                    
-                    // Momentum contribution (mass * velocity) - no artificial forces
-                    float3 momentum = mass_contrib * velocity;
-                    atomicAddWithUniform(&grid[cell_index].velocity_x, momentum.x, uniforms);
-                    atomicAddWithUniform(&grid[cell_index].velocity_y, momentum.y, uniforms);
-                    atomicAddWithUniform(&grid[cell_index].velocity_z, momentum.z, uniforms);
-                }
-            }
-        }
-    }
+    // noop
 }
 // Rigid Body Grid to Particle Transfer (G2P)
 kernel void gridToParticlesRigid1(
@@ -62,67 +24,7 @@ kernel void gridToParticlesRigid1(
                                 uint id [[thread_position_in_grid]]
                                 ) {
     if (id >= uniforms.particleCount) return;
-    
-    MPMParticle p = particles[id];
-    
-    // Convert particle position to grid coordinates
-    float3 position, cell_diff;
-    int3 cell_ids;
-    particleToGridCoords(p.position, uniforms, position, cell_ids, cell_diff);
-    
-    // Quadratic B-spline weights
-    float3 weights[3];
-    bsplineWeights(cell_diff, weights);
-    
-    float3 new_velocity = float3(0.0);
-    float3x3 B = float3x3(0.0); // Velocity gradient for rigid body
-    
-    // Interpolate from surrounding grid nodes
-    for (int gx = 0; gx < 3; gx++) {
-        for (int gy = 0; gy < 3; gy++) {
-            for (int gz = 0; gz < 3; gz++) {
-                int3 cell_idx = getOffsetCellIndex(cell_ids, gx, gy, gz);
-                
-                if (cell_idx.x < 0 || cell_idx.x >= uniforms.gridResolution.x ||
-                    cell_idx.y < 0 || cell_idx.y >= uniforms.gridResolution.y ||
-                    cell_idx.z < 0 || cell_idx.z >= uniforms.gridResolution.z) continue;
-                
-                float weight = weights[gx].x * weights[gy].y * weights[gz].z;
-                uint gridIdx = gridIndex(cell_idx.x, cell_idx.y, cell_idx.z, uniforms.gridResolution);
-                
-                float3 grid_velocity = float3(
-                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_x, uniforms),
-                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_y, uniforms),
-                    nonAtomicLoadWithUniform(&grid[gridIdx].velocity_z, uniforms)
-                );
-                
-                float3 cell_dist = (float3(cell_idx) + 0.5) - position;
-                
-                new_velocity += weight * grid_velocity;
-                
-                // For rigid body, severely constrain deformation
-                float3x3 outer_prod = float3x3(
-                    grid_velocity * cell_dist.x,
-                    grid_velocity * cell_dist.y,
-                    grid_velocity * cell_dist.z
-                );
-                B += weight * outer_prod;
-            }
-        }
-    }
-    
-    // Update particle velocity from grid
-    particles[id].velocity = new_velocity;
-    
-    // Zero C matrix for rigid bodies (no deformation allowed)
-    particles[id].C = float3x3(0.0);
-    
-    // DO NOT update particle position here - this will be handled by rigid body projection
-    // Position updates are handled in gridToParticlesRigid4 (projection stage)
-    
-    // Boundary and collision handling will be done at the rigid body level,
-    // not at individual particle level. Individual particles should not 
-    // have their positions updated in G2P for rigid body projection method.
+    //noop
 }
 
 // ==============================================
@@ -177,36 +79,7 @@ kernel void gridToParticlesRigid2(
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.particleCount) return;
-    
-    MPMParticle p = particles[id];
-    uint origIdx = p.originalIndex;
-    uint rigidId = rigidInfo[origIdx].rigidId;
-    
-    // Process particles that belong to a rigid body
-    if (rigidId > 0) {
-        uint rigidBodyIdx = rigidId - 1;
-        if (rigidBodyIdx < uniforms.rigidBodyCount) {
-            // Calculate forces from grid velocity and gravity
-            float3 grid_force = p.mass * p.velocity / max(uniforms.deltaTime, 1e-6);
-            float3 gravity_force = float3(0, p.mass * uniforms.gravity, 0);
-            float3 total_force = grid_force + gravity_force;
-            
-            // Calculate torque around center of mass
-            float3 r = p.position - rigidBodies[rigidBodyIdx].centerOfMass;
-            float3 torque = cross(r, total_force);
-            
-            // Directly accumulate using atomic operations (no threadgroup arrays)
-            device atomic<float>* forcePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedForce;
-            atomic_fetch_add_explicit(&forcePtr[0], total_force.x, memory_order_relaxed);
-            atomic_fetch_add_explicit(&forcePtr[1], total_force.y, memory_order_relaxed);
-            atomic_fetch_add_explicit(&forcePtr[2], total_force.z, memory_order_relaxed);
-            
-            device atomic<float>* torquePtr = (device atomic<float>*)&rigidBodies[rigidBodyIdx].accumulatedTorque;
-            atomic_fetch_add_explicit(&torquePtr[0], torque.x, memory_order_relaxed);
-            atomic_fetch_add_explicit(&torquePtr[1], torque.y, memory_order_relaxed);
-            atomic_fetch_add_explicit(&torquePtr[2], torque.z, memory_order_relaxed);
-        }
-    }
+    // noop
 }
 
 // Stage 2: Update rigid body dynamics (one thread per rigid body)
@@ -278,46 +151,7 @@ kernel void gridToParticlesRigid4(
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.particleCount) return;
-    device MPMParticle& p = particles[id];
-    uint origIdx = p.originalIndex;
-    uint rigidId = rigidInfo[origIdx].rigidId;
-    
-    // Skip particles that don't belong to any rigid body
-    if (rigidId == 0) return;
-    
-    uint rigidBodyIdx = rigidId - 1; // Convert to 0-based index
-    if (rigidBodyIdx >= uniforms.rigidBodyCount) return;
-    
-    device const RigidBodyState& rb = rigidBodies[rigidBodyIdx];
-    if (!rb.isActive) return;
-    
-    // Get rotation matrix from quaternion
-    float3x3 R = quatToMatrix(rb.orientation);
-    
-    // Calculate new particle position: x_p = x_cm + R * r_p0
-    float3 rotatedOffset = R * rigidInfo[origIdx].initialOffset;
-    float3 newPosition = rb.centerOfMass + rotatedOffset;
-    
-    // Calculate new particle velocity: v_p = v_cm + ω × (R * r_p0)
-    float3 angularContribution = cross(rb.angularVelocity, rotatedOffset);
-    float3 newVelocity = rb.linearVelocity + angularContribution;
-    
-    // Update particle state
-    p.position = newPosition;
-    p.velocity = newVelocity;
-    
-    // Always zero C matrix for rigid bodies (no deformation allowed)
-    p.C = float3x3(0.0);
-    
-    // Apply boundary constraints
-//    float3 boundaryMin = uniforms.boundaryMin + uniforms.gridSpacing;
-//    float3 boundaryMax = uniforms.boundaryMax - uniforms.gridSpacing;
-//
-//    p.position = clamp(p.position, boundaryMin, boundaryMax);
-    
-    // Clamp velocity to prevent instabilities
-//    const float maxVel = 50.0;
-//    p.velocity = clamp(p.velocity, float3(-maxVel), float3(maxVel));
+    //noop
 }
 
 // Initialize rigid body state (called once during setup)
