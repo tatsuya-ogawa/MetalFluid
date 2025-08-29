@@ -109,7 +109,7 @@ class CollisionManager {
         
         return (min: minBounds, max: maxBounds)
     }
-    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, fillMode: Bool, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
+    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
         currentTriangles = triangles
         
         // Calculate bounding box using MeshLoader
@@ -166,7 +166,6 @@ class CollisionManager {
             
             print("Successfully loaded collision mesh with \(triangles.count) triangles")
             print("SDF resolution: \(resolution)x\(resolution)x\(resolution)")
-            print("Fill mode: \(fillMode ? "Inside fill" : "Surface collision")")
             print("SDF bounds: \(minBounds) to \(maxBounds)")
         } else {
             print("Failed to generate SDF texture")

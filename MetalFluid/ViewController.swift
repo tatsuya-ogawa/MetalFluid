@@ -116,7 +116,7 @@ class ViewController: UIViewController {
     }
     // MARK: - Mesh Loading
     /// Load Stanford Bunny asynchronously
-    private func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, fillMode: Bool = false, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
+    private func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
         meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
             guard let self = self else {
                 completion(false)
@@ -129,7 +129,7 @@ class ViewController: UIViewController {
                 return
             }
             
-            self.fluidRenderer.collisionManager?.processAndGenerateSDF(triangles: triangles, resolution: resolution, fillMode: fillMode, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            self.fluidRenderer.collisionManager?.processAndGenerateSDF(triangles: triangles, resolution: resolution, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
             completion(true)
         }
     }
@@ -141,7 +141,6 @@ class ViewController: UIViewController {
         // Load Stanford Bunny asynchronously (with caching)
         loadStanfordBunnyAsync(
             resolution: fluidRenderer.getGridRes(),
-            fillMode: true,
             gridBoundaryMin: boundaryMin,
             gridBoundaryMax: boundaryMax
         ) { [weak self] success in
