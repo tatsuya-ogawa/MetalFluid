@@ -204,13 +204,16 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
     
     return gradient / gradLength;
 }
-inline void handleCollision(device float3 &position, device float3 &velocity,
-                           float3 worldPos, texture3d<float> sdfTexture,
-                           constant CollisionUniforms &collision) {
+inline void handleCollision(device float3& particlePos,
+                            device float3& particleVel,
+                            float particleMass,
+                            texture3d<float> sdfTexture,
+                            constant CollisionUniforms &collision,
+                            float dt) {
     if (!collision.enableCollision) return;
     
     // Transform world position to mesh space using inverse transform
-    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 worldPos4 = float4(particlePos, 1.0);
     float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
     float3 meshSpacePos = meshSpacePos4.xyz;
     
@@ -220,7 +223,7 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
         return; // Outside SDF bounds, no collision
     }
     
-    float sdfValue = sampleSDF(worldPos, sdfTexture, collision);
+    float sdfValue = sampleSDF(particlePos, sdfTexture, collision);
     
     // Check for valid SDF value
     if (!isfinite(sdfValue)) {
@@ -230,19 +233,19 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
     // Handle collision with larger detection threshold
     const float collisionThreshold = 1.0; // Larger threshold for early detection
     if (sdfValue < collisionThreshold) {
-        float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+        float3 normal = computeSDFNormal(particlePos, sdfTexture, collision);
         
         // Move particle outside surface with safety margin
         float pushDistance = max(-sdfValue + 0.5, 0.5); // Always push at least 0.5 units out
-        position += normal * pushDistance;
+        particlePos += normal * pushDistance;
         
         // Strong collision response
         const float restitution = 1.2;  // Strong bounce
         const float friction = 0.1;     // Low friction for now
         
         // Decompose velocity into normal and tangential components
-        float vn = dot(velocity, normal);  // Normal component
-        float3 vt = velocity - normal * vn; // Tangential component
+        float vn = dot(particleVel, normal);  // Normal component
+        float3 vt = particleVel - normal * vn; // Tangential component
         
         // Always apply strong outward velocity
         if (vn < 2.0) { // If not already moving fast outward
@@ -256,7 +259,7 @@ inline void handleCollision(device float3 &position, device float3 &velocity,
         }
         
         // Recombine velocity components
-        velocity = normal * vn + vt;
+        particleVel = normal * vn + vt;
     }
 }
 // Improved collision handling following taichi-mpm approaches

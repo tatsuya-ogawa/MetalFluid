@@ -402,8 +402,8 @@ kernel void gridToParticlesFluid1(
     }
     
     // Handle mesh collision detection
-    handleCollision(particles[id].position, particles[id].velocity,
-                   particles[id].position, sdfTexture, collision);
+    handleCollision(particles[id].position, particles[id].velocity,particles[id].mass,
+                    sdfTexture, collision,uniforms.deltaTime);
     
     // Final position clamping as safety net
     float3 safetyMargin = float3(0.5) * uniforms.gridSpacing;
