@@ -33,36 +33,41 @@ inline float4 normalizeQuat(float4 q) {
 
 // MARK: - SDF Collision Impulse Functions (Taichi-MPM Style)
 
-// Forward declaration of sampleSDF from ComputeShaders.h
-inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision);
-
-// Advanced SDF sampling with gradient computation (using working sampleSDF method)
+// Advanced SDF sampling with gradient computation
 inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    // Use the working sampleSDF function
-    float sdfValue = sampleSDF(worldPos, sdfTexture, collision);
+    // Transform world position to SDF texture coordinates
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 sdfSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 sdfSpacePos = sdfSpacePos4.xyz;
     
-    // Check for valid SDF value
-    if (!isfinite(sdfValue)) {
-        return float4(1.0, 0.0, 1.0, 0.0); // Invalid SDF value, no collision
+    // Convert to normalized texture coordinates [0,1]
+    float3 texCoord = (sdfSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    
+    // Check bounds
+    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
+        return float4(1.0, 0.0, 1.0, 0.0); // Outside bounds: no collision, default normal up
     }
     
-    // Compute gradient (normal) using central differences in world space
-    const float eps = 0.01; // Small epsilon for gradient computation
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    float sdfValue = sdfTexture.sample(sdfSampler, texCoord).r;
+    
+    // Compute gradient (normal) using central differences
+    const float eps = 0.001; // Small epsilon for gradient computation
     float3 gradient;
     
-    gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(eps, 0, 0), sdfTexture, collision);
-    gradient.y = sampleSDF(worldPos + float3(0, eps, 0), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(0, eps, 0), sdfTexture, collision);
-    gradient.z = sampleSDF(worldPos + float3(0, 0, eps), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(0, 0, eps), sdfTexture, collision);
+    gradient.x = sdfTexture.sample(sdfSampler, texCoord + float3(eps, 0, 0)).r -
+                 sdfTexture.sample(sdfSampler, texCoord - float3(eps, 0, 0)).r;
+    gradient.y = sdfTexture.sample(sdfSampler, texCoord + float3(0, eps, 0)).r -
+                 sdfTexture.sample(sdfSampler, texCoord - float3(0, eps, 0)).r;
+    gradient.z = sdfTexture.sample(sdfSampler, texCoord + float3(0, 0, eps)).r -
+                 sdfTexture.sample(sdfSampler, texCoord - float3(0, 0, eps)).r;
     
     gradient = gradient / (2.0 * eps);
     
-    // Safely normalize gradient, avoid division by zero
+    // Normalize gradient to get surface normal
     float gradLength = length(gradient);
     if (gradLength < 1e-6) {
-        gradient = float3(0, 1, 0); // Default to up vector if gradient is too small
+        gradient = float3(0, 1, 0); // Default to up vector
     } else {
         gradient = gradient / gradLength;
     }
@@ -83,15 +88,14 @@ inline float3 computeParticleSDFCollisionImpulse(
     float phi = sdfData.x;
     float3 normal = sdfData.yzw;
     
-    // Handle collision with same threshold as handleCollision
-    const float collisionThreshold = 1.0; // Same as handleCollision for consistency
-    if (phi >= collisionThreshold) {
+    // No collision if particle is outside SDF
+    if (phi > 0.0) {
         return float3(0.0);
     }
     
-    // Collision response parameters matching handleCollision
-    const float restitution = 1.2;  // Strong bounce like handleCollision
-    const float friction = 0.1;     // Low friction like handleCollision
+    // Taichi-MPM collision response parameters
+    const float restitution = 0.4;  // Coefficient of restitution
+    const float friction = 0.3;     // Coefficient of friction
     
     // Velocity relative to surface (assuming static surface)
     float3 relativeVel = particleVel;
@@ -100,20 +104,16 @@ inline float3 computeParticleSDFCollisionImpulse(
     float vn = dot(relativeVel, normal);
     float3 vt = relativeVel - vn * normal;
     
-    // Process collision regardless of velocity direction (like handleCollision)
-    // This ensures particles are pushed out even if they're not moving toward surface
-    
-    // Strong outward velocity if not already moving fast outward (like handleCollision)
-    float minOutwardVelocity = 2.0; // Same as handleCollision
-    if (vn < minOutwardVelocity) {
-        vn = minOutwardVelocity; // Force strong outward velocity
+    // Only process if particle is moving into the surface
+    if (vn >= 0.0) {
+        return float3(0.0);
     }
     
     // Normal impulse (prevent penetration + restitution)
     float normalImpulseMagnitude = -(1.0 + restitution) * vn * particleMass;
     
-    // Position correction consistent with handleCollision
-    float positionCorrection = max(-phi + 0.5, 0.5); // Same logic as handleCollision
+    // Position correction to prevent penetration (Taichi-MPM approach)
+    float positionCorrection = -phi; // Move particle out of SDF
     float3 positionImpulse = positionCorrection * normal * particleMass / dt;
     
     // Tangential impulse (friction)
@@ -133,85 +133,6 @@ inline float3 computeParticleSDFCollisionImpulse(
     // Total impulse
     float3 normalImpulse = normalImpulseMagnitude * normal;
     return normalImpulse + tangentialImpulse + positionImpulse;
-}
-
-// Enhanced SDF collision function that combines all collision processing
-inline float3 computeParticleSDFCollisionImpulse2(
-    device float3 &particlePos,
-    device float3 &particleVel,
-    float particleMass,
-    texture3d<float> sdfTexture,
-    constant CollisionUniforms &collision,
-    float dt,
-    device MPMParticle* particles,
-    constant ComputeShaderUniforms &uniforms,
-    uint particleId
-) {
-    if (!collision.enableCollision) {
-        return float3(0.0);
-    }
-    
-    // Store original values for comparison
-    float3 originalPos = particlePos;
-    float3 originalVel = particleVel;
-    
-    // Direct SDF sampling for collision detection
-    float sdfValue = sampleSDF(particlePos, sdfTexture, collision);
-    
-    // Early exit if no collision detected
-    if (!isfinite(sdfValue) || sdfValue >= 1.0) {
-        return float3(0.0);
-    }
-    
-    // Step 1: Apply proven handleCollision as baseline
-    handleCollision(particlePos, particleVel, originalPos, sdfTexture, collision);
-    
-    // Step 2: Enhanced collision impulse computation
-    float3 enhancedImpulse = computeParticleSDFCollisionImpulse(
-        originalPos,
-        originalVel,
-        particleMass,
-        sdfTexture,
-        collision,
-        dt
-    );
-    
-    // Apply enhanced impulse with balanced scaling
-    particleVel += enhancedImpulse * 0.3;
-    
-    // Step 3: Projection-based constraint for precision (available in full system)
-    // projectConstraints(particles, uniforms, sdfTexture, collision, particleId, 0.7);
-    
-    // Step 4: SDF object reaction force simulation (Newton's third law)
-    float3 totalVelocityChange = particleVel - originalVel;
-    float impulseStrength = length(totalVelocityChange);
-    
-    if (impulseStrength > 0.1) {
-        float3 reactionDirection = (impulseStrength > 0.001) ? 
-            -normalize(totalVelocityChange) : float3(0, 1, 0);
-        float influenceRadius = 2.0 * uniforms.gridSpacing;
-        
-        // Apply reaction forces to nearby particles to simulate SDF movement
-        for (int i = max(0, int(particleId) - 8); 
-             i < min(int(uniforms.particleCount), int(particleId) + 8); i++) {
-            if (i == int(particleId)) continue;
-            
-            float3 offset = particles[i].position - originalPos;
-            float distance = length(offset);
-            
-            if (distance < influenceRadius && distance > 0.001) {
-                float influence = (influenceRadius - distance) / influenceRadius;
-                float3 pushForce = reactionDirection * impulseStrength * influence * 0.15;
-                particles[i].velocity += pushForce;
-            }
-        }
-        
-        // Additional velocity field modification for SDF object momentum simulation
-        float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
-        particleVel += sdfVelocityContribution * (1.0 - dt * 2.0);
-    }
-    
-    return totalVelocityChange;
 }
 
 // Taichi-MPM style rigid body to SDF collision impulse
