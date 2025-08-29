@@ -2,7 +2,8 @@
 #include <metal_stdlib>
 #include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
-constant int GRADIENT_EPSILON=0.01;
+constant float GRADIENT_EPSILON=0.01;
+constant float COLLISION_THRESHOLD=1.0;
 // Material mode constants
 constant int MATERIAL_FLUID = 0;
 constant int MATERIAL_ELASTIC = 1;
@@ -231,7 +232,7 @@ inline void handleCollision(device float3& particlePos,
     }
     
     // Handle collision with larger detection threshold
-    const float collisionThreshold = 1.0; // Larger threshold for early detection
+    const float collisionThreshold = COLLISION_THRESHOLD; // Larger threshold for early detection
     if (sdfValue < collisionThreshold) {
         float3 normal = computeSDFNormal(particlePos, sdfTexture, collision);
         
