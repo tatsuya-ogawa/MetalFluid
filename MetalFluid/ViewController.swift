@@ -138,9 +138,13 @@ class ViewController: UIViewController {
         // Get grid boundary to position bunny correctly
         let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
         
+        // Use fixed SDF resolution (64x64x64) instead of world resolution
+        // The collision system will handle scaling and transformation automatically
+        let fixedSDFResolution = SIMD3<Int32>(64, 64, 64)
+        
         // Load Stanford Bunny asynchronously (with caching)
         loadStanfordBunnyAsync(
-            resolution: fluidRenderer.getGridRes(),
+            resolution: fixedSDFResolution,
             gridBoundaryMin: boundaryMin,
             gridBoundaryMax: boundaryMax
         ) { [weak self] success in

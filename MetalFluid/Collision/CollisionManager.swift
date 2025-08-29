@@ -62,7 +62,8 @@ class CollisionManager {
     private func calculateCollisionTransform(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>, 
                                            gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?, 
                                            scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1),
-                                           rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) -> (float4x4, float4x4) {
+                                           rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0),
+                                           offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) -> (float4x4, float4x4) {
         guard let gridMin = gridMin, let gridMax = gridMax else {
             return (matrix_identity_float4x4, matrix_identity_float4x4)
         }
@@ -70,11 +71,11 @@ class CollisionManager {
         let gridCenter = (gridMin + gridMax) * 0.5
         let meshCenter = (meshMin + meshMax) * 0.5
         
-        // Calculate translation to center mesh in grid (XZ) and align bottom (Y)
+        // Calculate translation to center mesh in grid (XZ) and align bottom (Y), plus offset
         let translation = SIMD3<Float>(
-            gridCenter.x - meshCenter.x,  // Center X
-            gridMin.y - meshMin.y,        // Align bottom Y
-            gridCenter.z - meshCenter.z   // Center Z
+            gridCenter.x - meshCenter.x + offset.x,  // Center X + offset
+            gridMin.y - meshMin.y + offset.y,        // Align bottom Y + offset
+            gridCenter.z - meshCenter.z + offset.z   // Center Z + offset
         )
         
         // Create transform matrix: T * R * S (applied in reverse order)
@@ -109,7 +110,7 @@ class CollisionManager {
         
         return (min: minBounds, max: maxBounds)
     }
-    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
+    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?, scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1), offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0), rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) {
         currentTriangles = triangles
         
         // Calculate bounding box using MeshLoader
@@ -136,12 +137,15 @@ class CollisionManager {
         print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
         
         if sdfTexture != nil {
-            // Calculate collision transform to center the mesh in the grid
+            // Calculate collision transform using provided scale, offset, and rotation
             let (transform, invTransform) = calculateCollisionTransform(
                 meshMin: minBounds,
                 meshMax: maxBounds,
                 gridMin: gridBoundaryMin,
-                gridMax: gridBoundaryMax
+                gridMax: gridBoundaryMax,
+                scale: scale,
+                rotation: rotation,
+                offset: offset
             )
             
             // Update collision uniforms
