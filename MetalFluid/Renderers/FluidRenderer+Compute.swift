@@ -39,6 +39,29 @@ extension MPMFluidRenderer {
             solveRigidBodyCollisionsPipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyCollisions")
         }
     }
+    
+    internal func setupSDFCollisionPipelines(library: MTLLibrary) {
+        // SDF Collision (Projection-Based Dynamics) pipelines
+        if library.makeFunction(name: "processParticleSDFCollisions") != nil {
+            processParticleSDFCollisionsPipelineState = createComputePipelineState(library: library, functionName: "processParticleSDFCollisions")
+        }
+        
+        if library.makeFunction(name: "solveParticleConstraintsIterative") != nil {
+            solveParticleConstraintsIterativePipelineState = createComputePipelineState(library: library, functionName: "solveParticleConstraintsIterative")
+        }
+        
+        if library.makeFunction(name: "processRigidBodySDFCollisions") != nil {
+            processRigidBodySDFCollisionsPipelineState = createComputePipelineState(library: library, functionName: "processRigidBodySDFCollisions")
+        }
+        
+        if library.makeFunction(name: "solveRigidBodyConstraintsIterative") != nil {
+            solveRigidBodyConstraintsIterativePipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyConstraintsIterative")
+        }
+        
+        if library.makeFunction(name: "solveRigidBodyToRigidBodyCollisions") != nil {
+            solveRigidBodyToRigidBodyCollisionsPipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyToRigidBodyCollisions")
+        }
+    }
     internal func setupComputePipelines() {
         guard let library = device.makeDefaultLibrary() else {
             fatalError("Could not create default library")
@@ -50,6 +73,7 @@ extension MPMFluidRenderer {
         setupComputePipelinesFluid(library: library)
         setupComputePipelinesElastic(library: library)
         setupComputePipelinesRigid(library: library)
+        setupSDFCollisionPipelines(library: library)
     }
     
     internal func setupParticles() {

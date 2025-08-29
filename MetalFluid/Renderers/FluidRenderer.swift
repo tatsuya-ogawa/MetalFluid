@@ -433,6 +433,13 @@ class MPMFluidRenderer: NSObject {
     public var projectRigidBodyParticlesPipelineState: MTLComputePipelineState!
     public var solveRigidBodyCollisionsPipelineState: MTLComputePipelineState! // Collision solver between rigid bodies
     
+    // SDF Collision (Projection-Based Dynamics) pipeline states
+    public var processParticleSDFCollisionsPipelineState: MTLComputePipelineState!
+    public var solveParticleConstraintsIterativePipelineState: MTLComputePipelineState!
+    public var processRigidBodySDFCollisionsPipelineState: MTLComputePipelineState!
+    public var solveRigidBodyConstraintsIterativePipelineState: MTLComputePipelineState!
+    public var solveRigidBodyToRigidBodyCollisionsPipelineState: MTLComputePipelineState!
+    
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
     
