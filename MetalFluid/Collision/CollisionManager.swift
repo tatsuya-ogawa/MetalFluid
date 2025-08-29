@@ -8,6 +8,8 @@ struct Triangle {
     var v2: SIMD3<Float>
 }
 class CollisionManager {
+    static let MAX_RIGIDS = 8
+
     private let device: MTLDevice
     
     // SDF generation and collision detection

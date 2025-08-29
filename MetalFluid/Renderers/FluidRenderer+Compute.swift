@@ -368,9 +368,21 @@ extension MPMFluidRenderer {
             self?.endComputeAndSwapToRender()
         }
     }
-    
+    internal func getSdfArgumentBufferAndEncoder()->(MTLBuffer,MTLArgumentEncoder){
+        let argumentDescriptor = MTLArgumentDescriptor()
+        argumentDescriptor.dataType = .texture
+        argumentDescriptor.textureType = .type3D
+        argumentDescriptor.index = 0               // [[id(0)]]
+        argumentDescriptor.access = .readOnly
+        argumentDescriptor.arrayLength = CollisionManager.MAX_RIGIDS
+
+        let argumentEncoder = device.makeArgumentEncoder(arguments: [argumentDescriptor])!
+        let argumentBuffer = device.makeBuffer(length: argumentEncoder.encodedLength, options: [])!
+        argumentEncoder.setArgumentBuffer(argumentBuffer, offset: 0)
+        return (argumentBuffer,argumentEncoder)
+    }
+
     // MARK: - MPM Simulation Pipeline
-    
     internal func computeSimulation(commandBuffer: MTLCommandBuffer) {
         // Decide threadgroup sizes based on each pipeline's reported limits
         let gridThreadgroupSize = min(
@@ -513,9 +525,12 @@ extension MPMFluidRenderer {
                     if let collisionManager {
                         computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
                         
+                        let (argumentBuffer,argumentEncoder) = getSdfArgumentBufferAndEncoder()
                         if let sdfTexture = collisionManager.getSDFTexture() {
-                            computeEncoder.setTexture(sdfTexture, index: 0)
+                            argumentEncoder.setTexture(sdfTexture, index: 0)
+                            computeEncoder.useResource(sdfTexture, usage: .read)
                         }
+                        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
                     }
                     
                     computeEncoder.dispatchThreadgroups(
@@ -538,9 +553,12 @@ extension MPMFluidRenderer {
                     if let collisionManager {
                         computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
                         
+                        let (argumentBuffer,argumentEncoder) = getSdfArgumentBufferAndEncoder()
                         if let sdfTexture = collisionManager.getSDFTexture() {
-                            computeEncoder.setTexture(sdfTexture, index: 0)
+                            argumentEncoder.setTexture(sdfTexture, index: 0)
+                            computeEncoder.useResource(sdfTexture, usage: .read)
                         }
+                        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
                     }
                     
                     computeEncoder.dispatchThreadgroups(

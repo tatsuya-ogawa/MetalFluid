@@ -321,12 +321,12 @@ kernel void gridToParticlesFluid1(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                            texture3d<float> sdfTexture [[texture(0)]],
                             constant CollisionUniforms& collision [[buffer(3)]],
+                            constant SDFSet& sdfSet [[buffer(4)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
-    
+    texture3d<float> sdfTexture = sdfSet.sdf[0];
     MPMParticle p = particles[id];
     
     // Convert particle position to grid coordinates (considering domainOrigin)
@@ -416,12 +416,12 @@ kernel void gridToParticlesElastic(
                                   device MPMParticle* particles [[buffer(0)]],
                                   constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                                  texture3d<float> sdfTexture [[texture(0)]],
                                   constant CollisionUniforms& collision [[buffer(3)]],
+                                  constant SDFSet& sdfSet [[buffer(4)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
-    
+    texture3d<float> sdfTexture = sdfSet.sdf[0];
     MPMParticle p = particles[id];
     
     // Convert particle position to grid coordinates

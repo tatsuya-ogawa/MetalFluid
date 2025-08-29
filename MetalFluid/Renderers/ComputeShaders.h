@@ -313,3 +313,7 @@ inline void handleCollisionTaichi(device float3 &position, device float3 &veloci
 }
 
 
+#define MAX_RIGIDS 8
+struct SDFSet {
+  array<texture3d<float, access::sample>, MAX_RIGIDS> sdf [[id(0)]];
+};
