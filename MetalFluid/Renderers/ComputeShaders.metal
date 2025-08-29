@@ -506,53 +506,18 @@ kernel void gridToParticlesElastic(
     float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
     float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
     
-    // Advanced SDF collision using Taichi-MPM style impulse-based collision
-    float3 collisionImpulse = computeParticleSDFCollisionImpulse(
+    // Unified SDF collision processing with all advanced features
+    computeParticleSDFCollisionImpulse2(
         particles[id].position,
         particles[id].velocity,
-        particles[id].mass, // particle mass (assuming unit mass for elastic particles)
+        1.0, // Unit mass for consistent behavior
         sdfTexture,
         collision,
-        uniforms.deltaTime
+        uniforms.deltaTime,
+        particles,
+        uniforms,
+        id
     );
-    
-    // Apply collision impulse to velocity (this affects SDF object motion indirectly)
-    particles[id].velocity += collisionImpulse;
-    
-    // Apply projection-based constraint to ensure no penetration
-    projectConstraints(particles, uniforms, sdfTexture, collision, id, 0.9);
-    
-    // SDF object reaction force simulation (Newton's third law)
-    // This simulates the SDF object being moved by particle collisions
-    float impulseStrength = length(collisionImpulse);
-    if (impulseStrength > 0.1) {
-        float3 reactionDirection = -normalize(collisionImpulse);
-        float influenceRadius = 2.0 * uniforms.gridSpacing;
-        
-        // Method 1: Immediate local influence on nearby particles
-        // This simulates the SDF object being "pushed" and affecting surrounding fluid
-        for (int i = max(0, int(id) - 8); i < min(int(uniforms.particleCount), int(id) + 8); i++) {
-            if (i == int(id)) continue;
-            
-            float3 offset = particles[i].position - particles[id].position;
-            float distance = length(offset);
-            
-            if (distance < influenceRadius && distance > 0.001) {
-                float influence = (influenceRadius - distance) / influenceRadius;
-                // Scale reaction based on impulse strength and distance
-                float3 pushForce = reactionDirection * impulseStrength * influence * 0.15;
-                particles[i].velocity += pushForce;
-            }
-        }
-        
-        // Method 2: Velocity field modification to simulate SDF object movement
-        // Add a velocity contribution that simulates the SDF object moving away
-        float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
-        
-        // Apply this as an additional velocity component that decays over time
-        // This simulates the SDF object having momentum from the collision
-        particles[id].velocity += sdfVelocityContribution * (1.0 - uniforms.deltaTime * 2.0);
-    }
     
     // Wall collisions - Critical for preventing divergence
     if (x_n.x < wall_min.x) {
