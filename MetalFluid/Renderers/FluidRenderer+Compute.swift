@@ -368,18 +368,24 @@ extension MPMFluidRenderer {
             self?.endComputeAndSwapToRender()
         }
     }
-    internal func getSdfArgumentBufferAndEncoder()->(MTLBuffer,MTLArgumentEncoder){
-        let argumentDescriptor = MTLArgumentDescriptor()
-        argumentDescriptor.dataType = .texture
-        argumentDescriptor.textureType = .type3D
-        argumentDescriptor.index = 0               // [[id(0)]]
-        argumentDescriptor.access = .readOnly
-        argumentDescriptor.arrayLength = CollisionManager.MAX_RIGIDS
-
-        let argumentEncoder = device.makeArgumentEncoder(arguments: [argumentDescriptor])!
-        let argumentBuffer = device.makeBuffer(length: argumentEncoder.encodedLength, options: [])!
-        argumentEncoder.setArgumentBuffer(argumentBuffer, offset: 0)
-        return (argumentBuffer,argumentEncoder)
+    // Lazy init & reuse of SDF argument buffer (avoid per-dispatch creation cost)    
+    internal func ensureSdfArgumentBuffer() -> (MTLBuffer, MTLArgumentEncoder) {
+        if let sdfArgumentEncoder, let sdfArgumentBuffer{
+            return (sdfArgumentBuffer, sdfArgumentEncoder)
+        }else{
+            let desc = MTLArgumentDescriptor()
+            desc.dataType = .texture
+            desc.textureType = .type3D
+            desc.index = 0
+            desc.access = .readOnly
+            desc.arrayLength = CollisionManager.MAX_RIGIDS
+            let enc = device.makeArgumentEncoder(arguments: [desc])!
+            let buf = device.makeBuffer(length: enc.encodedLength, options: [])!
+            enc.setArgumentBuffer(buf, offset: 0)
+            sdfArgumentEncoder = enc
+            sdfArgumentBuffer = buf
+            return (buf, enc)
+        }
     }
 
     // MARK: - MPM Simulation Pipeline
@@ -524,11 +530,11 @@ extension MPMFluidRenderer {
                     // Set collision resources if available
                     if let collisionManager {
                         computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
                         
-                        let (argumentBuffer,argumentEncoder) = getSdfArgumentBufferAndEncoder()
-                        if let sdfTexture = collisionManager.getSDFTexture() {
-                            argumentEncoder.setTexture(sdfTexture, index: 0)
-                            computeEncoder.useResource(sdfTexture, usage: .read)
+                        if let tex = collisionManager.getSDFTexture() {
+                            argumentEncoder.setTexture(tex, index: 0)
+                            computeEncoder.useResource(tex, usage: .read)
                         }
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
                     }
@@ -552,11 +558,11 @@ extension MPMFluidRenderer {
                     // Set collision resources if available
                     if let collisionManager {
                         computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
                         
-                        let (argumentBuffer,argumentEncoder) = getSdfArgumentBufferAndEncoder()
-                        if let sdfTexture = collisionManager.getSDFTexture() {
-                            argumentEncoder.setTexture(sdfTexture, index: 0)
-                            computeEncoder.useResource(sdfTexture, usage: .read)
+                        if let tex = collisionManager.getSDFTexture() {
+                            argumentEncoder.setTexture(tex, index: 0)
+                            computeEncoder.useResource(tex, usage: .read)
                         }
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
                     }
