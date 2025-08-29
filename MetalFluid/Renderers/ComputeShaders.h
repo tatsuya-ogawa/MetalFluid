@@ -166,29 +166,6 @@ inline float3 frictionProject(float3 velocity, float3 baseVelocity, float3 norma
 }
 
 // --- SDF Collision Detection Utilities ---
-inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    // Transform world position to mesh space using inverse transform
-    float4 worldPos4 = float4(worldPos, 1.0);
-    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
-    float3 meshSpacePos = meshSpacePos4.xyz;
-    
-    // Convert mesh space position to SDF texture coordinates
-    float3 texCoord = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
-    
-    // Check bounds
-    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
-        return 1.0; // Outside SDF volume, no collision
-    }
-    
-    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
-    return sdfTexture.sample(sdfSampler, texCoord).r;
-}
-
-// Optimized version that takes pre-computed normalized texture coordinates
-inline float sampleSDFDirect(float3 texCoord, texture3d<float> sdfTexture) {
-    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
-    return sdfTexture.sample(sdfSampler, texCoord).r;
-}
 
 // Compute normalized texture coordinates from world position
 inline float3 worldToSDFTexCoord(float3 worldPos, constant CollisionUniforms &collision) {
@@ -205,12 +182,30 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
     const float eps = GRADIENT_EPSILON;
     float3 gradient;
     
-    gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(eps, 0, 0), sdfTexture, collision);
-    gradient.y = sampleSDF(worldPos + float3(0, eps, 0), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(0, eps, 0), sdfTexture, collision);
-    gradient.z = sampleSDF(worldPos + float3(0, 0, eps), sdfTexture, collision) -
-                 sampleSDF(worldPos - float3(0, 0, eps), sdfTexture, collision);
+    // Compute texture coordinates for center position and offset positions
+    float3 centerTexCoord = worldToSDFTexCoord(worldPos, collision);
+    
+    // Check if center position is within bounds
+    if (any(centerTexCoord < 0.0) || any(centerTexCoord > 1.0)) {
+        return float3(0, 1, 0); // Default normal if outside bounds
+    }
+    
+    // Compute texture coordinates for gradient sampling points
+    float3 texCoordXPos = worldToSDFTexCoord(worldPos + float3(eps, 0, 0), collision);
+    float3 texCoordXNeg = worldToSDFTexCoord(worldPos - float3(eps, 0, 0), collision);
+    float3 texCoordYPos = worldToSDFTexCoord(worldPos + float3(0, eps, 0), collision);
+    float3 texCoordYNeg = worldToSDFTexCoord(worldPos - float3(0, eps, 0), collision);
+    float3 texCoordZPos = worldToSDFTexCoord(worldPos + float3(0, 0, eps), collision);
+    float3 texCoordZNeg = worldToSDFTexCoord(worldPos - float3(0, 0, eps), collision);
+    
+    // Sample SDF values directly (with bounds checking)
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    gradient.x = (any(texCoordXPos < 0.0) || any(texCoordXPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXPos).r) -
+                 (any(texCoordXNeg < 0.0) || any(texCoordXNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXNeg).r);
+    gradient.y = (any(texCoordYPos < 0.0) || any(texCoordYPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYPos).r) -
+                 (any(texCoordYNeg < 0.0) || any(texCoordYNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYNeg).r);
+    gradient.z = (any(texCoordZPos < 0.0) || any(texCoordZPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZPos).r) -
+                 (any(texCoordZNeg < 0.0) || any(texCoordZNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZNeg).r);
     
     gradient = gradient / (2.0 * eps);
     
@@ -236,8 +231,9 @@ inline void handleCollision(device float3& particlePos,
         return; // Outside SDF bounds, no collision
     }
     
-    // Use optimized direct sampling since we already have the texture coordinates
-    float sdfValue = sampleSDFDirect(relativePos, sdfTexture);
+    // Sample SDF texture directly using the computed coordinates
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    float sdfValue = sdfTexture.sample(sdfSampler, relativePos).r;
     
     // Check for valid SDF value
     if (!isfinite(sdfValue)) {
@@ -288,8 +284,9 @@ inline void handleCollisionTaichi(device float3 &position, device float3 &veloci
         return; // Outside SDF bounds, no collision
     }
     
-    // Use optimized direct sampling since we already have the texture coordinates
-    float phi = sampleSDFDirect(relativePos, sdfTexture);
+    // Sample SDF texture directly using the computed coordinates
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    float phi = sdfTexture.sample(sdfSampler, relativePos).r;
     
     // Check for valid SDF value
     if (!isfinite(phi)) {
