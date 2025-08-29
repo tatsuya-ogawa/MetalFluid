@@ -184,6 +184,23 @@ inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant Co
     return sdfTexture.sample(sdfSampler, texCoord).r;
 }
 
+// Optimized version that takes pre-computed normalized texture coordinates
+inline float sampleSDFDirect(float3 texCoord, texture3d<float> sdfTexture) {
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    return sdfTexture.sample(sdfSampler, texCoord).r;
+}
+
+// Compute normalized texture coordinates from world position
+inline float3 worldToSDFTexCoord(float3 worldPos, constant CollisionUniforms &collision) {
+    // Transform world position to mesh space using inverse transform
+    float4 worldPos4 = float4(worldPos, 1.0);
+    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
+    float3 meshSpacePos = meshSpacePos4.xyz;
+    
+    // Convert mesh space position to SDF texture coordinates
+    return (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+}
+
 inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
     const float eps = GRADIENT_EPSILON;
     float3 gradient;
@@ -213,18 +230,14 @@ inline void handleCollision(device float3& particlePos,
                             float dt) {
     if (!collision.enableCollision) return;
     
-    // Transform world position to mesh space using inverse transform
-    float4 worldPos4 = float4(particlePos, 1.0);
-    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
-    float3 meshSpacePos = meshSpacePos4.xyz;
-    
-    // Check if mesh space position is within reasonable bounds to avoid sampling issues
-    float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    // Compute SDF texture coordinates from world position
+    float3 relativePos = worldToSDFTexCoord(particlePos, collision);
     if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
         return; // Outside SDF bounds, no collision
     }
     
-    float sdfValue = sampleSDF(particlePos, sdfTexture, collision);
+    // Use optimized direct sampling since we already have the texture coordinates
+    float sdfValue = sampleSDFDirect(relativePos, sdfTexture);
     
     // Check for valid SDF value
     if (!isfinite(sdfValue)) {
@@ -269,18 +282,14 @@ inline void handleCollisionTaichi(device float3 &position, device float3 &veloci
                            constant CollisionUniforms &collision) {
     if (!collision.enableCollision) return;
     
-    // Transform world position to mesh space using inverse transform
-    float4 worldPos4 = float4(worldPos, 1.0);
-    float4 meshSpacePos4 = collision.collisionInvTransform * worldPos4;
-    float3 meshSpacePos = meshSpacePos4.xyz;
-    
-    // Check if mesh space position is within reasonable bounds
-    float3 relativePos = (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    // Compute SDF texture coordinates from world position
+    float3 relativePos = worldToSDFTexCoord(worldPos, collision);
     if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
         return; // Outside SDF bounds, no collision
     }
     
-    float phi = sampleSDF(worldPos, sdfTexture, collision);
+    // Use optimized direct sampling since we already have the texture coordinates
+    float phi = sampleSDFDirect(relativePos, sdfTexture);
     
     // Check for valid SDF value
     if (!isfinite(phi)) {
