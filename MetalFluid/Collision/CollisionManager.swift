@@ -122,13 +122,12 @@ class CollisionManager {
         let maxBounds = boundingBox.max + SIMD3<Float>(padding, padding, padding)
         
         // Generate SDF texture with specified resolution using GPU
-        let sdfResolution = resolution
         print("🚀 Starting GPU SDF generation...")
         let startTime = CFAbsoluteTimeGetCurrent()
         
         sdfTexture = sdfGenerator.generateSDF(
             triangles: triangles,
-            resolution: sdfResolution,
+            resolution: resolution,
             boundingBox: (min: minBounds, max: maxBounds)
         )
         
@@ -157,7 +156,7 @@ class CollisionManager {
             collisionUniformPointer[0] = CollisionUniforms(
                 sdfOrigin: minBounds,
                 sdfSize: maxBounds - minBounds,
-                sdfResolution: sdfResolution,
+                sdfResolution: resolution,
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
                 enableCollision: 1,
