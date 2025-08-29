@@ -2,7 +2,7 @@
 #include <metal_stdlib>
 #include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
-
+constant int GRADIENT_EPSILON=0.01;
 // Material mode constants
 constant int MATERIAL_FLUID = 0;
 constant int MATERIAL_ELASTIC = 1;
@@ -184,7 +184,7 @@ inline float sampleSDF(float3 worldPos, texture3d<float> sdfTexture, constant Co
 }
 
 inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    const float eps = 0.01;
+    const float eps = GRADIENT_EPSILON;
     float3 gradient;
     
     gradient.x = sampleSDF(worldPos + float3(eps, 0, 0), sdfTexture, collision) -
