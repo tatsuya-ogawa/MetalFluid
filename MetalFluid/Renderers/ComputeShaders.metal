@@ -499,21 +499,21 @@ kernel void gridToParticlesElastic(
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
-    if(false){
-        // Advanced SDF collision using Taichi-MPM style impulse-based collision
-        float3 collisionImpulse = computeParticleSDFCollisionImpulse(
-            particles[id].position,
+    if(true){  // Enable fixed impulse-based collision for testing
+        // Enhanced SDF collision using improved impulse-based approach
+        // This version combines immediate position correction with velocity impulse
+        float3 collisionImpulse = computeParticleSDFCollisionImpulseWithPositionFix(
+            particles[id].position,  // Position is modified directly in the function
             particles[id].velocity,
-            particles[id].mass, // particle mass (assuming unit mass for elastic particles)
+            particles[id].mass,
             sdfTexture,
             collision,
             uniforms.deltaTime
         );
         
-        // Apply collision impulse to velocity (this affects SDF object motion indirectly)
+        // Apply collision impulse to velocity
         particles[id].velocity += collisionImpulse;
-        // Apply projection-based constraint to ensure no penetration
-        projectConstraints(particles, uniforms, sdfTexture, collision, id, 0.9);
+        // Note: projectConstraints is no longer needed - position correction is handled immediately
         // SDF object reaction force simulation (Newton's third law)
         // This simulates the SDF object being moved by particle collisions
         float impulseStrength = length(collisionImpulse);

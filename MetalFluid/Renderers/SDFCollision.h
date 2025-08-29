@@ -92,6 +92,67 @@ inline float3 computeParticleSDFCollisionImpulse(
     return normalImpulse + tangentialImpulse + positionImpulse;
 }
 
+// Enhanced collision function that handles both impulse and immediate position correction
+inline float3 computeParticleSDFCollisionImpulseWithPositionFix(
+    device float3& particlePos,  // Reference to modify position immediately
+    float3 particleVel,
+    float particleMass,
+    texture3d<float> sdfTexture,
+    constant CollisionUniforms &collision,
+    float dt
+) {
+    float4 sdfData = sampleSDFWithGradient(particlePos, sdfTexture, collision);
+    float phi = sdfData.x;
+    float3 normal = sdfData.yzw;
+    
+    // No collision if particle is outside SDF (use same threshold as handleCollision)
+    const float collisionThreshold = 0.5;
+    if (phi > collisionThreshold) {
+        return float3(0.0);
+    }
+    
+    // Immediate position correction (like handleCollision)
+    float pushDistance = max(-phi + 0.5, 0.5);
+    particlePos += normal * pushDistance;
+    
+    // Taichi-MPM collision response parameters
+    const float restitution = 0.4;
+    const float friction = 0.3;
+    
+    // Velocity relative to surface
+    float3 relativeVel = particleVel;
+    
+    // Normal and tangential velocity components
+    float vn = dot(relativeVel, normal);
+    float3 vt = relativeVel - vn * normal;
+    
+    // Only skip if particle is clearly moving away from surface
+    if (vn > 0.5) {
+        return float3(0.0);
+    }
+    
+    // Normal impulse (prevent penetration + restitution)
+    float normalImpulseMagnitude = -(1.0 + restitution) * vn * particleMass;
+    
+    // Tangential impulse (friction)
+    float vtMagnitude = length(vt);
+    float3 tangentialImpulse = float3(0.0);
+    
+    if (vtMagnitude > 1e-6) {
+        float3 tangentDirection = vt / vtMagnitude;
+        
+        // Coulomb friction model
+        float maxFrictionImpulse = friction * normalImpulseMagnitude;
+        float tangentialImpulseMagnitude = min(maxFrictionImpulse, vtMagnitude * particleMass);
+        
+        tangentialImpulse = -tangentialImpulseMagnitude * tangentDirection;
+    }
+    
+    // Total velocity impulse (position already corrected above)
+    float3 normalImpulse = normalImpulseMagnitude * normal;
+    return normalImpulse + tangentialImpulse;
+}
+
 // Taichi-MPM style rigid body to SDF collision impulse
 inline float3 computeRigidBodySDFCollisionImpulse(
     float3 contactPoint,
