@@ -32,49 +32,6 @@ inline float4 normalizeQuat(float4 q) {
 }
 
 // MARK: - SDF Collision Impulse Functions (Taichi-MPM Style)
-
-// Advanced SDF sampling with gradient computation
-inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    // Transform world position to SDF texture coordinates
-    float4 worldPos4 = float4(worldPos, 1.0);
-    float4 sdfSpacePos4 = collision.collisionInvTransform * worldPos4;
-    float3 sdfSpacePos = sdfSpacePos4.xyz;
-    
-    // Convert to normalized texture coordinates [0,1]
-    float3 texCoord = (sdfSpacePos - collision.sdfOrigin) / collision.sdfSize;
-    
-    // Check bounds
-    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
-        return float4(1.0, 0.0, 1.0, 0.0); // Outside bounds: no collision, default normal up
-    }
-    
-    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
-    float sdfValue = sdfTexture.sample(sdfSampler, texCoord).r;
-    
-    // Compute gradient (normal) using central differences
-    const float eps = 0.001; // Small epsilon for gradient computation
-    float3 gradient;
-    
-    gradient.x = sdfTexture.sample(sdfSampler, texCoord + float3(eps, 0, 0)).r -
-                 sdfTexture.sample(sdfSampler, texCoord - float3(eps, 0, 0)).r;
-    gradient.y = sdfTexture.sample(sdfSampler, texCoord + float3(0, eps, 0)).r -
-                 sdfTexture.sample(sdfSampler, texCoord - float3(0, eps, 0)).r;
-    gradient.z = sdfTexture.sample(sdfSampler, texCoord + float3(0, 0, eps)).r -
-                 sdfTexture.sample(sdfSampler, texCoord - float3(0, 0, eps)).r;
-    
-    gradient = gradient / (2.0 * eps);
-    
-    // Normalize gradient to get surface normal
-    float gradLength = length(gradient);
-    if (gradLength < 1e-6) {
-        gradient = float3(0, 1, 0); // Default to up vector
-    } else {
-        gradient = gradient / gradLength;
-    }
-    
-    return float4(sdfValue, gradient);
-}
-
 // Taichi-MPM style collision impulse for particle-SDF collision
 inline float3 computeParticleSDFCollisionImpulse(
     float3 particlePos,

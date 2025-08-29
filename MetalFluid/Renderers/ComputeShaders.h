@@ -177,20 +177,24 @@ inline float3 worldToSDFTexCoord(float3 worldPos, constant CollisionUniforms &co
     // Convert mesh space position to SDF texture coordinates
     return (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
 }
-
-inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
-    const float eps = GRADIENT_EPSILON;
-    float3 gradient;
+// Advanced SDF sampling with gradient computation
+inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+    // Use the optimized coordinate transformation function
+    float3 texCoord = worldToSDFTexCoord(worldPos, collision);
     
-    // Compute texture coordinates for center position and offset positions
-    float3 centerTexCoord = worldToSDFTexCoord(worldPos, collision);
-    
-    // Check if center position is within bounds
-    if (any(centerTexCoord < 0.0) || any(centerTexCoord > 1.0)) {
-        return float3(0, 1, 0); // Default normal if outside bounds
+    // Check bounds
+    if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
+        return float4(1.0, 0.0, 1.0, 0.0); // Outside bounds: no collision, default normal up
     }
     
-    // Compute texture coordinates for gradient sampling points
+    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+    float sdfValue = sdfTexture.sample(sdfSampler, texCoord).r;
+    
+    // Compute gradient (normal) using central differences in world space
+    const float eps = GRADIENT_EPSILON; // Small epsilon in world space units
+    float3 gradient;
+    
+    // Compute texture coordinates for gradient sampling points in world space
     float3 texCoordXPos = worldToSDFTexCoord(worldPos + float3(eps, 0, 0), collision);
     float3 texCoordXNeg = worldToSDFTexCoord(worldPos - float3(eps, 0, 0), collision);
     float3 texCoordYPos = worldToSDFTexCoord(worldPos + float3(0, eps, 0), collision);
@@ -198,25 +202,30 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
     float3 texCoordZPos = worldToSDFTexCoord(worldPos + float3(0, 0, eps), collision);
     float3 texCoordZNeg = worldToSDFTexCoord(worldPos - float3(0, 0, eps), collision);
     
-    // Sample SDF values directly (with bounds checking)
-    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
-    gradient.x = (any(texCoordXPos < 0.0) || any(texCoordXPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXPos).r) -
-                 (any(texCoordXNeg < 0.0) || any(texCoordXNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXNeg).r);
-    gradient.y = (any(texCoordYPos < 0.0) || any(texCoordYPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYPos).r) -
-                 (any(texCoordYNeg < 0.0) || any(texCoordYNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYNeg).r);
-    gradient.z = (any(texCoordZPos < 0.0) || any(texCoordZPos > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZPos).r) -
-                 (any(texCoordZNeg < 0.0) || any(texCoordZNeg > 1.0) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZNeg).r);
+    // Sample SDF values with bounds checking
+    float sdfXPos = (any(texCoordXPos < 0.0) || any(texCoordXPos > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXPos).r;
+    float sdfXNeg = (any(texCoordXNeg < 0.0) || any(texCoordXNeg > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordXNeg).r;
+    float sdfYPos = (any(texCoordYPos < 0.0) || any(texCoordYPos > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYPos).r;
+    float sdfYNeg = (any(texCoordYNeg < 0.0) || any(texCoordYNeg > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordYNeg).r;
+    float sdfZPos = (any(texCoordZPos < 0.0) || any(texCoordZPos > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZPos).r;
+    float sdfZNeg = (any(texCoordZNeg < 0.0) || any(texCoordZNeg > 1.0)) ? 1.0 : sdfTexture.sample(sdfSampler, texCoordZNeg).r;
     
-    gradient = gradient / (2.0 * eps);
+    // Compute gradient using world space epsilon
+    gradient.x = (sdfXPos - sdfXNeg) / (2.0 * eps);
+    gradient.y = (sdfYPos - sdfYNeg) / (2.0 * eps);
+    gradient.z = (sdfZPos - sdfZNeg) / (2.0 * eps);
     
-    // Safely normalize gradient, avoid division by zero
+    // Normalize gradient to get surface normal
     float gradLength = length(gradient);
     if (gradLength < 1e-6) {
-        return float3(0, 1, 0); // Default to up vector if gradient is too small
+        gradient = float3(0, 1, 0); // Default to up vector
+    } else {
+        gradient = gradient / gradLength;
     }
     
-    return gradient / gradLength;
+    return float4(sdfValue, gradient);
 }
+
 inline void handleCollision(device float3& particlePos,
                             device float3& particleVel,
                             float particleMass,
@@ -243,7 +252,8 @@ inline void handleCollision(device float3& particlePos,
     // Handle collision with larger detection threshold
     const float collisionThreshold = COLLISION_THRESHOLD; // Larger threshold for early detection
     if (sdfValue < collisionThreshold) {
-        float3 normal = computeSDFNormal(particlePos, sdfTexture, collision);
+        float4 sdfData = sampleSDFWithGradient(particlePos, sdfTexture, collision);
+        float3 normal = sdfData.yzw;
         
         // Move particle outside surface with safety margin
         float pushDistance = max(-sdfValue + 0.5, 0.5); // Always push at least 0.5 units out
@@ -296,7 +306,8 @@ inline void handleCollisionTaichi(device float3 &position, device float3 &veloci
     // Handle collision with larger detection threshold
     const float collisionThreshold = 0.0; // Larger threshold for early detection
     if (phi < collisionThreshold) {
-        float3 gradient = computeSDFNormal(worldPos, sdfTexture, collision);
+        float4 sdfData = sampleSDFWithGradient(worldPos, sdfTexture, collision);
+        float3 gradient = sdfData.yzw;
         
         // Taichi-MPM position correction: p.pos -= gradient * phi * delta_x
         // Move particle outside surface proportional to penetration depth
@@ -321,7 +332,6 @@ inline void handleCollisionTaichi(device float3 &position, device float3 &veloci
         velocity = frictionProject(velocity, baseVelocity, gradient, friction);
     }
 }
-
 
 #define MAX_RIGIDS 8
 struct SDFSet {
