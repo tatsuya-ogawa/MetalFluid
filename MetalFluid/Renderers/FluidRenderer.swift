@@ -427,12 +427,10 @@ class MPMFluidRenderer: NSObject {
     public var particlesToGridElasticPipelineState: MTLComputePipelineState!
     public var gridToParticlesElasticPipelineState: MTLComputePipelineState!
     
-    // Rigid body material compute pipeline states
-    public var particlesToGridRigidPipelineState: MTLComputePipelineState!
-    public var gridToParticlesRigid1PipelineState: MTLComputePipelineState!
-    public var gridToParticlesRigid2PipelineState: MTLComputePipelineState!
-    public var gridToParticlesRigid3PipelineState: MTLComputePipelineState!
-    public var gridToParticlesRigid4PipelineState: MTLComputePipelineState!
+    // Rigid body material compute pipeline states (renamed for clarity)
+    public var accumulateRigidBodyForcesPipelineState: MTLComputePipelineState!
+    public var updateRigidBodyDynamicsPipelineState: MTLComputePipelineState!
+    public var projectRigidBodyParticlesPipelineState: MTLComputePipelineState!
     public var solveRigidBodyCollisionsPipelineState: MTLComputePipelineState! // Collision solver between rigid bodies
     
     // Rigid body state buffer

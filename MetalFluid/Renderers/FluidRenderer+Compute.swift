@@ -30,11 +30,9 @@ extension MPMFluidRenderer {
     }
     
     internal func setupComputePipelinesRigid(library: MTLLibrary) {
-        particlesToGridRigidPipelineState = createComputePipelineState(library: library, functionName: "particlesToGridRigid")
-        gridToParticlesRigid1PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid1")
-        gridToParticlesRigid2PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid2")
-        gridToParticlesRigid3PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid3")
-        gridToParticlesRigid4PipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesRigid4")
+        accumulateRigidBodyForcesPipelineState = createComputePipelineState(library: library, functionName: "accumulateRigidBodyForces")
+        updateRigidBodyDynamicsPipelineState = createComputePipelineState(library: library, functionName: "updateRigidBodyDynamics")
+        projectRigidBodyParticlesPipelineState = createComputePipelineState(library: library, functionName: "projectRigidBodyParticles")
         
         // Optional collision solver (only used if multiple rigid bodies)
         if library.makeFunction(name: "solveRigidBodyCollisions") != nil {
@@ -362,6 +360,11 @@ extension MPMFluidRenderer {
         
         computeSimulation(commandBuffer: commandBuffer)
         
+        // Run rigid body simulation if in rigid body mode
+        if materialParameters.currentMaterialMode == .rigidBody {
+            computeRigidBodySimulation(commandBuffer: commandBuffer)
+        }
+        
         // Add completion handler to swap buffers when the shared command buffer finishes
         // (This will be called when the render pass commits the command buffer)
         commandBuffer.addCompletedHandler { [weak self] _ in
@@ -486,20 +489,8 @@ extension MPMFluidRenderer {
                     computeEncoder.endEncoding()
                 }
             } else { // .rigidBody
-                // Rigid Body P2G: Rigid body material transfer
-                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                    computeEncoder.setComputePipelineState(
-                        particlesToGridRigidPipelineState
-                    )
-                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
-                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
-                    computeEncoder.dispatchThreadgroups(
-                        particleThreadgroups,
-                        threadsPerThreadgroup: particleThreadsPerThreadgroup
-                    )
-                    computeEncoder.endEncoding()
-                }
+                // Rigid body mode: P2G handled separately via dedicated rigid body simulation
+                print("🔶 Rigid body simulation mode - P2G skipped, using projection-based dynamics")
             }
 
             // 3. Update grid velocity - Grid velocity update and boundary condition application
@@ -574,106 +565,97 @@ extension MPMFluidRenderer {
                     computeEncoder.endEncoding()
                 }
             } else { // .rigidBody
-                // Rigid Body G2P Stage 1: Basic G2P transfer (gridToParticlesRigid1)
+                // Rigid body mode: handled separately via dedicated rigid body simulation
+                // G2P is skipped for rigid bodies as they use projection-based dynamics
+                print("🔶 Rigid body simulation mode - G2P skipped, using projection-based dynamics")
+            }
+        }
+    }
+    
+    // MARK: - Rigid Body Simulation
+    
+    internal func computeRigidBodySimulation(commandBuffer: MTLCommandBuffer) {
+        guard materialParameters.currentMaterialMode == .rigidBody else { return }
+        
+        let particleThreadgroupSize = min(256, accumulateRigidBodyForcesPipelineState.maxTotalThreadsPerThreadgroup)
+        let particleThreadgroups = MTLSize(
+            width: (particleCount + particleThreadgroupSize - 1) / particleThreadgroupSize,
+            height: 1,
+            depth: 1
+        )
+        let particleThreadsPerThreadgroup = MTLSize(
+            width: particleThreadgroupSize,
+            height: 1,
+            depth: 1
+        )
+        
+        let rigidBodyCount = 1 // Currently supporting one rigid body
+        
+        // Stage 1: Accumulate forces and torques from particles to rigid bodies
+        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+            computeEncoder.setComputePipelineState(accumulateRigidBodyForcesPipelineState)
+            computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
+            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 2)
+            computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
+            
+            computeEncoder.dispatchThreadgroups(
+                particleThreadgroups,
+                threadsPerThreadgroup: particleThreadsPerThreadgroup
+            )
+            computeEncoder.endEncoding()
+        }
+        
+        // Stage 2: Update rigid body dynamics
+        if rigidBodyCount > 0 {
+            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+                computeEncoder.setComputePipelineState(updateRigidBodyDynamicsPipelineState)
+                computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
+                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+                
+                let rigidBodyThreadgroups = MTLSize(
+                    width: (rigidBodyCount + particleThreadgroupSize - 1) / particleThreadgroupSize,
+                    height: 1,
+                    depth: 1
+                )
+                
+                computeEncoder.dispatchThreadgroups(
+                    rigidBodyThreadgroups,
+                    threadsPerThreadgroup: particleThreadsPerThreadgroup
+                )
+                computeEncoder.endEncoding()
+            }
+            
+            // Collision solve between rigid bodies (only if >1 bodies)
+            if rigidBodyCount > 1, let collisionPSO = solveRigidBodyCollisionsPipelineState {
                 if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                    computeEncoder.setComputePipelineState(
-                        gridToParticlesRigid1PipelineState
-                    )
-                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
+                    computeEncoder.setComputePipelineState(collisionPSO)
+                    computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
                     computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 2)
-                    
-                    // Set collision resources if available
-                    if let collisionManager {
-                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
-                        
-                        if let sdfTexture = collisionManager.getSDFTexture() {
-                            computeEncoder.setTexture(sdfTexture, index: 0)
-                        }
-                    }
-                    
-                    computeEncoder.dispatchThreadgroups(
-                        particleThreadgroups,
-                        threadsPerThreadgroup: particleThreadsPerThreadgroup
-                    )
-                    computeEncoder.endEncoding()
-                }
-                
-                // Rigid Body G2P Stage 2: Accumulate forces and torques (gridToParticlesRigid2)
-                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                    computeEncoder.setComputePipelineState(
-                        gridToParticlesRigid2PipelineState
-                    )
-                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
-                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 2)
-                    computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
-                    
-                    computeEncoder.dispatchThreadgroups(
-                        particleThreadgroups,
-                        threadsPerThreadgroup: particleThreadsPerThreadgroup
-                    )
-                    computeEncoder.endEncoding()
-                }
-                
-                // Rigid Body G2P Stage 3: Update rigid body dynamics (gridToParticlesRigid3)
-                let rigidBodyCount = materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
-                if rigidBodyCount > 0 {
-                    if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                        computeEncoder.setComputePipelineState(
-                            gridToParticlesRigid3PipelineState
-                        )
-                        computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                        computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                        
-                        let rigidBodyThreadgroups = MTLSize(
-                            width: (rigidBodyCount + particleThreadgroupSize - 1) / particleThreadgroupSize,
-                            height: 1,
-                            depth: 1
-                        )
-                        
-                        computeEncoder.dispatchThreadgroups(
-                            rigidBodyThreadgroups,
-                            threadsPerThreadgroup: particleThreadsPerThreadgroup
-                        )
-                        computeEncoder.endEncoding()
-                    }
-
-                    // Collision solve between rigid bodies (only if >1 bodies)
-                    if rigidBodyCount > 1, let collisionPSO = solveRigidBodyCollisionsPipelineState {
-                        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                            computeEncoder.setComputePipelineState(collisionPSO)
-                            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                            let pairCount = rigidBodyCount * (rigidBodyCount - 1) / 2
-                            let tgSize = 64
-                            let tgCount = (pairCount + tgSize - 1) / tgSize
-                            let threadgroups = MTLSize(width: tgCount, height: 1, depth: 1)
-                            let threadsPerGroup = MTLSize(width: tgSize, height: 1, depth: 1)
-                            computeEncoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
-                            computeEncoder.endEncoding()
-                        }
-                    }
-                }
-                
-                // Rigid Body G2P Stage 4: Project particles to maintain rigid body constraints (gridToParticlesRigid4)
-                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                    computeEncoder.setComputePipelineState(
-                        gridToParticlesRigid4PipelineState
-                    )
-                    computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
-                    computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 1)
-                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
-                    // gridToParticlesRigid4 uses the per-particle rigidInfo for initial offsets
-                    computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
-                    
-                    computeEncoder.dispatchThreadgroups(
-                        particleThreadgroups,
-                        threadsPerThreadgroup: particleThreadsPerThreadgroup
-                    )
+                    let pairCount = rigidBodyCount * (rigidBodyCount - 1) / 2
+                    let tgSize = 64
+                    let tgCount = (pairCount + tgSize - 1) / tgSize
+                    let threadgroups = MTLSize(width: tgCount, height: 1, depth: 1)
+                    let threadsPerGroup = MTLSize(width: tgSize, height: 1, depth: 1)
+                    computeEncoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
                     computeEncoder.endEncoding()
                 }
             }
+        }
+        
+        // Stage 3: Project particles to maintain rigid body constraints
+        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
+            computeEncoder.setComputePipelineState(projectRigidBodyParticlesPipelineState)
+            computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
+            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 1)
+            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
+            computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
+            
+            computeEncoder.dispatchThreadgroups(
+                particleThreadgroups,
+                threadsPerThreadgroup: particleThreadsPerThreadgroup
+            )
+            computeEncoder.endEncoding()
         }
     }
     

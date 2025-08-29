@@ -4,28 +4,7 @@
 using namespace metal;
 
 // MARK: - Rigid Body Material Functions
-// Rigid Body Particle to Grid Transfer (P2G) - Clean MPM transfer only
-kernel void particlesToGridRigid(
-                                device MPMParticle* particles [[buffer(0)]],
-                                constant ComputeShaderUniforms& uniforms [[buffer(1)]],
-                                device MPMGridNode* grid [[buffer(2)]],
-                                uint id [[thread_position_in_grid]]
-                                ) {
-    if (id >= uniforms.particleCount) return;
-    // noop
-}
-// Rigid Body Grid to Particle Transfer (G2P)
-kernel void gridToParticlesRigid1(
-                                device MPMParticle* particles [[buffer(0)]],
-                                constant ComputeShaderUniforms& uniforms [[buffer(1)]],
-                                device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                                texture3d<float> sdfTexture [[texture(0)]],
-                                constant CollisionUniforms& collision [[buffer(3)]],
-                                uint id [[thread_position_in_grid]]
-                                ) {
-    if (id >= uniforms.particleCount) return;
-    //noop
-}
+// Note: P2G and G2P Stage 1 kernels have been removed as they contained only noop implementations
 
 // ==============================================
 // RIGID BODY PROJECTION SYSTEM
@@ -71,7 +50,7 @@ inline float4 integrateAngularVelocity(float4 q, float3 omega, float dt) {
 }
 
 // Stage 1: Accumulate forces and torques from particles to rigid bodies using atomic operations
-kernel void gridToParticlesRigid2(
+kernel void accumulateRigidBodyForces(
     device const MPMParticle* particles [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     device RigidBodyState* rigidBodies [[buffer(2)]],
@@ -83,7 +62,7 @@ kernel void gridToParticlesRigid2(
 }
 
 // Stage 2: Update rigid body dynamics (one thread per rigid body)
-kernel void gridToParticlesRigid3(
+kernel void updateRigidBodyDynamics(
     device RigidBodyState* rigidBodies [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     uint id [[thread_position_in_grid]]
@@ -143,7 +122,7 @@ kernel void gridToParticlesRigid3(
 }
 
 // Stage 3: Project particles to maintain rigid body constraints
-kernel void gridToParticlesRigid4(
+kernel void projectRigidBodyParticles(
     device MPMParticle* particles [[buffer(0)]],
     device const RigidBodyState* rigidBodies [[buffer(1)]],
     constant ComputeShaderUniforms& uniforms [[buffer(2)]],
