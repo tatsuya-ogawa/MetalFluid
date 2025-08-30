@@ -344,6 +344,23 @@ extension MPMFluidRenderer {
             self?.endComputeAndSwapToRender()
         }
     }
+    // Set up SDF argument buffer with collision resources
+    private func setupSdfArgumentBufferForCompute(computeEncoder: MTLComputeCommandEncoder, collisionManager: CollisionManager) {
+        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
+        for i in 0..<collisionManager.items.count {
+            let tex = collisionManager.items[i].getSDFTexture()!
+            argumentEncoder.setTexture(tex, index: i)
+            computeEncoder.useResource(tex, usage: .read)
+            // Set collision uniforms in argument buffer at index 1
+            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
+            // Set accumulator buffer at index 2*MAX + i (use shared accumulator 0 for now)
+            if let accBuf = sdfImpulseAccumulatorBuffer {
+                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
+            }
+        }
+        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
+    }
+    
     // Lazy init & reuse of SDF argument buffer (avoid per-dispatch creation cost)    
     internal func ensureSdfArgumentBuffer() -> (MTLBuffer, MTLArgumentEncoder) {
         if let sdfArgumentEncoder, let sdfArgumentBuffer{
@@ -703,19 +720,7 @@ extension MPMFluidRenderer {
                     
                     // Set collision resources if available
                     if let collisionManager {
-                        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
-                        for i in 0..<collisionManager.items.count {
-                            let tex = collisionManager.items[i].getSDFTexture()!
-                            argumentEncoder.setTexture(tex, index: i)
-                            computeEncoder.useResource(tex, usage: .read)
-                            // Set collision uniforms in argument buffer at index 1
-                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
-                            // Set accumulator buffer at index 2*MAX + i (use shared accumulator 0 for now)
-                            if let accBuf = sdfImpulseAccumulatorBuffer {
-                                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
-                            }
-                        }
-                        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
+                        setupSdfArgumentBufferForCompute(computeEncoder: computeEncoder, collisionManager: collisionManager)
                         // No direct accumulator binding; provided via argument buffer
                     }
                     
@@ -737,18 +742,7 @@ extension MPMFluidRenderer {
                     
                     // Set collision resources if available
                     if let collisionManager {
-                        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
-                        for i in 0..<collisionManager.items.count {
-                            let tex = collisionManager.items[i].getSDFTexture()!
-                            argumentEncoder.setTexture(tex, index: i)
-                            computeEncoder.useResource(tex, usage: .read)
-                            // Set collision uniforms in argument buffer at index 1
-                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
-                            if let accBuf = sdfImpulseAccumulatorBuffer {
-                                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
-                            }
-                        }                        
-                        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
+                        setupSdfArgumentBufferForCompute(computeEncoder: computeEncoder, collisionManager: collisionManager)
                         // No direct accumulator binding
                     }
                     
