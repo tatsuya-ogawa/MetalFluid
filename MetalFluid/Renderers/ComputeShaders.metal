@@ -502,7 +502,7 @@ kernel void gridToParticlesElastic(
     if(true){  // Enable fixed impulse-based collision for testing
         // Enhanced SDF collision using improved impulse-based approach
         // This version combines immediate position correction with velocity impulse
-        float3 collisionImpulse = computeParticleSDFCollisionImpulseWithPositionFix(
+        float3 collisionImpulse = computeParticleSDFCollisionImpulse(
             particles[id].position,  // Position is modified directly in the function
             particles[id].velocity,
             particles[id].mass,
@@ -523,19 +523,19 @@ kernel void gridToParticlesElastic(
             
             // Method 1: Immediate local influence on nearby particles
             // This simulates the SDF object being "pushed" and affecting surrounding fluid
-            for (int i = max(0, int(id) - 8); i < min(int(uniforms.particleCount), int(id) + 8); i++) {
-                if (i == int(id)) continue;
-                
-                float3 offset = particles[i].position - particles[id].position;
-                float distance = length(offset);
-                
-                if (distance < influenceRadius && distance > 0.001) {
-                    float influence = (influenceRadius - distance) / influenceRadius;
-                    // Scale reaction based on impulse strength and distance
-                    float3 pushForce = reactionDirection * impulseStrength * influence * 0.15;
-                    particles[i].velocity += pushForce;
-                }
-            }
+//            for (int i = max(0, int(id) - 8); i < min(int(uniforms.particleCount), int(id) + 8); i++) {
+//                if (i == int(id)) continue;
+//                
+//                float3 offset = particles[i].position - particles[id].position;
+//                float distance = length(offset);
+//                
+//                if (distance < influenceRadius && distance > 0.001) {
+//                    float influence = (influenceRadius - distance) / influenceRadius;
+//                    // Scale reaction based on impulse strength and distance
+//                    float3 pushForce = reactionDirection * impulseStrength * influence * 0.15;
+//                    particles[i].velocity += pushForce;
+//                }
+//            }
             
             // Method 2: Velocity field modification to simulate SDF object movement
             // Add a velocity contribution that simulates the SDF object moving away

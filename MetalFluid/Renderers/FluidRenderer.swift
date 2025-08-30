@@ -794,6 +794,8 @@ class MPMFluidRenderer: NSObject {
     
     // For interaction (add force on tap)
     func addForce(at position: SIMD2<Float>, force: SIMD2<Float>) {
+        return
+        //FIXME private GPU
         // Always apply force to compute buffer (active simulation data)
         let particlePointer = computeParticleBuffer.contents().bindMemory(
             to: MPMParticle.self,
