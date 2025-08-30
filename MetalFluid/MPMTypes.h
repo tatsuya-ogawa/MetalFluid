@@ -18,10 +18,15 @@ typedef struct {
     float3 velocity;        // Velocity
     metal::float3x3 C;            // Affine momentum matrix
     float mass;           // Mass
-//    float volume;         // Volume
-//    float Jp;             // Plastic deformation determinant
-//    float3 color;         // Rendering color
+    uint32_t originalIndex; // Original particle index (used to fetch unsorted rigid info)
+    // Rigid-related fields moved to separate struct MPMParticleRigidInfo
 } MPMParticle;
+
+// Rigid-related particle info stored separately for compact particle arrays
+typedef struct {
+    uint32_t rigidId;     // Rigid body ID (0 = no rigid body, >0 = rigid body index)
+    float3 initialOffset; // Initial relative position from rigid body center of mass
+} MPMParticleRigidInfo;
 
 // MLS-MPM grid node struct (shared between Swift and Metal)
 typedef struct {
@@ -36,6 +41,26 @@ typedef struct {
     MPM_NON_ATOMIC_FLOAT velocity_z;      // atomic<float> velocity_z (Metal) / float (Swift)
     MPM_NON_ATOMIC_FLOAT mass;           // atomic<float> mass (Metal) / float (Swift)
 } NonAtomicMPMGridNode;
+
+// Rigid body state for complete rigid body dynamics
+typedef struct {
+    simd_float3 centerOfMass;          // Center of mass position
+    simd_float3 linearVelocity;        // Linear velocity
+    simd_float3 angularVelocity;       // Angular velocity
+    float4 orientation;                // Orientation quaternion (x, y, z, w)
+    float totalMass;                   // Total mass of rigid body
+    simd_float3x3 invInertiaTensor;    // Inverse inertia tensor (world space)
+    simd_float3 accumulatedForce;      // Accumulated force for this frame
+    simd_float3 accumulatedTorque;     // Accumulated torque for this frame
+    uint32_t particleCount;            // Number of particles in this rigid body
+    uint32_t isActive;                 // 1 if active, 0 if inactive
+    float linearDamping;               // Linear damping coefficient
+    float angularDamping;              // Angular damping coefficient
+    float restitution;                 // Coefficient of restitution
+    float friction;                    // Friction coefficient
+    float3 halfExtents;           // Local half extents (AABB in rest pose)
+    float boundingRadius;              // Bounding sphere radius
+} RigidBodyState;
 
 // Compute shader specific uniforms
 typedef struct {
@@ -53,11 +78,26 @@ typedef struct {
     float dynamic_viscosity; // Dynamic viscosity parameter
     float massScale;       // Mass scaling factor for particles
     uint32_t timeSalt;
+    uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic, 2: rigid body
+    float youngsModulus;       // Young's modulus for elastic material
+    float poissonsRatio;       // Poisson's ratio for elastic material
+    uint32_t rigidBodyCount;   // Number of active rigid bodies
 } ComputeShaderUniforms;
+
+// Collision detection uniforms
+typedef struct {
+    simd_float3 sdfOrigin;        // SDF volume origin in world space
+    simd_float3 sdfSize;          // SDF volume size
+    simd_int3 sdfResolution;      // SDF texture resolution
+    float collisionStiffness;     // Collision response strength
+    float collisionDamping;       // Velocity damping on collision
+    uint32_t enableCollision;     // Enable/disable collision detection
+    simd_float4x4 collisionTransform;  // Transform matrix (scale, rotation, translation)
+    simd_float4x4 collisionInvTransform; // Inverse transform matrix for world->mesh space
+} CollisionUniforms;
 
 // Vertex shader specific uniforms
 typedef struct {
-    simd_float4x4 mvpMatrix;
     simd_float4x4 projectionMatrix;
     simd_float4x4 viewMatrix;
     float gridSpacing;
@@ -77,5 +117,10 @@ typedef struct {
     simd_float4x4 viewMatrix;
     simd_float4x4 invViewMatrix;
 } FluidRenderUniforms;
+
+// Collision mesh rendering uniforms
+typedef struct {
+    simd_float4 meshColor;
+} CollisionMeshUniforms;
 
 #endif /* MPMTypes_h */

@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"
+#include "../MPMTypes.h"
 using namespace metal;
 
 // ===== ONE-SWEEP RADIX SORT IMPLEMENTATION =====
@@ -236,6 +236,7 @@ kernel void reorderParticlesRadix(
     // Bounds check for safety
     if (originalIndex < numParticles) {
         outputParticles[id] = inputParticles[originalIndex];
+    // Do not reorder rigid info; particles contain originalIndex to fetch rigid info
     }
 }
 

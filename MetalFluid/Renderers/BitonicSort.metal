@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"  // Get struct definitions from shared header file
+#include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
 
 // ===== BITONIC SORT IMPLEMENTATION =====
@@ -89,6 +89,8 @@ kernel void reorderParticles(
     // Bounds check for safety
     if (originalIndex < numParticles) {
         outputParticles[id] = inputParticles[originalIndex];
+        // Note: do not reorder rigid info. Particles store originalIndex and rigid info
+        // should be fetched via that index. This keeps rigid info in place (unsorted).
     }
 }
 

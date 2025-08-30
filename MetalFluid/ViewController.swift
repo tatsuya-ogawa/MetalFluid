@@ -25,10 +25,13 @@ class ViewController: UIViewController {
     // Simulation control
     private var isAutoMode: Bool = true
     private var shouldStep: Bool = false
+    
+    // Wireframe state tracking
+    private var isWireframeMode: Bool = false
 
     // Initial values (shared between sliders and FluidRenderer)
-    private let initialParticleCount: Float = 40000
-    private let initialGridSize: Float = 48
+    private let initialParticleCount: Float = 1000
+    private let initialGridSize: Float = 64
     private let initialGridHeightMultiplier: Float = 1.5
 
     // UI Elements
@@ -45,11 +48,24 @@ class ViewController: UIViewController {
     private var particleCountLabel: UILabel!
     private var gridSizeSlider: UISlider!
     private var gridSizeLabel: UILabel!
+    private var sdfScaleSlider: UISlider!
+    private var sdfScaleLabel: UILabel!
+    private var sdfYOffsetSlider: UISlider!
+    private var sdfYOffsetLabel: UILabel!
+    private var sdfYRotationSlider: UISlider!
+    private var sdfYRotationLabel: UILabel!
+    
+    // Collision controls panel (right side)
+    private var collisionPanel: UIView!
+    private var collisionToggleButton: UIButton!
+    private var meshVisibilityButton: UIButton!
+    private var wireframeButton: UIButton!
+    private var materialModeButton: UIButton!
     
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
     private var isRecording = false
-
+    private let meshLoader: MeshLoader = MeshLoader(scaleFactor: 100.0)
     override func viewDidLoad() {
         super.viewDidLoad()
         let env = ProcessInfo.processInfo.environment
@@ -61,6 +77,7 @@ class ViewController: UIViewController {
         setupRenderer()
         setupGestures()
         setupControlPanel()
+        setupCollisionPanel()
         setupKeyboardHandling()
     }
 
@@ -99,6 +116,54 @@ class ViewController: UIViewController {
             gridSize: Int(initialGridSize), 
             gridHeightMultiplier: initialGridHeightMultiplier
         )
+        
+        // Load Stanford Bunny for collision detection
+        setupCollisionMesh()
+    }
+    // MARK: - Mesh Loading
+    /// Load Stanford Bunny asynchronously
+    private func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
+        meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if triangles.isEmpty {
+                print("No triangles loaded from Stanford Bunny")
+                completion(false)
+                return
+            }
+            
+            self.fluidRenderer.collisionManager?.processAndGenerateSDF(triangles: triangles, resolution: resolution, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            completion(true)
+        }
+    }
+    
+    private func setupCollisionMesh() {
+        // Get grid boundary to position bunny correctly
+        let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
+        
+        // Use fixed SDF resolution (64x64x64) instead of world resolution
+        // The collision system will handle scaling and transformation automatically
+        let fixedSDFResolution = SIMD3<Int32>(64, 64, 64)
+        
+        // Load Stanford Bunny asynchronously (with caching)
+        loadStanfordBunnyAsync(
+            resolution: fixedSDFResolution,
+            gridBoundaryMin: boundaryMin,
+            gridBoundaryMax: boundaryMax
+        ) { [weak self] success in
+            if success {
+                print("✅ Stanford Bunny loaded successfully!")
+                // Configure collision visualization
+                self?.fluidRenderer.collisionManager?.setMeshVisible(true)
+                self?.fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent white
+                print("🐰 Stanford Bunny collision mesh configured!")
+            } else {
+                print("❌ Failed to load Stanford Bunny. Collision detection disabled.")
+            }
+        }
     }
 
     private func setupGestures() {
@@ -190,6 +255,18 @@ class ViewController: UIViewController {
             action: #selector(toggleRenderMode),
             for: .touchUpInside
         )
+
+        // Material mode button
+        materialModeButton = UIButton(type: .system)
+        materialModeButton.setTitle("Fluid", for: .normal)
+        materialModeButton.setTitleColor(.white, for: .normal)
+        materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        materialModeButton.layer.cornerRadius = 8
+        materialModeButton.addTarget(
+            self,
+            action: #selector(toggleMaterialMode),
+            for: .touchUpInside
+        )
         
         // Particle size slider
         particleSizeSlider = UISlider()
@@ -230,7 +307,7 @@ class ViewController: UIViewController {
         // Particle count slider
         particleCountSlider = UISlider()
         particleCountSlider.minimumValue = 1000
-        particleCountSlider.maximumValue = 300000
+        particleCountSlider.maximumValue = 400000
         particleCountSlider.value = initialParticleCount
         particleCountSlider.addTarget(
             self,
@@ -262,12 +339,67 @@ class ViewController: UIViewController {
         gridSizeLabel.textColor = .white
         gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
         gridSizeLabel.textAlignment = .center
+        
+        // SDF scale slider
+        sdfScaleSlider = UISlider()
+        sdfScaleSlider.minimumValue = 1.0
+        sdfScaleSlider.maximumValue = 3.0
+        sdfScaleSlider.value = 1.0
+        sdfScaleSlider.addTarget(
+            self,
+            action: #selector(sdfScaleChanged),
+            for: .valueChanged
+        )
+        
+        // SDF scale label
+        sdfScaleLabel = UILabel()
+        sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", sdfScaleSlider.value)
+        sdfScaleLabel.textColor = .white
+        sdfScaleLabel.font = UIFont.systemFont(ofSize: 14)
+        sdfScaleLabel.textAlignment = .center
+        
+        // SDF Y offset slider
+        sdfYOffsetSlider = UISlider()
+        sdfYOffsetSlider.minimumValue = -50.0
+        sdfYOffsetSlider.maximumValue = 50.0
+        sdfYOffsetSlider.value = 0.0
+        sdfYOffsetSlider.addTarget(
+            self,
+            action: #selector(sdfYOffsetChanged),
+            for: .valueChanged
+        )
+        
+        // SDF Y offset label
+        sdfYOffsetLabel = UILabel()
+        sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", sdfYOffsetSlider.value)
+        sdfYOffsetLabel.textColor = .white
+        sdfYOffsetLabel.font = UIFont.systemFont(ofSize: 14)
+        sdfYOffsetLabel.textAlignment = .center
+        
+        // SDF Y rotation slider
+        sdfYRotationSlider = UISlider()
+        sdfYRotationSlider.minimumValue = 0.0
+        sdfYRotationSlider.maximumValue = 360.0
+        sdfYRotationSlider.value = 0.0
+        sdfYRotationSlider.addTarget(
+            self,
+            action: #selector(sdfYRotationChanged),
+            for: .valueChanged
+        )
+        
+        // SDF Y rotation label
+        sdfYRotationLabel = UILabel()
+        sdfYRotationLabel.text = String(format: "SDF Y Rotation: %.0f°", sdfYRotationSlider.value)
+        sdfYRotationLabel.textColor = .white
+        sdfYRotationLabel.font = UIFont.systemFont(ofSize: 14)
+        sdfYRotationLabel.textAlignment = .center
 
         // Add buttons to control panel
         controlPanel.addSubview(modeButton)
         controlPanel.addSubview(stepButton)
         controlPanel.addSubview(resetButton)
         controlPanel.addSubview(renderModeButton)
+        controlPanel.addSubview(materialModeButton)
         controlPanel.addSubview(particleSizeSlider)
         controlPanel.addSubview(particleSizeLabel)
         controlPanel.addSubview(massScaleSlider)
@@ -276,6 +408,12 @@ class ViewController: UIViewController {
         controlPanel.addSubview(particleCountLabel)
         controlPanel.addSubview(gridSizeSlider)
         controlPanel.addSubview(gridSizeLabel)
+        controlPanel.addSubview(sdfScaleSlider)
+        controlPanel.addSubview(sdfScaleLabel)
+        controlPanel.addSubview(sdfYOffsetSlider)
+        controlPanel.addSubview(sdfYOffsetLabel)
+        controlPanel.addSubview(sdfYRotationSlider)
+        controlPanel.addSubview(sdfYRotationLabel)
 
         // Setup constraints
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
@@ -283,6 +421,7 @@ class ViewController: UIViewController {
         stepButton.translatesAutoresizingMaskIntoConstraints = false
         resetButton.translatesAutoresizingMaskIntoConstraints = false
         renderModeButton.translatesAutoresizingMaskIntoConstraints = false
+        materialModeButton.translatesAutoresizingMaskIntoConstraints = false
         particleSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
         massScaleSlider.translatesAutoresizingMaskIntoConstraints = false
@@ -291,6 +430,12 @@ class ViewController: UIViewController {
         particleCountLabel.translatesAutoresizingMaskIntoConstraints = false
         gridSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
+        sdfScaleSlider.translatesAutoresizingMaskIntoConstraints = false
+        sdfScaleLabel.translatesAutoresizingMaskIntoConstraints = false
+        sdfYOffsetSlider.translatesAutoresizingMaskIntoConstraints = false
+        sdfYOffsetLabel.translatesAutoresizingMaskIntoConstraints = false
+        sdfYRotationSlider.translatesAutoresizingMaskIntoConstraints = false
+        sdfYRotationLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // Control panel constraints
@@ -364,9 +509,24 @@ class ViewController: UIViewController {
             ),
             renderModeButton.heightAnchor.constraint(equalToConstant: 40),
             
+            // Material mode button constraints
+            materialModeButton.topAnchor.constraint(
+                equalTo: renderModeButton.bottomAnchor,
+                constant: 10
+            ),
+            materialModeButton.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            materialModeButton.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            materialModeButton.heightAnchor.constraint(equalToConstant: 40),
+            
             // Particle size label constraints
             particleSizeLabel.topAnchor.constraint(
-                equalTo: renderModeButton.bottomAnchor,
+                equalTo: materialModeButton.bottomAnchor,
                 constant: 10
             ),
             particleSizeLabel.leadingAnchor.constraint(
@@ -484,13 +644,223 @@ class ViewController: UIViewController {
             ),
             gridSizeSlider.heightAnchor.constraint(equalToConstant: 30),
             
+            // SDF scale label constraints
+            sdfScaleLabel.topAnchor.constraint(
+                equalTo: gridSizeSlider.bottomAnchor,
+                constant: 10
+            ),
+            sdfScaleLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfScaleLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfScaleLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // SDF scale slider constraints
+            sdfScaleSlider.topAnchor.constraint(
+                equalTo: sdfScaleLabel.bottomAnchor,
+                constant: 5
+            ),
+            sdfScaleSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfScaleSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfScaleSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // SDF Y offset label constraints
+            sdfYOffsetLabel.topAnchor.constraint(
+                equalTo: sdfScaleSlider.bottomAnchor,
+                constant: 10
+            ),
+            sdfYOffsetLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYOffsetLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYOffsetLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // SDF Y offset slider constraints
+            sdfYOffsetSlider.topAnchor.constraint(
+                equalTo: sdfYOffsetLabel.bottomAnchor,
+                constant: 5
+            ),
+            sdfYOffsetSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYOffsetSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYOffsetSlider.heightAnchor.constraint(equalToConstant: 30),
+            
+            // SDF Y rotation label constraints
+            sdfYRotationLabel.topAnchor.constraint(
+                equalTo: sdfYOffsetSlider.bottomAnchor,
+                constant: 10
+            ),
+            sdfYRotationLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYRotationLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYRotationLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // SDF Y rotation slider constraints
+            sdfYRotationSlider.topAnchor.constraint(
+                equalTo: sdfYRotationLabel.bottomAnchor,
+                constant: 5
+            ),
+            sdfYRotationSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYRotationSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYRotationSlider.heightAnchor.constraint(equalToConstant: 30),
+            
             // Bottom constraint to define controlPanel height
             controlPanel.bottomAnchor.constraint(
-                equalTo: gridSizeSlider.bottomAnchor,
+                equalTo: sdfYRotationSlider.bottomAnchor,
                 constant: 10
             ),
         ])
     }
+    
+    private func setupCollisionPanel() {
+        // Create collision control panel (right side)
+        collisionPanel = UIView()
+        collisionPanel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        collisionPanel.layer.cornerRadius = 10
+        view.addSubview(collisionPanel)
+        
+        // Collision toggle button
+        collisionToggleButton = UIButton(type: .system)
+        collisionToggleButton.setTitle("Collision: ON", for: .normal)
+        collisionToggleButton.setTitleColor(.white, for: .normal)
+        collisionToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        collisionToggleButton.layer.cornerRadius = 8
+        collisionToggleButton.addTarget(
+            self,
+            action: #selector(toggleCollision),
+            for: .touchUpInside
+        )
+                
+        // Mesh visibility button
+        meshVisibilityButton = UIButton(type: .system)
+        meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
+        meshVisibilityButton.setTitleColor(.white, for: .normal)
+        meshVisibilityButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        meshVisibilityButton.layer.cornerRadius = 8
+        meshVisibilityButton.addTarget(
+            self,
+            action: #selector(toggleMeshVisibility),
+            for: .touchUpInside
+        )
+        
+        // Wireframe toggle button
+        wireframeButton = UIButton(type: .system)
+        wireframeButton.setTitle("Wireframe", for: .normal)
+        wireframeButton.setTitleColor(.white, for: .normal)
+        wireframeButton.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.8)
+        wireframeButton.layer.cornerRadius = 8
+        wireframeButton.addTarget(
+            self,
+            action: #selector(toggleWireframe),
+            for: .touchUpInside
+        )
+        
+        // Add buttons to collision panel
+        collisionPanel.addSubview(collisionToggleButton)
+        collisionPanel.addSubview(meshVisibilityButton)
+        collisionPanel.addSubview(wireframeButton)
+        
+        // Setup constraints
+        collisionPanel.translatesAutoresizingMaskIntoConstraints = false
+        collisionToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        meshVisibilityButton.translatesAutoresizingMaskIntoConstraints = false
+        wireframeButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            // Collision panel constraints (right side)
+            collisionPanel.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 20
+            ),
+            collisionPanel.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -20
+            ),
+            collisionPanel.widthAnchor.constraint(equalToConstant: 200),
+            
+            // Collision toggle button constraints
+            collisionToggleButton.topAnchor.constraint(
+                equalTo: collisionPanel.topAnchor,
+                constant: 10
+            ),
+            collisionToggleButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            collisionToggleButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            collisionToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Mesh visibility button constraints
+            meshVisibilityButton.topAnchor.constraint(
+                equalTo: collisionToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            meshVisibilityButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            meshVisibilityButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            meshVisibilityButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Wireframe button constraints
+            wireframeButton.topAnchor.constraint(
+                equalTo: meshVisibilityButton.bottomAnchor,
+                constant: 10
+            ),
+            wireframeButton.leadingAnchor.constraint(
+                equalTo: collisionPanel.leadingAnchor,
+                constant: 10
+            ),
+            wireframeButton.trailingAnchor.constraint(
+                equalTo: collisionPanel.trailingAnchor,
+                constant: -10
+            ),
+            wireframeButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Bottom constraint to define collision panel height
+            collisionPanel.bottomAnchor.constraint(
+                equalTo: wireframeButton.bottomAnchor,
+                constant: 10
+            ),
+        ])
+    }
+    
     @objc private func particleSizeChanged(_ slider: UISlider) {
         let size = slider.value
         particleSizeLabel.text = String(format: "Size: %.1fx", size)
@@ -515,6 +885,24 @@ class ViewController: UIViewController {
         fluidRenderer.setGridSize(size)
     }
     
+    @objc private func sdfScaleChanged(_ slider: UISlider) {
+        let scale = slider.value
+        sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", scale)
+        fluidRenderer.collisionManager?.meshScale = scale
+    }
+    
+    @objc private func sdfYOffsetChanged(_ slider: UISlider) {
+        let offset = slider.value
+        sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", offset)
+        fluidRenderer.collisionManager?.meshYOffset = offset
+    }
+    
+    @objc private func sdfYRotationChanged(_ slider: UISlider) {
+        let rotation = slider.value
+        sdfYRotationLabel.text = String(format: "SDF Y Rotation: %.0f°", rotation)
+        fluidRenderer.collisionManager?.meshYRotation = rotation
+    }
+    
     @objc private func toggleRenderMode() {
         guard let renderer = fluidRenderer else { return }
         renderer.toggleRenderMode()
@@ -528,6 +916,30 @@ class ViewController: UIViewController {
             renderModeButton.setTitle("Water", for: .normal)
             renderModeButton.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.8)
         }
+    }
+
+    @objc private func toggleMaterialMode() {
+        guard let renderer = fluidRenderer else { return }
+        
+        // Cycle through material modes
+        switch renderer.materialParameters.currentMaterialMode {
+        case .fluid:
+            renderer.materialParameters.currentMaterialMode = .neoHookeanElastic
+            materialModeButton.setTitle("Elastic", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.8)
+        case .neoHookeanElastic:
+            renderer.materialParameters.currentMaterialMode = .rigidBody
+            materialModeButton.setTitle("Rigid Body", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemBrown.withAlphaComponent(0.8)
+        case .rigidBody:
+            renderer.materialParameters.currentMaterialMode = .fluid
+            materialModeButton.setTitle("Fluid", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        }
+        
+        // Reset simulation when material mode changes
+        renderer.reset()
+        print("🔄 Material mode changed to: \(renderer.materialParameters.currentMaterialMode)")
     }
 
     @objc private func toggleMode() {
@@ -557,6 +969,53 @@ class ViewController: UIViewController {
 
     @objc private func resetSimulation() {
         fluidRenderer.reset()
+    }
+    
+    // MARK: - Collision Control Actions
+    
+    @objc private func toggleCollision() {
+        guard let isEnabled = fluidRenderer.collisionManager?.isEnabled() else {
+            return
+        }
+        fluidRenderer.collisionManager?.setEnabled(!isEnabled)
+        
+        if !isEnabled{
+            collisionToggleButton.setTitle("Collision: ON", for: .normal)
+            collisionToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        } else {
+            collisionToggleButton.setTitle("Collision: OFF", for: .normal)
+            collisionToggleButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.8)
+        }
+    }
+        
+    @objc private func toggleMeshVisibility() {
+        guard let isVisible = fluidRenderer.collisionManager?.isMeshVisible() else {
+            return
+        }
+        fluidRenderer.collisionManager?.setMeshVisible(!isVisible)
+        
+        if !isVisible {
+            meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
+            meshVisibilityButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
+        } else {
+            meshVisibilityButton.setTitle("Mesh: OFF", for: .normal)
+            meshVisibilityButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+    }
+    
+    @objc private func toggleWireframe() {
+        // Toggle between wireframe and solid rendering
+        isWireframeMode.toggle()
+        
+        fluidRenderer.collisionManager?.setMeshWireframe(isWireframeMode)
+        
+        if isWireframeMode {
+            wireframeButton.setTitle("Solid", for: .normal)
+            wireframeButton.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.8)
+        } else {
+            wireframeButton.setTitle("Wireframe", for: .normal)
+            wireframeButton.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.8)
+        }
     }
 
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
@@ -651,11 +1110,53 @@ class ViewController: UIViewController {
         )
     }
 }
-// Translation matrix extension
+// Matrix extension for collision transforms
 extension float4x4 {
     init(translation t: SIMD3<Float>) {
         self = matrix_identity_float4x4
         columns.3 = SIMD4<Float>(t.x, t.y, t.z, 1)
+    }
+    
+    init(scaling scale: SIMD3<Float>) {
+        self.init(
+            SIMD4<Float>(scale.x, 0, 0, 0),
+            SIMD4<Float>(0, scale.y, 0, 0),
+            SIMD4<Float>(0, 0, scale.z, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationX angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(1, 0, 0, 0),
+            SIMD4<Float>(0, c, s, 0),
+            SIMD4<Float>(0, -s, c, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationY angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(c, 0, -s, 0),
+            SIMD4<Float>(0, 1, 0, 0),
+            SIMD4<Float>(s, 0, c, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
+    }
+    
+    init(rotationZ angle: Float) {
+        let c = cos(angle)
+        let s = sin(angle)
+        self.init(
+            SIMD4<Float>(c, s, 0, 0),
+            SIMD4<Float>(-s, c, 0, 0),
+            SIMD4<Float>(0, 0, 1, 0),
+            SIMD4<Float>(0, 0, 0, 1)
+        )
     }
 }
 
@@ -670,7 +1171,7 @@ extension ViewController: MTKViewDelegate {
         lastFrameTime = currentTime
 
         // Only compute at 10fps equivalent
-        let computeInterval: CFTimeInterval = 0.1  // 10fps
+        let computeInterval: CFTimeInterval = 0.05  // 20fps
         var performStep = isAutoMode || shouldStep
         if isAutoMode {
             if currentTime - lastComputeTime < computeInterval {
@@ -702,14 +1203,11 @@ extension ViewController: MTKViewDelegate {
         
         // Complete view matrix including scale and translation
         let viewMatrix = baseViewMatrix * scaleMatrix * translateMatrix
-        let mvpMatrix = projectionMatrix * viewMatrix
-
         // Update simulation based on mode
         if performStep {
             fluidRenderer.update(
                 deltaTime: deltaTime,
                 screenSize: screenSize,
-                mvpMatrix: mvpMatrix,
                 projectionMatrix: projectionMatrix,
                 viewMatrix: viewMatrix
             )

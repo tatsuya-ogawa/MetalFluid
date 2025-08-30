@@ -30,5 +30,11 @@
 			<string>UIKeyModifierShift</string>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to display AR background and detect real world surfaces for fluid simulation.</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arkit</string>
+	</array>
 </dict>
 </plist>

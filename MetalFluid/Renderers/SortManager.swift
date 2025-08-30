@@ -1,13 +1,77 @@
 //
-//  Untitled.swift
+//  SortManager.swift
 //  MetalFluid
 //
-//  Created by Tatsuya Ogawa on 2025/08/17.
+//  Created by Tatsuya Ogawa on 2025/08/27.
 //
+
 import Metal
 import MetalKit
 import simd
-extension MPMFluidRenderer{
+
+class SortManager {
+    private let device: MTLDevice
+    private let commandQueue: MTLCommandQueue
+    
+    // Bitonic sort pipeline states
+    internal var extractSortKeysPipelineState: MTLComputePipelineState!
+    internal var bitonicSortPipelineState: MTLComputePipelineState!
+    internal var reorderParticlesPipelineState: MTLComputePipelineState!
+    internal var verifySortPipelineState: MTLComputePipelineState!
+    
+    // Radix sort pipeline states
+    internal var extractSortKeysRadixPipelineState: MTLComputePipelineState!
+    internal var radixSortPassPipelineState: MTLComputePipelineState!
+    internal var radixSortLocalPipelineState: MTLComputePipelineState!
+    internal var initializeRadixHistogramPipelineState: MTLComputePipelineState!
+    internal var computePrefixSumsPipelineState: MTLComputePipelineState!
+    internal var reorderParticlesRadixPipelineState: MTLComputePipelineState!
+    internal var verifyRadixSortPipelineState: MTLComputePipelineState!
+    
+    // Bitonic sort buffers
+    internal var sortKeysBuffer: MTLBuffer!
+    internal var sortedParticleBuffer: MTLBuffer!
+    
+    // Radix sort buffers
+    internal var radixSortKeysBuffer: MTLBuffer!
+    internal var radixTempKeysBuffer: MTLBuffer!
+    internal var radixHistogramBuffer: MTLBuffer!
+    internal var radixSortedParticleBuffer: MTLBuffer!
+    
+    // Sort constants
+    internal var maxThreadsPerGroup: Int = 256
+    
+    // Particle sorting configuration
+    public var enableParticleSorting: Bool = false
+    public var sortingFrequency: Int = 4  // Sort every N frames
+    public var currentSortingAlgorithm: SortingAlgorithm = .radixSort
+    
+    private var particleCount: Int
+    
+    init(device: MTLDevice, commandQueue: MTLCommandQueue, particleCount: Int) {
+        self.device = device
+        self.commandQueue = commandQueue
+        self.particleCount = particleCount
+        
+        setupBitonicSortPipelines()
+        setupRadixSortPipelines()
+        setupBitonicSortBuffers()
+        setupRadixSortBuffers()
+    }
+    
+    // MARK: - Buffer Updates
+    
+    func updateParticleCount(_ newCount: Int) {
+        guard newCount != particleCount else { return }
+        
+        particleCount = newCount
+        setupBitonicSortBuffers()
+        setupRadixSortBuffers()
+        print("🔢 SortManager: Particle count updated to \(particleCount)")
+    }
+    
+    // MARK: - Pipeline Setup
+    
     internal func setupBitonicSortPipelines() {
         guard let library = device.makeDefaultLibrary() else {
             fatalError("Could not create default library")
@@ -158,27 +222,121 @@ extension MPMFluidRenderer{
         }
     }
     
-    // Sort particles by grid index for better cache locality
-    func sortParticlesByGridIndex() {
+    // MARK: - Buffer Setup
+    
+    internal func setupBitonicSortBuffers() {
+        // Sort keys buffer for bitonic sort (private for GPU performance)
+        let sortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
+        sortKeysBuffer = device.makeBuffer(
+            length: sortKeysBufferSize,
+            options: .storageModePrivate
+        )!
+        sortKeysBuffer.label = "BitonicSortKeysBuffer"
+        
+        // Sorted particle buffer (private for GPU performance)
+        let sortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        sortedParticleBuffer = device.makeBuffer(
+            length: sortedParticleBufferSize,
+            options: .storageModePrivate
+        )!
+        sortedParticleBuffer.label = "BitonicSortedParticleBuffer"
+    // (No sorted rigid info buffer; rigid info remains in original order)
+        
+        print("🔍 Bitonic sort buffer sizes:")
+        print("   Sort keys buffer: \(sortKeysBufferSize) bytes")
+        print("   Sorted particle buffer: \(sortedParticleBufferSize) bytes")
+    }
+    
+    internal func setupRadixSortBuffers() {
+        // Radix sort keys buffer (private for GPU performance)
+        let radixSortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
+        radixSortKeysBuffer = device.makeBuffer(
+            length: radixSortKeysBufferSize,
+            options: .storageModePrivate
+        )!
+        radixSortKeysBuffer.label = "RadixSortKeysBuffer"
+        
+        // Temporary keys buffer for radix sort (private for GPU performance)
+        radixTempKeysBuffer = device.makeBuffer(
+            length: radixSortKeysBufferSize,
+            options: .storageModePrivate
+        )!
+        radixTempKeysBuffer.label = "RadixTempKeysBuffer"
+        
+        // Histogram buffer for radix sort (private for GPU performance)
+        let maxThreadgroups = (particleCount + maxThreadsPerGroup - 1) / maxThreadsPerGroup
+        let histogramSize = maxThreadgroups * 16 * MemoryLayout<UInt32>.stride
+        radixHistogramBuffer = device.makeBuffer(
+            length: histogramSize,
+            options: .storageModePrivate
+        )!
+        radixHistogramBuffer.label = "RadixHistogramBuffer"
+        
+        // Sorted particle buffer for radix sort (private for GPU performance)
+        let radixSortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
+        radixSortedParticleBuffer = device.makeBuffer(
+            length: radixSortedParticleBufferSize,
+            options: .storageModePrivate
+        )!
+        radixSortedParticleBuffer.label = "RadixSortedParticleBuffer"
+    // (No radix sorted rigid info buffer; rigid info remains in original order)
+        
+        print("🔍 Radix sort buffer sizes:")
+        print("   Radix sort keys buffer: \(radixSortKeysBufferSize) bytes")
+        print("   Radix temp keys buffer: \(radixSortKeysBufferSize) bytes")
+        print("   Radix histogram buffer: \(histogramSize) bytes")
+        print("   Radix sorted particle buffer: \(radixSortedParticleBufferSize) bytes")
+    }
+    
+    // MARK: - Sorting Operations
+    
+    func sortParticlesByGridIndexSafe(
+        computeParticleBuffer: inout MTLBuffer,
+        uniformBuffer: MTLBuffer
+    ) throws {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            return
+            throw NSError(domain: "MetalFluid", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create command buffer"])
         }
         
-        // 1. Extract sort keys (grid indices)
-        extractSortKeys(commandBuffer: commandBuffer)
-        
-        // 2. Perform bitonic sort
-        bitonicSort(commandBuffer: commandBuffer)
-        
-        // 3. Reorder particles based on sorted keys
-        reorderParticles(commandBuffer: commandBuffer)
+        switch currentSortingAlgorithm {
+        case .bitonicSort:
+            // 1. Extract sort keys (grid indices)
+            extractSortKeys(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, uniformBuffer: uniformBuffer)
+            
+            // 2. Perform bitonic sort
+            bitonicSort(commandBuffer: commandBuffer)
+            
+            // 3. Reorder particles and rigid info based on sorted keys
+            reorderParticles(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
+
+            // Swap particle buffers only; rigid info stays in place
+            swap(&computeParticleBuffer, &sortedParticleBuffer)
+            
+        case .radixSort:
+            // 1. Extract sort keys for radix sort
+            extractSortKeysRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer, uniformBuffer: uniformBuffer)
+            
+            // 2. Perform radix sort
+            radixSort(commandBuffer: commandBuffer)
+            
+            // 3. Reorder particles and rigid info based on sorted keys
+            reorderParticlesRadix(commandBuffer: commandBuffer, particleBuffer: computeParticleBuffer)
+
+            // Swap particle buffers only; rigid info stays in place
+            swap(&computeParticleBuffer, &radixSortedParticleBuffer)
+        case .none: break
+        }
         
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         
-        // Swap particle buffers
-        swap(&particleBuffer, &sortedParticleBuffer)
+        // Check for command buffer errors
+        if let error = commandBuffer.error {
+            throw error
+        }
     }
+    
+    // MARK: - Bitonic Sort Implementation
     
     internal func bitonicSort(commandBuffer: MTLCommandBuffer) {
         let n = particleCount
@@ -225,14 +383,14 @@ extension MPMFluidRenderer{
         }
     }
     
-    internal func extractSortKeys(commandBuffer: MTLCommandBuffer) {
+    internal func extractSortKeys(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer, uniformBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
         
         computeEncoder.setComputePipelineState(extractSortKeysPipelineState)
         computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(uniformBuffer, offset: 0, index: 1)
         computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 2)
         
         let threadsPerThreadgroup = MTLSize(
@@ -252,151 +410,25 @@ extension MPMFluidRenderer{
         )
         computeEncoder.endEncoding()
     }
-    internal func setupBitonicSortBuffers() {
-        // Sort keys buffer for bitonic sort (only need one)
-        let sortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
-        sortKeysBuffer = device.makeBuffer(
-            length: sortKeysBufferSize,
-            options: .storageModeShared
-        )!
-        
-        // Sorted particle buffer
-        let sortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        sortedParticleBuffer = device.makeBuffer(
-            length: sortedParticleBufferSize,
-            options: .storageModeShared
-        )!
-        
-        print("🔍 Bitonic sort buffer sizes:")
-        print("   Sort keys buffer: \(sortKeysBufferSize) bytes")
-        print("   Sorted particle buffer: \(sortedParticleBufferSize) bytes")
-
-        // Initialize grid buffer (minimal necessary zero clearing only)
-        let gridPointer = gridBuffer.contents().bindMemory(
-            to: MPMGridNode.self,
-            capacity: gridNodes
-        )
-        for i in 0..<gridNodes {
-            gridPointer[i] = MPMGridNode(
-                velocity_x: 0.0,
-                velocity_y: 0.0,
-                velocity_z: 0.0,
-                mass: 0.0
-            )
-        }
-    }
     
-    internal func setupRadixSortBuffers() {
-        // Radix sort keys buffer
-        let radixSortKeysBufferSize = MemoryLayout<SortKey>.stride * particleCount
-        radixSortKeysBuffer = device.makeBuffer(
-            length: radixSortKeysBufferSize,
-            options: .storageModeShared
-        )!
-        
-        // Temporary keys buffer for radix sort
-        radixTempKeysBuffer = device.makeBuffer(
-            length: radixSortKeysBufferSize,
-            options: .storageModeShared
-        )!
-        
-        // Histogram buffer for radix sort (16 bins per threadgroup)
-        let maxThreadgroups = (particleCount + maxThreadsPerGroup - 1) / maxThreadsPerGroup
-        let histogramSize = maxThreadgroups * 16 * MemoryLayout<UInt32>.stride
-        radixHistogramBuffer = device.makeBuffer(
-            length: histogramSize,
-            options: .storageModeShared
-        )!
-        
-        // Sorted particle buffer for radix sort
-        let radixSortedParticleBufferSize = MemoryLayout<MPMParticle>.stride * particleCount
-        radixSortedParticleBuffer = device.makeBuffer(
-            length: radixSortedParticleBufferSize,
-            options: .storageModeShared
-        )!
-        
-        print("🔍 Radix sort buffer sizes:")
-        print("   Radix sort keys buffer: \(radixSortKeysBufferSize) bytes")
-        print("   Radix temp keys buffer: \(radixSortKeysBufferSize) bytes")
-        print("   Radix histogram buffer: \(histogramSize) bytes")
-        print("   Radix sorted particle buffer: \(radixSortedParticleBufferSize) bytes")
-    }
-    internal func sortParticlesByGridIndexSafe() throws {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            throw NSError(domain: "MetalFluid", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create command buffer"])
-        }
-        
-        switch currentSortingAlgorithm {
-        case .bitonicSort:
-            // 1. Extract sort keys (grid indices)
-            extractSortKeys(commandBuffer: commandBuffer)
-            
-            // 2. Perform bitonic sort
-            bitonicSort(commandBuffer: commandBuffer)
-            
-            // 3. Reorder particles based on sorted keys
-            reorderParticles(commandBuffer: commandBuffer)
-            
-            // Swap particle buffers
-            swap(&particleBuffer, &sortedParticleBuffer)
-            
-        case .radixSort:
-            // 1. Extract sort keys for radix sort
-            extractSortKeysRadix(commandBuffer: commandBuffer)
-            
-            // 2. Perform radix sort
-            radixSort(commandBuffer: commandBuffer)
-            
-            // 3. Reorder particles based on sorted keys
-            reorderParticlesRadix(commandBuffer: commandBuffer)
-            
-            // Swap particle buffers
-            swap(&particleBuffer, &radixSortedParticleBuffer)
-        }
-        
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        
-        // Check for command buffer errors
-        if let error = commandBuffer.error {
-            throw error
-        }
-        
-        // Optionally validate sort correctness in debug builds
-        #if DEBUG
-        if false && frameIndex % (sortingFrequency * 20) == 0 {
-            validateSortOrder()
-        }
-        #endif
-    }
-    
-    internal func validateSortOrder() {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            return
-        }
-        
-        // Clear error count
-        let errorCountBuffer = device.makeBuffer(length: MemoryLayout<UInt32>.size, options: .storageModeShared)!
-        let errorPointer = errorCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
-        errorPointer[0] = 0
-        
-        // Verify sort order
+    internal func reorderParticles(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
         
-        computeEncoder.setComputePipelineState(verifySortPipelineState)
-        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(errorCountBuffer, offset: 0, index: 1)
-        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 2)
+        computeEncoder.setComputePipelineState(reorderParticlesPipelineState)
+        computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+        computeEncoder.setBuffer(sortedParticleBuffer, offset: 0, index: 1)
+    computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 2) // Use bitonic sorted keys
+    computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
         
         let threadsPerThreadgroup = MTLSize(
-            width: min(maxThreadsPerGroup, particleCount),
+            width: maxThreadsPerGroup,
             height: 1,
             depth: 1
         )
         let threadgroups = MTLSize(
-            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+            width: (particleCount + maxThreadsPerGroup - 1) / maxThreadsPerGroup,
             height: 1,
             depth: 1
         )
@@ -406,28 +438,18 @@ extension MPMFluidRenderer{
             threadsPerThreadgroup: threadsPerThreadgroup
         )
         computeEncoder.endEncoding()
-        
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        
-        let errorCount = errorPointer[0]
-        if errorCount > 0 {
-            print("⚠️ Sort validation failed: \(errorCount) errors found")
-            disableSortingOnError()
-        } else {
-            print("✅ Sort validation passed")
-        }
     }
+    
     // MARK: - Radix Sort Implementation
     
-    internal func extractSortKeysRadix(commandBuffer: MTLCommandBuffer) {
+    internal func extractSortKeysRadix(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer, uniformBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
         
         computeEncoder.setComputePipelineState(extractSortKeysRadixPipelineState)
         computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+        computeEncoder.setBuffer(uniformBuffer, offset: 0, index: 1)
         computeEncoder.setBuffer(radixSortKeysBuffer, offset: 0, index: 2)
         
         let threadsPerThreadgroup = MTLSize(
@@ -486,16 +508,16 @@ extension MPMFluidRenderer{
         }
     }
     
-    internal func reorderParticlesRadix(commandBuffer: MTLCommandBuffer) {
+    internal func reorderParticlesRadix(commandBuffer: MTLCommandBuffer, particleBuffer: MTLBuffer) {
         guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
         
         computeEncoder.setComputePipelineState(reorderParticlesRadixPipelineState)
-        computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(radixSortedParticleBuffer, offset: 0, index: 1)
-        computeEncoder.setBuffer(radixSortKeysBuffer, offset: 0, index: 2)
-        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
+    computeEncoder.setBuffer(particleBuffer, offset: 0, index: 0)
+    computeEncoder.setBuffer(radixSortedParticleBuffer, offset: 0, index: 1)
+    computeEncoder.setBuffer(radixSortKeysBuffer, offset: 0, index: 2)
+    computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 3)
         
         let threadsPerThreadgroup = MTLSize(
             width: maxThreadsPerGroup,
@@ -515,46 +537,64 @@ extension MPMFluidRenderer{
         computeEncoder.endEncoding()
     }
     
-    internal func copyBuffer(
-        commandBuffer: MTLCommandBuffer,
-        from sourceBuffer: MTLBuffer,
-        to destinationBuffer: MTLBuffer
-    ) {
-        guard let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
-            return
-        }
-        
-        blitEncoder.copy(
-            from: sourceBuffer,
-            sourceOffset: 0,
-            to: destinationBuffer,
-            destinationOffset: 0,
-            size: min(sourceBuffer.length, destinationBuffer.length)
-        )
-        blitEncoder.endEncoding()
-    }
+    // MARK: - Validation
     
-    // Public API for particle sorting configuration
+//    internal func validateSortOrder() {
+//        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+//            return
+//        }
+//        
+//        // Error count buffer for verification (shared for CPU readback)
+//        let errorCountBuffer = device.makeBuffer(length: MemoryLayout<UInt32>.size, options: .storageModeShared)!
+//        let errorPointer = errorCountBuffer.contents().bindMemory(to: UInt32.self, capacity: 1)
+//        errorPointer[0] = 0
+//        
+//        // Verify sort order
+//        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+//            return
+//        }
+//        
+//        computeEncoder.setComputePipelineState(verifySortPipelineState)
+//        computeEncoder.setBuffer(sortKeysBuffer, offset: 0, index: 0)
+//        computeEncoder.setBuffer(errorCountBuffer, offset: 0, index: 1)
+//        computeEncoder.setBytes([UInt32(particleCount)], length: MemoryLayout<UInt32>.size, index: 2)
+//        
+//        let threadsPerThreadgroup = MTLSize(
+//            width: min(maxThreadsPerGroup, particleCount),
+//            height: 1,
+//            depth: 1
+//        )
+//        let threadgroups = MTLSize(
+//            width: (particleCount + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+//            height: 1,
+//            depth: 1
+//        )
+//        
+//        computeEncoder.dispatchThreadgroups(
+//            threadgroups,
+//            threadsPerThreadgroup: threadsPerThreadgroup
+//        )
+//        computeEncoder.endEncoding()
+//        
+//        commandBuffer.commit()
+//        commandBuffer.waitUntilCompleted()
+//        
+//        let errorCount = errorPointer[0]
+//        if errorCount > 0 {
+//            print("⚠️ Sort validation failed: \(errorCount) errors found")
+//            disableSortingOnError()
+//        } else {
+//            print("✅ Sort validation passed")
+//        }
+//    }
+    
+    // MARK: - Public API
+    
     public func setParticleSorting(enabled: Bool, frequency: Int = 4) {
         enableParticleSorting = enabled
         sortingFrequency = max(1, frequency)
         print("🔄 Particle sorting: \(enabled ? "enabled" : "disabled"), frequency: every \(sortingFrequency) frames")
     }
-    
-    public func forceSortParticles() {
-        let startTime = CACurrentMediaTime()
-        sortParticlesByGridIndex()
-        let sortTime = CACurrentMediaTime() - startTime
-        print("🔄 Manual particle sort took: \(String(format: "%.2f", sortTime * 1000))ms")
-    }
-    
-    // Disable sorting if errors occur
-    public func disableSortingOnError() {
-        enableParticleSorting = false
-        print("⚠️ Particle sorting disabled due to errors")
-    }
-    
-    // MARK: - Sorting Algorithm Selection
     
     public func setSortingAlgorithm(_ algorithm: SortingAlgorithm) {
         currentSortingAlgorithm = algorithm
@@ -566,7 +606,9 @@ extension MPMFluidRenderer{
         case .bitonicSort:
             setSortingAlgorithm(.radixSort)
         case .radixSort:
-            setSortingAlgorithm(.bitonicSort)
+            setSortingAlgorithm(.none)
+        case .none:
+            setSortingAlgorithm(.radixSort)
         }
     }
     
@@ -576,7 +618,31 @@ extension MPMFluidRenderer{
             return "Bitonic Sort"
         case .radixSort:
             return "One-sweep Radix Sort"
+        case .none:
+            return "None"
         }
     }
-
+    
+    public func disableSortingOnError() {
+        enableParticleSorting = false
+        print("⚠️ Particle sorting disabled due to errors")
+    }
+    
+    public func forceSortParticles(
+    computeParticleBuffer: inout MTLBuffer,
+    uniformBuffer: MTLBuffer
+    ) {
+        let startTime = CACurrentMediaTime()
+        do {
+            try sortParticlesByGridIndexSafe(
+        computeParticleBuffer: &computeParticleBuffer,
+        uniformBuffer: uniformBuffer
+            )
+        } catch {
+            print("⚠️ Sorting error: \(error), disabling particle sorting")
+            disableSortingOnError()
+        }
+        let sortTime = CACurrentMediaTime() - startTime
+        print("🔄 Manual particle sort took: \(String(format: "%.2f", sortTime * 1000))ms")
+    }
 }

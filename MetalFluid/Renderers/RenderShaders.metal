@@ -1,5 +1,5 @@
 #include <metal_stdlib>
-#include "MPMTypes.h"  // Get struct definitions from shared header file
+#include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
 
 // Grid index calculation function (same as in ComputeShaders.metal)
@@ -23,6 +23,7 @@ inline float getBaseSize(const float distance){
     return max(10.0, 10.0 / (distance * 0.1 + 1.0));
 }
 
+
 // Pressure heatmap vertex shader
 vertex VertexOut pressureHeatmapVertexShader(
                               const device MPMParticle* particles [[buffer(0)]],
@@ -36,7 +37,7 @@ vertex VertexOut pressureHeatmapVertexShader(
     float4 worldPos = float4(particles[id].position, 1.0);
     
     // Apply MVP transformation
-    out.position = uniforms.mvpMatrix * worldPos;
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
     
     // Sample grid data at particle position for pressure-based coloring
     // Use physicalDomainOrigin for grid calculations (same coordinate system as compute shaders)
@@ -349,23 +350,37 @@ vertex FluidFragmentInput fluidVertexShader(
     return out;
 }
 
+// Output structure for fluid fragment shader with depth
+struct FluidFragmentOutput {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
+};
+
 // Fluid surface rendering fragment shader
-fragment float4 fluidFragmentShader(
+fragment FluidFragmentOutput fluidFragmentShader(
     FluidFragmentInput input [[stage_in]],
     texture2d<float> depthTexture [[texture(0)]],
     texture2d<float> thicknessTexture [[texture(1)]],
     texturecube<float> envmapTexture [[texture(2)]],
-    constant FluidRenderUniforms& uniforms [[buffer(0)]]
+    constant FluidRenderUniforms& uniforms [[buffer(0)]],
+    float4 currentColor [[color(0)]]  // Framebuffer fetch - existing color
 ) {
     constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
     
     float depth = abs(depthTexture.read(uint2(input.iuv)).r);
     
-    float3 bgColor = float3(0.8, 0.8, 0.8);
+    float3 bgColor = currentColor.rgb;  // Use existing rendered color (mesh)
     
     if (depth >= 1e4 || depth <= 0.0) {
-        return float4(bgColor, 1.0);
+        FluidFragmentOutput output;
+        output.color = currentColor;  // Return existing color unchanged
+        output.depth = 1.0;  // Far depth for background
+        return output;
     }
+    
+    // Convert view space depth to NDC depth for depth buffer
+    float4 clipPos = uniforms.projectionMatrix * float4(0, 0, -depth, 1.0);
+    float ndcDepth = clipPos.z / clipPos.w;
     
     float3 viewPos = computeViewPosFromUVDepth(input.uv, depth, uniforms);
     
@@ -411,7 +426,10 @@ fragment float4 fluidFragmentShader(
     float3 reflectionColor = envmapTexture.sample(textureSampler, reflectionDirWorld).rgb;
     float3 finalColor = 1.0 * specular + mix(refractionColor, reflectionColor, fresnel);
     
-    return float4(finalColor, 1.0);
+    FluidFragmentOutput output;
+    output.color = float4(finalColor, 1.0);
+    output.depth = ndcDepth;  // Output the fluid surface depth
+    return output;
 }
 
 // Thickness rendering shaders

@@ -32,11 +32,22 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		094DB6EA2E5FEC920065E535 /* Exceptions for "MetalFluid" folder in "Compile Sources" phase from "MetalFluid" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 091239282E1B99620033B350 /* Sources */;
+			membershipExceptions = (
+				Renderers/ComputeShaders.h,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0912392E2E1B99620033B350 /* MetalFluid */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				0912393E2E1B99640033B350 /* Exceptions for "MetalFluid" folder in "MetalFluid" target */,
+				094DB6EA2E5FEC920065E535 /* Exceptions for "MetalFluid" folder in "Compile Sources" phase from "MetalFluid" target */,
 			);
 			path = MetalFluid;
 			sourceTree = "<group>";
