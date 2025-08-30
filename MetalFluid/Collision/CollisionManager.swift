@@ -217,7 +217,7 @@ class CollisionManager {
             // Estimate mass from AABB volume (simple proxy), allow future override
             let extent = (maxBounds - minBounds)
             let volume = max(1e-4, extent.x * extent.y * extent.z)
-            let estimatedMass: Float = volume * 10.0 // density coefficient
+            let estimatedMass: Float = volume * 2.5 // density coefficient
 
             collisionUniformPointer[0] = CollisionUniforms(
                 sdfOrigin: minBounds,
