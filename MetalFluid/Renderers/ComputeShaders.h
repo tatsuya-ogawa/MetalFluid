@@ -3,7 +3,7 @@
 #include "../MPMTypes.h"  // Get struct definitions from shared header file
 using namespace metal;
 constant float GRADIENT_EPSILON=0.01;
-constant float COLLISION_THRESHOLD=1.0;
+constant float COLLISION_THRESHOLD=0.0;
 // Material mode constants
 constant int MATERIAL_FLUID = 0;
 constant int MATERIAL_ELASTIC = 1;
