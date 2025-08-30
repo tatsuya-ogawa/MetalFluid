@@ -384,9 +384,9 @@ class CollisionManager {
     }
     private var internalItems:[CollisionItem] = []
     public var bunnyItem:CollisionItem
-    private var items:[CollisionItem]{
+    public var items:[CollisionItem]{
         get{
-            return [bunnyItem] + internalItems
+            return Array(([bunnyItem] + internalItems).prefix(CollisionManager.MAX_COLLISION_SDF))
         }
     }
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
