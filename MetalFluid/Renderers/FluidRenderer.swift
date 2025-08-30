@@ -362,7 +362,7 @@ class MaterialParameters {
             case .fluid:
                 return 2
             case .neoHookeanElastic:
-                return 1
+                return 2
             case .rigidBody:
                 return 1  // Rigid body is stable with single substep
             }
@@ -382,7 +382,7 @@ class MaterialParameters {
             case .fluid:
                 return  -2.5 //-9.81
             case .neoHookeanElastic:
-                return -1.0
+                return -1.5
             case .rigidBody:
                 return -2.0  // Standard gravity for rigid body
             }
@@ -396,6 +396,7 @@ class MaterialParameters {
 }
 
 class MPMFluidRenderer: NSObject {
+    let timeStep: Float = 0.1
     let materialParameters = MaterialParameters()
     // Public for testing
     public var device: MTLDevice!
@@ -917,7 +918,6 @@ class MPMFluidRenderer: NSObject {
         let (boundaryMin, boundaryMax) = getBoundaryMinMax()
         let currentTime = CACurrentMediaTime()
         let timeSalt = UInt32(currentTime*1000)%UInt32.max
-        let timeStep: Float = 0.1
         let nodeCount = UInt32(gridNodes)
         
         // Update compute shader uniforms

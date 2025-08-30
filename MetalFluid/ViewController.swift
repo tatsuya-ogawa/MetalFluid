@@ -991,7 +991,7 @@ extension ViewController: MTKViewDelegate {
         lastFrameTime = currentTime
 
         // Only compute at 10fps equivalent
-        let computeInterval: CFTimeInterval = 0.1  // 10fps
+        let computeInterval: CFTimeInterval = 0.05  // 20fps
         var performStep = isAutoMode || shouldStep
         if isAutoMode {
             if currentTime - lastComputeTime < computeInterval {
