@@ -236,6 +236,12 @@ inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture
     return float4(sdfValue, normal);
 }
 
+// Compute SDF mass center in world space
+inline float3 worldSDFMassCenter(constant CollisionUniforms &collision) {
+    float4 p = collision.collisionTransform * float4(collision.sdfMassCenter, 1.0);
+    return p.xyz;
+}
+
 constant int MAX_COLLISION_SDF = 8;
 struct SDFSet {
     array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdf [[id(0)]];

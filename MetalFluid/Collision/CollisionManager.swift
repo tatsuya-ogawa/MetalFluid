@@ -107,6 +107,7 @@ class CollisionItem{
         collisionUniformPointer[0] = CollisionUniforms(
             sdfOrigin: SIMD3<Float>(0, 0, 0),
             sdfSize: SIMD3<Float>(1, 1, 1),
+            sdfMassCenter: SIMD3<Float>(0.5, 0.5, 0.5),
             sdfResolution: SIMD3<Int32>(64, 64, 64),
             collisionStiffness: 1.0,  // Not used in velocity-based approach
             collisionDamping: 0.8,    // Not used in velocity-based approach
@@ -295,9 +296,22 @@ class CollisionItem{
             let volume = max(1e-4, extent.x * extent.y * extent.z)
             let estimatedMass: Float = volume * 2.5 // density coefficient
 
+            // Compute mass center as area-weighted triangle centroids (approx surface COM)
+            var weightedSum = SIMD3<Float>(repeating: 0)
+            var totalArea: Float = 0
+            for tri in triangles {
+                let a = tri.v0, b = tri.v1, c = tri.v2
+                let area = length(cross(b - a, c - a)) * 0.5
+                let centroid = (a + b + c) / 3.0
+                weightedSum += centroid * area
+                totalArea += area
+            }
+            let surfCenter = totalArea > 0 ? (weightedSum / totalArea) : ((minBounds + maxBounds) * 0.5)
+
             collisionUniformPointer[0] = CollisionUniforms(
                 sdfOrigin: minBounds,
                 sdfSize: maxBounds - minBounds,
+                sdfMassCenter: surfCenter,
                 sdfResolution: resolution,
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach

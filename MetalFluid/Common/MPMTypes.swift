@@ -21,6 +21,7 @@ struct CollisionVertex {
 struct CollisionUniforms {
     var sdfOrigin: SIMD3<Float>
     var sdfSize: SIMD3<Float>
+    var sdfMassCenter: SIMD3<Float>
     var sdfResolution: SIMD3<Int32>
     var collisionStiffness: Float
     var collisionDamping: Float

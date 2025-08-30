@@ -398,11 +398,8 @@ kernel void gridToParticlesFluid1(
         if (any(isfinite(J))) {
             float3 negJ = -J; // equal and opposite to SDF object
             
-            // Compute actual Center of Mass from SDF center in world space
-            // SDF local center = sdfOrigin + sdfSize * 0.5
-            float3 sdfLocalCenter = collision.sdfOrigin + collision.sdfSize * 0.5;
-            float4 sdfWorldCenter4 = collision.collisionTransform * float4(sdfLocalCenter, 1.0);
-            float3 com = sdfWorldCenter4.xyz;
+            // Compute Center of Mass in world space using provided mass center
+            float3 com = worldSDFMassCenter(collision);
             
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
@@ -567,11 +564,8 @@ kernel void gridToParticlesElastic(
         if (any(isfinite(J))) {
             float3 negJ = -J;
             
-            // Compute actual Center of Mass from SDF center in world space
-            // SDF local center = sdfOrigin + sdfSize * 0.5
-            float3 sdfLocalCenter = collision.sdfOrigin + collision.sdfSize * 0.5;
-            float4 sdfWorldCenter4 = collision.collisionTransform * float4(sdfLocalCenter, 1.0);
-            float3 com = sdfWorldCenter4.xyz;
+            // Compute Center of Mass in world space using provided mass center
+            float3 com = worldSDFMassCenter(collision);
             
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
