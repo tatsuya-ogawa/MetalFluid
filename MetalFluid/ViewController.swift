@@ -889,19 +889,19 @@ class ViewController: UIViewController {
     @objc private func sdfScaleChanged(_ slider: UISlider) {
         let scale = slider.value
         sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", scale)
-        fluidRenderer.collisionManager?.bunnyItem.meshScale = scale
+        fluidRenderer.collisionManager?.bunnyItem.item.scale = SIMD3<Float>(scale, scale, scale)
     }
     
     @objc private func sdfYOffsetChanged(_ slider: UISlider) {
         let offset = slider.value
         sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", offset)
-        fluidRenderer.collisionManager?.bunnyItem.meshYOffset = offset
+        fluidRenderer.collisionManager?.bunnyItem.item.translate.y = offset
     }
     
     @objc private func sdfYRotationChanged(_ slider: UISlider) {
         let rotation = slider.value
         sdfYRotationLabel.text = String(format: "SDF Y Rotation: %.0f°", rotation)
-        fluidRenderer.collisionManager?.bunnyItem.meshYRotation = rotation
+        fluidRenderer.collisionManager?.bunnyItem.item.rotate.y = rotation * Float.pi / 180.0
     }
     
     @objc private func toggleRenderMode() {

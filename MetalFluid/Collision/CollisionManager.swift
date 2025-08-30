@@ -2,23 +2,17 @@ import Foundation
 import Metal
 import MetalKit
 import simd
+struct Item {
+    var scale: SIMD3<Float> = SIMD3<Float>(1.0, 1.0, 1.0)
+    var translate: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, 0.0)
+    var rotate: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, 0.0) // in radians
+}
+
 class CollisionItem{
     public var sdfTexture: MTLTexture?
     public var collisionUniformBuffer: MTLBuffer
-    // Scale and offset control
-    public var meshScale: Float = 1.0 {
-        didSet {
-            updateCollisionTransform()
-        }
-    }
-    
-    public var meshYOffset: Float = 0.0 {
-        didSet {
-            updateCollisionTransform()
-        }
-    }
-    
-    public var meshYRotation: Float = 0.0 {
+    // Transform control
+    public var item: Item = Item() {
         didSet {
             updateCollisionTransform()
         }
@@ -70,9 +64,9 @@ class CollisionItem{
     private func updateCollisionTransform() {
         guard currentGridMin != nil && currentGridMax != nil else { return }
         
-        let scaleVec = SIMD3<Float>(meshScale, meshScale, meshScale)
-        let offsetVec = SIMD3<Float>(0.0, meshYOffset, 0.0)
-        let rotationVec = SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0) // Convert degrees to radians
+        let scaleVec = item.scale
+        let offsetVec = item.translate
+        let rotationVec = item.rotate
         let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
             meshMin: currentMeshMin,
             meshMax: currentMeshMax,
@@ -276,10 +270,10 @@ class CollisionItem{
         )
                 
         if sdfTexture != nil {
-            // Calculate collision transform using meshScale combined with provided scale
-            let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
-            let combinedOffset = offset + SIMD3<Float>(0.0, meshYOffset, 0.0)
-            let combinedRotation = rotation + SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0)
+            // Calculate collision transform using item scale combined with provided scale
+            let combinedScale = item.scale * scale
+            let combinedOffset = offset + item.translate
+            let combinedRotation = rotation + item.rotate
             let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
                 meshMin: minBounds,
                 meshMax: maxBounds,
