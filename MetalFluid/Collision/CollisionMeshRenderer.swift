@@ -3,16 +3,6 @@ import Metal
 import MetalKit
 import simd
 
-struct CollisionVertex {
-    var position: SIMD3<Float>
-    var normal: SIMD3<Float>
-}
-
-// Collision mesh uniforms structure (matching Metal shader)
-struct CollisionMeshUniforms {
-    var meshColor: simd_float4
-}
-
 public class CollisionMeshRenderer {
     private let device: MTLDevice
     

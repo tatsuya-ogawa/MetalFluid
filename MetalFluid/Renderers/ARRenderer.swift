@@ -46,14 +46,6 @@ class ARRenderer {
     private var currentARSDF: MTLTexture?
     private var sdfBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
     
-    // Uniforms structure matching Metal shader
-    struct ARMeshUniforms {
-        var modelViewProjectionMatrix: simd_float4x4
-        var modelMatrix: simd_float4x4
-        var normalMatrix: simd_float4x4
-        var meshColor: SIMD4<Float>
-        var opacity: Float
-    }
     
     init(device: MTLDevice, commandQueue: MTLCommandQueue) {
         self.device = device
