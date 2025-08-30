@@ -283,6 +283,9 @@ class MPMFluidRenderer: NSObject {
     // Force application pipeline state
     public var applyForceToGridPipelineState: MTLComputePipelineState!
     
+    // SDF collision physics integration pipeline state
+    public var applySdfImpulseToTransformPipelineState: MTLComputePipelineState!
+    
     // Force queue system
     struct QueuedForce {
         let position: SIMD3<Float>

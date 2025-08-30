@@ -39,6 +39,9 @@ extension MPMFluidRenderer {
 
         // Force application pipeline
         applyForceToGridPipelineState = createComputePipelineState(library: library, functionName: "applyForceToGrid")
+        
+        // SDF collision physics integration pipeline
+        applySdfImpulseToTransformPipelineState = createComputePipelineState(library: library, functionName: "applySdfImpulseToTransform")
 
         setupComputePipelinesFluid(library: library)
         setupComputePipelinesElastic(library: library)
@@ -251,11 +254,12 @@ extension MPMFluidRenderer {
         
         computeSimulation(commandBuffer: commandBuffer)
         
+        // Apply SDF impulse integration on GPU (after particle simulation completes)
+        applySdfImpulseToTransformGPU(commandBuffer: commandBuffer)
+        
         // Add completion handler to swap buffers when the shared command buffer finishes
         // (This will be called when the render pass commits the command buffer)
         commandBuffer.addCompletedHandler { [weak self] _ in
-            // Integrate GPU wall collision velocities + aggregated particle impulses into SDF transform
-            self?.applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: true)
             self?.endComputeAndSwapToRender()
         }
     }
@@ -315,7 +319,42 @@ extension MPMFluidRenderer {
         return p[0]
     }
 
-    // Integrate accumulated SDF impulses (from particles) and update collision transform
+    // GPU-based SDF impulse integration and collision transform update
+    internal func applySdfImpulseToTransformGPU(commandBuffer: MTLCommandBuffer) {
+        guard let collisionManager = collisionManager,
+              let phyBuf = sdfPhysicsBuffer else { return }
+        
+        // Create compute encoder for SDF physics integration
+        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            print("⚠️ Failed to create compute encoder for SDF physics integration")
+            return
+        }
+        
+        computeEncoder.setComputePipelineState(applySdfImpulseToTransformPipelineState)
+        
+        // Set buffers
+        computeEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 0)
+        computeEncoder.setBuffer(phyBuf, offset: 0, index: 1)
+        computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
+        
+        // Set parameters
+        var sdfIndex: UInt32 = 0
+        var enableGravity: Bool = true  // TODO: Get from SDF settings
+        var isDynamic: Bool = true      // TODO: Get from SDF settings
+        
+        computeEncoder.setBytes(&sdfIndex, length: MemoryLayout<UInt32>.size, index: 3)
+        computeEncoder.setBytes(&enableGravity, length: MemoryLayout<Bool>.size, index: 4)  
+        computeEncoder.setBytes(&isDynamic, length: MemoryLayout<Bool>.size, index: 5)
+        
+        // Dispatch single thread since we're updating one SDF
+        let threadsPerThreadgroup = MTLSize(width: 1, height: 1, depth: 1)
+        let threadgroups = MTLSize(width: 1, height: 1, depth: 1)
+        computeEncoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        computeEncoder.endEncoding()
+    }
+
+    // Legacy CPU-based SDF impulse integration (deprecated - use GPU version)
     internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
         guard let phyBuf = sdfPhysicsBuffer,
               let collisionManager = collisionManager else { return }
