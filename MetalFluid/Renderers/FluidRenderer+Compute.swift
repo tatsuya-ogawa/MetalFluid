@@ -698,14 +698,13 @@ extension MPMFluidRenderer {
                     // Set collision resources if available
                     if let collisionManager {
                         let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
-                        
-                        if let tex = collisionManager.bunnyItem.getSDFTexture() {
-                            argumentEncoder.setTexture(tex, index: 0)
+                        for i in 0..<collisionManager.items.count {
+                            let tex = collisionManager.items[i].getSDFTexture()!
+                            argumentEncoder.setTexture(tex, index: i)
                             computeEncoder.useResource(tex, usage: .read)
+                            // Set collision uniforms in argument buffer at index 1
+                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF+i)
                         }
-                        // Set collision uniforms in argument buffer at index 1
-                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF)
-                        
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
                         // Bind SDF impulse accumulator for aggregation
                         if let accBuf = sdfImpulseAccumulatorBuffer {
@@ -732,14 +731,13 @@ extension MPMFluidRenderer {
                     // Set collision resources if available
                     if let collisionManager {
                         let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
-                        
-                        if let tex = collisionManager.bunnyItem.getSDFTexture() {
-                            argumentEncoder.setTexture(tex, index: 0)
+                        for i in 0..<collisionManager.items.count {
+                            let tex = collisionManager.items[i].getSDFTexture()!
+                            argumentEncoder.setTexture(tex, index: i)
                             computeEncoder.useResource(tex, usage: .read)
-                        }
-                        // Set collision uniforms in argument buffer at index 1
-                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF)
-                        
+                            // Set collision uniforms in argument buffer at index 1
+                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF+i)
+                        }                        
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
                         // Bind SDF impulse accumulator for aggregation
                         if let accBuf = sdfImpulseAccumulatorBuffer {
