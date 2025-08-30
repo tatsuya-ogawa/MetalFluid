@@ -349,18 +349,18 @@ extension MPMFluidRenderer {
         if let sdfArgumentEncoder, let sdfArgumentBuffer{
             return (sdfArgumentBuffer, sdfArgumentEncoder)
         }else{
-            // SDF texture array at index 0
+            // SDF texture array occupies indices [0 .. MAX-1]
             let sdfTextureDesc = MTLArgumentDescriptor()
             sdfTextureDesc.dataType = .texture
             sdfTextureDesc.textureType = .type3D
             sdfTextureDesc.index = 0
             sdfTextureDesc.access = .readOnly
             sdfTextureDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-            
-            // CollisionUniforms buffer array at index 1
+
+            // CollisionUniforms buffer array occupies indices [MAX .. 2*MAX-1]
             let collisionBufferDesc = MTLArgumentDescriptor()
             collisionBufferDesc.dataType = .pointer
-            collisionBufferDesc.index = 1
+            collisionBufferDesc.index = CollisionManager.MAX_COLLISION_SDF
             collisionBufferDesc.access = .readOnly
             collisionBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
             
@@ -702,7 +702,7 @@ extension MPMFluidRenderer {
                             computeEncoder.useResource(tex, usage: .read)
                         }
                         // Set collision uniforms in argument buffer at index 1
-                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 1)
+                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF)
                         
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
                         // Bind SDF impulse accumulator for aggregation
@@ -736,7 +736,7 @@ extension MPMFluidRenderer {
                             computeEncoder.useResource(tex, usage: .read)
                         }
                         // Set collision uniforms in argument buffer at index 1
-                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 1)
+                        argumentEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF)
                         
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
                         // Bind SDF impulse accumulator for aggregation
