@@ -17,6 +17,7 @@ class SDFGenerator {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private var sdfPipelineState: MTLComputePipelineState?
+    private var wallPipelineState: MTLComputePipelineState?
     let padding: Float = 0.1
 
     init(device: MTLDevice) {
@@ -44,6 +45,9 @@ class SDFGenerator {
                 if let function = library.makeFunction(name: "generateSDF") {
                     sdfPipelineState = try device.makeComputePipelineState(function: function)
                 }
+            }
+            if let wallFn = library.makeFunction(name: "generateWallSDF") {
+                wallPipelineState = try device.makeComputePipelineState(function: wallFn)
             }
         } catch {
             print("Failed to create SDF compute pipeline states: \(error)")
@@ -165,6 +169,59 @@ class SDFGenerator {
         blitCommandBuffer.waitUntilCompleted()
         
         print("GPU SDF generation completed successfully")
+        return sdfTexture
+    }
+
+    // Generate a thin-wall SDF for domain box with given thickness
+    func generateWallSDF(resolution: SIMD3<Int32>, origin: SIMD3<Float>, size: SIMD3<Float>, wallThickness: Float) -> MTLTexture? {
+        guard let wallPipelineState else {
+            print("Wall SDF compute pipeline not available")
+            return nil
+        }
+        let textureDescriptor = MTLTextureDescriptor()
+        textureDescriptor.textureType = .type3D
+        textureDescriptor.pixelFormat = .r32Float
+        textureDescriptor.width = Int(resolution.x)
+        textureDescriptor.height = Int(resolution.y)
+        textureDescriptor.depth = Int(resolution.z)
+        textureDescriptor.usage = [.shaderRead, .shaderWrite]
+        textureDescriptor.storageMode = .private
+        guard let sdfTexture = device.makeTexture(descriptor: textureDescriptor) else {
+            print("Failed to create Wall SDF texture")
+            return nil
+        }
+        sdfTexture.label = "WallSDFTexture"
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+            print("Failed to create command buffer/encoder for Wall SDF")
+            return nil
+        }
+
+        computeEncoder.label = "Wall SDF Generation"
+        computeEncoder.setComputePipelineState(wallPipelineState)
+        computeEncoder.setTexture(sdfTexture, index: 0)
+        var o = origin
+        var s = size
+        var r = resolution
+        var t = wallThickness
+        computeEncoder.setBytes(&o, length: MemoryLayout<SIMD3<Float>>.size, index: 0)
+        computeEncoder.setBytes(&s, length: MemoryLayout<SIMD3<Float>>.size, index: 1)
+        computeEncoder.setBytes(&r, length: MemoryLayout<SIMD3<Int32>>.size, index: 2)
+        computeEncoder.setBytes(&t, length: MemoryLayout<Float>.size, index: 3)
+
+        let tg = MTLSize(width: 4, height: 4, depth: 4)
+        let tgCount = MTLSize(
+            width: (Int(resolution.x)+tg.width-1)/tg.width,
+            height: (Int(resolution.y)+tg.height-1)/tg.height,
+            depth: (Int(resolution.z)+tg.depth-1)/tg.depth
+        )
+        computeEncoder.dispatchThreadgroups(tgCount, threadsPerThreadgroup: tg)
+        computeEncoder.endEncoding()
+
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
         return sdfTexture
     }
     // MARK: - AR Mesh SDF Generation

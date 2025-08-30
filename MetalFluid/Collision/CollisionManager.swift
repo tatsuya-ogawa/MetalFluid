@@ -16,6 +16,9 @@ class CollisionManager {
     private var sdfGenerator: SDFGenerator
     private var sdfTexture: MTLTexture?
     private var collisionUniformBuffer: MTLBuffer
+    // Wall SDF
+    private var wallSDFTexture: MTLTexture?
+    private var wallCollisionUniformBuffer: MTLBuffer?
     
     // Mesh rendering
     private var meshRenderer: CollisionMeshRenderer
@@ -82,6 +85,42 @@ class CollisionManager {
             collisionInvTransform: matrix_identity_float4x4 // Default identity inverse transform
         )
     }
+
+    // Ensure wall SDF exists; create if needed based on grid boundaries
+    public func ensureWallSDF(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>, gridSpacing: Float) {
+        if wallSDFTexture != nil && wallCollisionUniformBuffer != nil { return }
+        let resolution = SIMD3<Int32>(64, 64, 64)
+        let origin = gridBoundaryMin
+        let size = gridBoundaryMax - gridBoundaryMin
+        let thickness = gridSpacing
+
+        guard let tex = sdfGenerator.generateWallSDF(resolution: resolution, origin: origin, size: size, wallThickness: thickness) else {
+            print("⚠️ Failed to generate wall SDF")
+            return
+        }
+        wallSDFTexture = tex
+
+        // Build wall collision uniforms
+        let buf = device.makeBuffer(length: MemoryLayout<CollisionUniforms>.stride, options: .storageModeShared)!
+        buf.label = "WallCollisionUniforms"
+        let p = buf.contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
+        p[0] = CollisionUniforms(
+            sdfOrigin: origin,
+            sdfSize: size,
+            sdfResolution: resolution,
+            collisionStiffness: 1.0,
+            collisionDamping: 0.8,
+            enableCollision: 1,
+            sdfMass: 0.0, // not used for wall
+            collisionTransform: matrix_identity_float4x4,
+            collisionInvTransform: matrix_identity_float4x4
+        )
+        wallCollisionUniformBuffer = buf
+        print("🧱 Wall SDF created with resolution \(resolution)")
+    }
+
+    public func getWallSDFTexture() -> MTLTexture? { wallSDFTexture }
+    public func getWallCollisionUniformBuffer() -> MTLBuffer? { wallCollisionUniformBuffer }
     
     // MARK: - Private Helper Methods
     

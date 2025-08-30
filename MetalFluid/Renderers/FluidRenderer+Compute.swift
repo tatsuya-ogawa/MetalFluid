@@ -560,6 +560,35 @@ extension MPMFluidRenderer {
         }
         
         computeSimulation(commandBuffer: commandBuffer)
+
+        // GPU SDF vs Wall collision using dual SDF solver
+        if let collisionManager = collisionManager,
+           let objectTex = collisionManager.getSDFTexture() {
+            let (bmin, bmax) = getBoundaryMinMax()
+            collisionManager.ensureWallSDF(gridBoundaryMin: bmin, gridBoundaryMax: bmax, gridSpacing: gridSpacing)
+            if let wallTex = collisionManager.getWallSDFTexture(),
+               let wallCU = collisionManager.getWallCollisionUniformBuffer(),
+               let dualPSO = solveRigidBodyToRigidBodyCollisionsPipelineState {
+                // Prepare rigid bodies (A: object, B: wall)
+                prepareRigidBodiesForSDFWallCollision()
+                // Temporary uniforms with rigidBodyCount=2
+                var localUniforms = getCurrentComputeUniforms()
+                localUniforms.rigidBodyCount = 2
+                let tmpUBuf = device.makeBuffer(bytes: &localUniforms, length: MemoryLayout<ComputeShaderUniforms>.stride, options: .storageModeShared)!
+                if let enc = commandBuffer.makeComputeCommandEncoder() {
+                    enc.setComputePipelineState(dualPSO)
+                    enc.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
+                    enc.setBuffer(tmpUBuf, offset: 0, index: 1)
+                    enc.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 2)
+                    enc.setBuffer(wallCU, offset: 0, index: 3)
+                    enc.setTexture(objectTex, index: 0)
+                    enc.setTexture(wallTex, index: 1)
+                    let tg = MTLSize(width: 1, height: 1, depth: 1)
+                    enc.dispatchThreadgroups(tg, threadsPerThreadgroup: tg)
+                    enc.endEncoding()
+                }
+            }
+        }
         
         // Run rigid body simulation if in rigid body mode
         if materialParameters.currentMaterialMode == .rigidBody {
@@ -569,8 +598,8 @@ extension MPMFluidRenderer {
         // Add completion handler to swap buffers when the shared command buffer finishes
         // (This will be called when the render pass commits the command buffer)
         commandBuffer.addCompletedHandler { [weak self] _ in
-            // Integrate aggregated SDF impulses into collision transform for next frame
-            self?.applySDFImpulseAggregationToCollisionTransform()
+            // Integrate GPU wall collision velocities + aggregated particle impulses into SDF transform
+            self?.applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: true)
             self?.endComputeAndSwapToRender()
         }
     }
@@ -594,8 +623,79 @@ extension MPMFluidRenderer {
         }
     }
 
+    private func getCurrentComputeUniforms() -> ComputeShaderUniforms {
+        let p = computeUniformBuffer.contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
+        return p[0]
+    }
+
+    // Prepare two rigid bodies for SDF A vs Wall B collision (written into rigidBodyStateBuffer)
+    private func prepareRigidBodiesForSDFWallCollision() {
+        guard let collisionManager = collisionManager else { return }
+        let cu = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)[0]
+        // Rigid A: current SDF state
+        let comLocal = cu.sdfOrigin + 0.5 * cu.sdfSize
+        let comWorld4 = cu.collisionTransform * SIMD4<Float>(comLocal.x, comLocal.y, comLocal.z, 1)
+        let comWorld = SIMD3<Float>(comWorld4.x, comWorld4.y, comWorld4.z)
+        var rbA = RigidBodyState(
+            centerOfMass: comWorld,
+            linearVelocity: sdfRigidLinearVelocity,
+            angularVelocity: sdfRigidAngularVelocity,
+            orientation: SIMD4<Float>(0,0,0,1),
+            totalMass: max(1e-4, cu.sdfMass),
+            invInertiaTensor: .init(),
+            accumulatedForce: .zero,
+            accumulatedTorque: .zero,
+            particleCount: 0,
+            isActive: 1,
+            linearDamping: 0.2,
+            angularDamping: 0.1,
+            restitution: 0.3,
+            friction: 0.5,
+            halfExtents: cu.sdfSize * 0.5,
+            boundingRadius: length(cu.sdfSize * 0.5)
+        )
+        let hx = max(1e-4, cu.sdfSize.x * 0.5)
+        let hy = max(1e-4, cu.sdfSize.y * 0.5)
+        let hz = max(1e-4, cu.sdfSize.z * 0.5)
+        let Ixx = rbA.totalMass * (hy*hy + hz*hz) / 12.0
+        let Iyy = rbA.totalMass * (hx*hx + hz*hz) / 12.0
+        let Izz = rbA.totalMass * (hx*hx + hy*hy) / 12.0
+        rbA.invInertiaTensor = simd_float3x3(
+            SIMD3<Float>(1.0/max(Ixx,1e-6), 0, 0),
+            SIMD3<Float>(0, 1.0/max(Iyy,1e-6), 0),
+            SIMD3<Float>(0, 0, 1.0/max(Izz,1e-6))
+        )
+
+        // Rigid B: wall (static, infinite mass)
+        let (bmin, bmax) = getBoundaryMinMax()
+        let center = (bmin + bmax) * 0.5
+        let ext = (bmax - bmin) * 0.5
+        let rbB = RigidBodyState(
+            centerOfMass: center,
+            linearVelocity: .zero,
+            angularVelocity: .zero,
+            orientation: SIMD4<Float>(0,0,0,1),
+            totalMass: 0.0, // invMass = 0
+            invInertiaTensor: simd_float3x3(.zero, .zero, .zero),
+            accumulatedForce: .zero,
+            accumulatedTorque: .zero,
+            particleCount: 0,
+            isActive: 1,
+            linearDamping: 0.0,
+            angularDamping: 0.0,
+            restitution: 0.2,
+            friction: 0.5,
+            halfExtents: ext,
+            boundingRadius: length(ext)
+        )
+
+        let ptr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
+        ptr[0] = rbA
+        ptr[1] = rbB
+    }
+
     // Integrate accumulated SDF impulses (from particles) and update collision transform
-    internal func applySDFImpulseAggregationToCollisionTransform() {
+    internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
         guard let accBuf = sdfImpulseAccumulatorBuffer,
               let collisionManager = collisionManager else { return }
         // Read accumulator (index 0)
@@ -603,7 +703,7 @@ extension MPMFluidRenderer {
         let acc = accPtr[0]
         let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
         let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
-        if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 { return }
+        if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 && !useGPUVelocities { return }
 
         // Read SDF size to approximate inertia as a solid box
         let cuPtr = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
@@ -620,6 +720,15 @@ extension MPMFluidRenderer {
             (mass / 12.0) * (hx*hx + hz*hz),
             (mass / 12.0) * (hx*hx + hy*hy)
         )
+
+        // Optionally fetch GPU-updated velocities from rigidBodyStateBuffer[0]
+        if useGPUVelocities {
+            let rbPtr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
+            let vGPU = rbPtr[0].linearVelocity
+            let wGPU = rbPtr[0].angularVelocity
+            sdfRigidLinearVelocity = vGPU
+            sdfRigidAngularVelocity = wGPU
+        }
 
         // Damped velocity integration
         let linearDamping: Float = 0.2
@@ -680,6 +789,67 @@ extension MPMFluidRenderer {
         // Apply on top of current transform: translate, then rotate about COM
         var T = cuPtr[0].collisionTransform
         T = dTrans * (Tcom * dRot * TcomInv) * T
+        // --- World-boundary collision handling for SDF OBB ---
+        // Compute world AABB of transformed SDF (OBB -> AABB using |M| * h)
+        let h = 0.5 * cuPtr[0].sdfSize
+        let centerLocal = cuPtr[0].sdfOrigin + h
+        let centerWorld4 = T * SIMD4<Float>(centerLocal.x, centerLocal.y, centerLocal.z, 1)
+        var centerWorld = SIMD3<Float>(centerWorld4.x, centerWorld4.y, centerWorld4.z)
+
+        // Upper-left 3x3 of T (rotation-scale)
+        let m = float3x3(
+            SIMD3<Float>(T.columns.0.x, T.columns.0.y, T.columns.0.z),
+            SIMD3<Float>(T.columns.1.x, T.columns.1.y, T.columns.1.z),
+            SIMD3<Float>(T.columns.2.x, T.columns.2.y, T.columns.2.z)
+        )
+        let absM = float3x3(
+            SIMD3<Float>(abs(m.columns.0.x), abs(m.columns.0.y), abs(m.columns.0.z)),
+            SIMD3<Float>(abs(m.columns.1.x), abs(m.columns.1.y), abs(m.columns.1.z)),
+            SIMD3<Float>(abs(m.columns.2.x), abs(m.columns.2.y), abs(m.columns.2.z))
+        )
+        let extents = absM * h
+        var worldMin = centerWorld - extents
+        var worldMax = centerWorld + extents
+
+        // Read simulation boundaries
+        let uPtr = computeUniformBuffer.contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
+        let bmin = uPtr[0].boundaryMin
+        let bmax = uPtr[0].boundaryMax
+        let wallThickness: Float = uPtr[0].gridSpacing // thickness = one grid cell
+        let innerMin = bmin + SIMD3<Float>(repeating: wallThickness)
+        let innerMax = bmax - SIMD3<Float>(repeating: wallThickness)
+
+        // Compute correction to keep inside [bmin, bmax]
+        var correction = SIMD3<Float>(repeating: 0)
+        var hitNormal = SIMD3<Float>(repeating: 0)
+        // Thin-wall SDF style: allow motion within [innerMin, innerMax],
+        // treat the bands [bmin, innerMin] and [innerMax, bmax] as walls of thickness 1 cell
+        if worldMin.x < innerMin.x { correction.x += (innerMin.x - worldMin.x); hitNormal.x += 1 }
+        if worldMax.x > innerMax.x { correction.x -= (worldMax.x - innerMax.x); hitNormal.x -= 1 }
+        if worldMin.y < innerMin.y { correction.y += (innerMin.y - worldMin.y); hitNormal.y += 1 }
+        if worldMax.y > innerMax.y { correction.y -= (worldMax.y - innerMax.y); hitNormal.y -= 1 }
+        if worldMin.z < innerMin.z { correction.z += (innerMin.z - worldMin.z); hitNormal.z += 1 }
+        if worldMax.z > innerMax.z { correction.z -= (worldMax.z - innerMax.z); hitNormal.z -= 1 }
+
+        if any(correction .!= 0) {
+            // Apply correction to translation
+            T.columns.3.x += correction.x
+            T.columns.3.y += correction.y
+            T.columns.3.z += correction.z
+            centerWorld += correction
+            worldMin += correction
+            worldMax += correction
+
+            // Reflect linear velocity on hit axes with restitution
+            let restitution: Float = 0.2
+            if hitNormal.x != 0 { sdfRigidLinearVelocity.x = -sdfRigidLinearVelocity.x * restitution }
+            if hitNormal.y != 0 { sdfRigidLinearVelocity.y = -sdfRigidLinearVelocity.y * restitution }
+            if hitNormal.z != 0 { sdfRigidLinearVelocity.z = -sdfRigidLinearVelocity.z * restitution }
+
+            // Damp angular velocity slightly on collision to reduce tunneling
+            sdfRigidAngularVelocity *= 0.8
+        }
+
         cuPtr[0].collisionTransform = T
         cuPtr[0].collisionInvTransform = T.inverse
 
