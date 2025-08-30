@@ -32,7 +32,7 @@ class CollisionItem{
     
     // MARK: - Private Helper Methods
     
-    public func calculateCollisionTransform(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>,
+    public func calculateCollisionTransformCenterOfBottom(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>,
                                            gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?,
                                            scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1),
                                            rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0),
@@ -73,7 +73,7 @@ class CollisionItem{
         let scaleVec = SIMD3<Float>(meshScale, meshScale, meshScale)
         let offsetVec = SIMD3<Float>(0.0, meshYOffset, 0.0)
         let rotationVec = SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0) // Convert degrees to radians
-        let (transform, invTransform) = calculateCollisionTransform(
+        let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
             meshMin: currentMeshMin,
             meshMax: currentMeshMax,
             gridMin: currentGridMin,
@@ -141,7 +141,7 @@ class CollisionItem{
         let maxBounds = collisionUniformPointer[0].sdfOrigin + collisionUniformPointer[0].sdfSize
         
         // Calculate collision transform using the helper method
-        let (transform, invTransform) = calculateCollisionTransform(
+        let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
             meshMin: minBounds,
             meshMax: maxBounds,
             gridMin: gridBoundaryMin,
@@ -280,7 +280,7 @@ class CollisionItem{
             let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
             let combinedOffset = offset + SIMD3<Float>(0.0, meshYOffset, 0.0)
             let combinedRotation = rotation + SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0)
-            let (transform, invTransform) = calculateCollisionTransform(
+            let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
                 meshMin: minBounds,
                 meshMax: maxBounds,
                 gridMin: gridBoundaryMin,
