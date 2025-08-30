@@ -395,6 +395,8 @@ extension MPMFluidRenderer {
         // Add completion handler to swap buffers when the shared command buffer finishes
         // (This will be called when the render pass commits the command buffer)
         commandBuffer.addCompletedHandler { [weak self] _ in
+            // Integrate aggregated SDF impulses into collision transform for next frame
+            self?.applySDFImpulseAggregationToCollisionTransform()
             self?.endComputeAndSwapToRender()
         }
     }
@@ -416,6 +418,91 @@ extension MPMFluidRenderer {
             sdfArgumentBuffer = buf
             return (buf, enc)
         }
+    }
+
+    // Integrate accumulated SDF impulses (from particles) and update collision transform
+    internal func applySDFImpulseAggregationToCollisionTransform() {
+        guard let accBuf = sdfImpulseAccumulatorBuffer,
+              let collisionManager = collisionManager else { return }
+        // Read accumulator (index 0)
+        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+        let acc = accPtr[0]
+        let J = acc.impulse
+        let Tau = acc.torque
+        if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 { return }
+
+        // Read SDF size to approximate inertia as a solid box
+        let cuPtr = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
+        let size = cuPtr[0].sdfSize
+        let hx = max(1e-4, size.x * 0.5)
+        let hy = max(1e-4, size.y * 0.5)
+        let hz = max(1e-4, size.z * 0.5)
+
+        // Simple physical params
+        let dt = timeStep
+        let mass: Float = 50.0 // approximate mass of SDF body
+        let I = SIMD3<Float>(
+            (mass / 12.0) * (hy*hy + hz*hz),
+            (mass / 12.0) * (hx*hx + hz*hz),
+            (mass / 12.0) * (hx*hx + hy*hy)
+        )
+
+        // Damped velocity integration
+        let linearDamping: Float = 0.05
+        let angularDamping: Float = 0.1
+        sdfRigidLinearVelocity *= exp(-linearDamping * dt)
+        sdfRigidAngularVelocity *= exp(-angularDamping * dt)
+        sdfRigidLinearVelocity += J / mass
+        sdfRigidAngularVelocity += SIMD3<Float>(
+            Tau.x / max(I.x, 1e-6),
+            Tau.y / max(I.y, 1e-6),
+            Tau.z / max(I.z, 1e-6)
+        )
+
+        // Clamp velocities for stability
+        let maxLin: Float = 5.0
+        let maxAng: Float = 5.0
+        sdfRigidLinearVelocity = simd_clamp(sdfRigidLinearVelocity, -SIMD3<Float>(repeating: maxLin), SIMD3<Float>(repeating: maxLin))
+        sdfRigidAngularVelocity = simd_clamp(sdfRigidAngularVelocity, -SIMD3<Float>(repeating: maxAng), SIMD3<Float>(repeating: maxAng))
+
+        // Build delta transform
+        let dTrans = float4x4(translation: sdfRigidLinearVelocity * dt)
+        let omegaDt = sdfRigidAngularVelocity * dt
+        let angle = simd_length(omegaDt)
+        var dRot = matrix_identity_float4x4
+        if angle > 1e-6 {
+            let axis = simd_normalize(omegaDt)
+            let c = cos(angle)
+            let s = sin(angle)
+            let t: Float = 1 - c
+            let x = axis.x, y = axis.y, z = axis.z
+            let r00 = t*x*x + c
+            let r01 = t*x*y - s*z
+            let r02 = t*x*z + s*y
+            let r10 = t*x*y + s*z
+            let r11 = t*y*y + c
+            let r12 = t*y*z - s*x
+            let r20 = t*x*z - s*y
+            let r21 = t*y*z + s*x
+            let r22 = t*z*z + c
+            let rot3 = float3x3(SIMD3<Float>(r00, r01, r02),
+                                 SIMD3<Float>(r10, r11, r12),
+                                 SIMD3<Float>(r20, r21, r22))
+            let c0 = SIMD4<Float>(rot3.columns.0.x, rot3.columns.0.y, rot3.columns.0.z, 0)
+            let c1 = SIMD4<Float>(rot3.columns.1.x, rot3.columns.1.y, rot3.columns.1.z, 0)
+            let c2 = SIMD4<Float>(rot3.columns.2.x, rot3.columns.2.y, rot3.columns.2.z, 0)
+            let c3 = SIMD4<Float>(0, 0, 0, 1)
+            dRot = float4x4(columns: (c0, c1, c2, c3))
+        }
+
+        // Apply on top of current transform (rotation around origin approximation)
+        var T = cuPtr[0].collisionTransform
+        T = dTrans * dRot * T
+        cuPtr[0].collisionTransform = T
+        cuPtr[0].collisionInvTransform = T.inverse
+
+        // Optionally reset accumulator (we also clear it before next frame)
+        accPtr[0] = SDFImpulseAccumulator(impulse: .zero, torque: .zero)
     }
 
     // MARK: - MPM Simulation Pipeline
@@ -456,6 +543,12 @@ extension MPMFluidRenderer {
 
         // Use multiple simulation substeps per frame for better stability.
         let substeps = max(1, materialParameters.simulationSubsteps)
+
+        // Clear SDF impulse accumulator once per frame before substeps
+        if let accBuf = sdfImpulseAccumulatorBuffer, let blit = commandBuffer.makeBlitCommandEncoder() {
+            blit.fill(buffer: accBuf, range: 0..<accBuf.length, value: 0)
+            blit.endEncoding()
+        }
 
         for _ in 0..<substeps {
             // 1. Clear grid
@@ -558,6 +651,10 @@ extension MPMFluidRenderer {
                             computeEncoder.useResource(tex, usage: .read)
                         }
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
+                        // Bind SDF impulse accumulator for aggregation
+                        if let accBuf = sdfImpulseAccumulatorBuffer {
+                            computeEncoder.setBuffer(accBuf, offset: 0, index: 5)
+                        }
                     }
                     
                     computeEncoder.dispatchThreadgroups(
@@ -586,6 +683,10 @@ extension MPMFluidRenderer {
                             computeEncoder.useResource(tex, usage: .read)
                         }
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 4)
+                        // Bind SDF impulse accumulator for aggregation
+                        if let accBuf = sdfImpulseAccumulatorBuffer {
+                            computeEncoder.setBuffer(accBuf, offset: 0, index: 5)
+                        }
                     }
                     
                     computeEncoder.dispatchThreadgroups(

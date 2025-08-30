@@ -502,11 +502,20 @@ class MPMFluidRenderer: NSObject {
     // Cached argument buffer for SDF textures (avoid per-dispatch creation)
     internal var sdfArgumentEncoder: MTLArgumentEncoder?
     internal var sdfArgumentBuffer: MTLBuffer?
-    
+
     // AR SDF collision
     public var useARCollision: Bool = false
     private var arSDFTexture: MTLTexture?
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
+
+    // --- SDF rigid-body impulse aggregation & state ---
+    struct SDFImpulseAccumulator {
+        var impulse: SIMD3<Float>
+        var torque: SIMD3<Float>
+    }
+    internal var sdfImpulseAccumulatorBuffer: MTLBuffer?
+    internal var sdfRigidLinearVelocity: SIMD3<Float> = .zero
+    internal var sdfRigidAngularVelocity: SIMD3<Float> = .zero
     
     // Texture cache for screen size optimization
     internal let textureCacheManager: TextureCacheManager<FluidRenderTextures>
@@ -777,6 +786,11 @@ class MPMFluidRenderer: NSObject {
             length: rigidBodyBufferSize,
             options: .storageModeShared
         )!
+
+        // SDF impulse accumulator buffer (one per SDF, currently use index 0)
+        let accumulatorSize = MemoryLayout<SDFImpulseAccumulator>.stride * CollisionManager.MAX_RIGIDS
+        sdfImpulseAccumulatorBuffer = device.makeBuffer(length: accumulatorSize, options: .storageModeShared)
+        sdfImpulseAccumulatorBuffer?.label = "SDFImpulseAccumulatorBuffer"
     }
             
     func update(deltaTime: Float, screenSize: SIMD2<Float>, projectionMatrix: float4x4, viewMatrix: float4x4)

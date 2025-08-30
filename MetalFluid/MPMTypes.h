@@ -42,6 +42,17 @@ typedef struct {
     MPM_NON_ATOMIC_FLOAT mass;           // atomic<float> mass (Metal) / float (Swift)
 } NonAtomicMPMGridNode;
 
+// Accumulator for SDF rigid-body impulses aggregated from particle collisions
+// Note: uses atomic floats on GPU; in Swift, treat as plain floats when reading
+typedef struct {
+    MPM_ATOMIC_FLOAT impulse_x;
+    MPM_ATOMIC_FLOAT impulse_y;
+    MPM_ATOMIC_FLOAT impulse_z;
+    MPM_ATOMIC_FLOAT torque_x;
+    MPM_ATOMIC_FLOAT torque_y;
+    MPM_ATOMIC_FLOAT torque_z;
+} SDFImpulseAccumulator;
+
 // Rigid body state for complete rigid body dynamics
 typedef struct {
     simd_float3 centerOfMass;          // Center of mass position

@@ -324,6 +324,7 @@ kernel void gridToParticlesFluid1(
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
                             constant CollisionUniforms& collision [[buffer(3)]],
                             constant SDFSet& sdfSet [[buffer(4)]],
+                            device SDFImpulseAccumulator* sdfAccumulators [[buffer(5)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -389,6 +390,28 @@ kernel void gridToParticlesFluid1(
     
     // Apply collision impulse to velocity
     particles[id].velocity += collisionImpulse;
+    
+    // Aggregate equal-and-opposite impulse to SDF rigid body accumulator (index 0)
+    // Treat returned collisionImpulse as velocity delta; convert to momentum J = m * dv
+    if (collision.enableCollision == 1) {
+        float3 J = particles[id].mass * collisionImpulse; // momentum imparted to particle
+        if (any(isfinite(J))) {
+            float3 negJ = -J; // equal and opposite to SDF object
+            // Approximate COM from collision transform translation (4th column)
+            float3 com = float3(collision.collisionTransform[3].x,
+                                collision.collisionTransform[3].y,
+                                collision.collisionTransform[3].z);
+            float3 r = particles[id].position - com;
+            float3 torque = cross(r, negJ);
+            // Atomically accumulate
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_x, torque.x, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_y, torque.y, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_z, torque.z, uniforms);
+        }
+    }
     float impulseStrength = length(collisionImpulse);
     if (impulseStrength > 0.1) {
         float3 reactionDirection = -normalize(collisionImpulse);
@@ -440,6 +463,7 @@ kernel void gridToParticlesElastic(
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
                                   constant CollisionUniforms& collision [[buffer(3)]],
                                   constant SDFSet& sdfSet [[buffer(4)]],
+                                  device SDFImpulseAccumulator* sdfAccumulators [[buffer(5)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
@@ -532,6 +556,25 @@ kernel void gridToParticlesElastic(
     
     // Apply collision impulse to velocity
     particles[id].velocity += collisionImpulse;
+    
+    // Aggregate equal-and-opposite impulse to SDF rigid body accumulator (index 0)
+    if (collision.enableCollision == 1) {
+        float3 J = particles[id].mass * collisionImpulse;
+        if (any(isfinite(J))) {
+            float3 negJ = -J;
+            float3 com = float3(collision.collisionTransform[3].x,
+                                collision.collisionTransform[3].y,
+                                collision.collisionTransform[3].z);
+            float3 r = particles[id].position - com;
+            float3 torque = cross(r, negJ);
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_x, torque.x, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_y, torque.y, uniforms);
+            atomicAddWithUniform(&sdfAccumulators[0].torque_z, torque.z, uniforms);
+        }
+    }
     float impulseStrength = length(collisionImpulse);
     if (impulseStrength > 0.1) {
         float3 reactionDirection = -normalize(collisionImpulse);
@@ -617,4 +660,3 @@ kernel void applyForceToGrid(
         }
     }
 }
-
