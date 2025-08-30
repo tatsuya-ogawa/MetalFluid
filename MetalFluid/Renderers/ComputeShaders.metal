@@ -397,13 +397,17 @@ kernel void gridToParticlesFluid1(
         float3 J = particles[id].mass * collisionImpulse; // momentum imparted to particle
         if (any(isfinite(J))) {
             float3 negJ = -J; // equal and opposite to SDF object
-            // Approximate COM from collision transform translation (4th column)
-            float3 com = float3(collision.collisionTransform[3].x,
-                                collision.collisionTransform[3].y,
-                                collision.collisionTransform[3].z);
+            
+            // Compute actual Center of Mass from SDF center in world space
+            // SDF local center = sdfOrigin + sdfSize * 0.5
+            float3 sdfLocalCenter = collision.sdfOrigin + collision.sdfSize * 0.5;
+            float4 sdfWorldCenter4 = collision.collisionTransform * float4(sdfLocalCenter, 1.0);
+            float3 com = sdfWorldCenter4.xyz;
+            
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
-            // Atomically accumulate
+            
+            // Atomically accumulate linear and angular impulses
             atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
             atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
             atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
@@ -562,11 +566,17 @@ kernel void gridToParticlesElastic(
         float3 J = particles[id].mass * collisionImpulse;
         if (any(isfinite(J))) {
             float3 negJ = -J;
-            float3 com = float3(collision.collisionTransform[3].x,
-                                collision.collisionTransform[3].y,
-                                collision.collisionTransform[3].z);
+            
+            // Compute actual Center of Mass from SDF center in world space
+            // SDF local center = sdfOrigin + sdfSize * 0.5
+            float3 sdfLocalCenter = collision.sdfOrigin + collision.sdfSize * 0.5;
+            float4 sdfWorldCenter4 = collision.collisionTransform * float4(sdfLocalCenter, 1.0);
+            float3 com = sdfWorldCenter4.xyz;
+            
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
+            
+            // Atomically accumulate linear and angular impulses
             atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
             atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
             atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
