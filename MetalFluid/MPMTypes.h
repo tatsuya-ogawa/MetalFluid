@@ -68,26 +68,6 @@ typedef struct {
     simd_float3 angularVelocity;
 } SDFPhysicsState;
 
-// Rigid body state for complete rigid body dynamics
-typedef struct {
-    simd_float3 centerOfMass;          // Center of mass position
-    simd_float3 linearVelocity;        // Linear velocity
-    simd_float3 angularVelocity;       // Angular velocity
-    float4 orientation;                // Orientation quaternion (x, y, z, w)
-    float totalMass;                   // Total mass of rigid body
-    simd_float3x3 invInertiaTensor;    // Inverse inertia tensor (world space)
-    simd_float3 accumulatedForce;      // Accumulated force for this frame
-    simd_float3 accumulatedTorque;     // Accumulated torque for this frame
-    uint32_t particleCount;            // Number of particles in this rigid body
-    uint32_t isActive;                 // 1 if active, 0 if inactive
-    float linearDamping;               // Linear damping coefficient
-    float angularDamping;              // Angular damping coefficient
-    float restitution;                 // Coefficient of restitution
-    float friction;                    // Friction coefficient
-    float3 halfExtents;           // Local half extents (AABB in rest pose)
-    float boundingRadius;              // Bounding sphere radius
-} RigidBodyState;
-
 // Compute shader specific uniforms
 typedef struct {
     float deltaTime;

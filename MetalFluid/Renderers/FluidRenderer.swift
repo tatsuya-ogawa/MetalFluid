@@ -625,14 +625,6 @@ class MPMFluidRenderer: NSObject {
             options: .storageModeShared
         )!
         
-        // Rigid body state buffer
-        let maxRigidBodies = 10  // Maximum number of rigid bodies
-        let rigidBodyBufferSize = MemoryLayout<RigidBodyState>.stride * maxRigidBodies
-        rigidBodyStateBuffer = device.makeBuffer(
-            length: rigidBodyBufferSize,
-            options: .storageModeShared
-        )!
-
         // SDF impulse accumulator buffer (one per SDF, currently use index 0)
         let physicsSize = MemoryLayout<SDFPhysicsStateSwift>.stride * CollisionManager.MAX_COLLISION_SDF
         sdfPhysicsBuffer = device.makeBuffer(length: physicsSize, options: .storageModeShared)

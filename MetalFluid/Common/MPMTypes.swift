@@ -126,25 +126,6 @@ struct SortKey {
     var value: UInt32    // Original particle index
 }
 
-struct RigidBodyState {
-    var centerOfMass: SIMD3<Float>          // Center of mass position
-    var linearVelocity: SIMD3<Float>        // Linear velocity
-    var angularVelocity: SIMD3<Float>       // Angular velocity
-    var orientation: SIMD4<Float>           // Orientation quaternion (x, y, z, w)
-    var totalMass: Float                    // Total mass of rigid body
-    var invInertiaTensor: simd_float3x3     // Inverse inertia tensor (world space)
-    var accumulatedForce: SIMD3<Float>      // Accumulated force for this frame
-    var accumulatedTorque: SIMD3<Float>     // Accumulated torque for this frame
-    var particleCount: UInt32               // Number of particles in this rigid body
-    var isActive: UInt32                    // 1 if active, 0 if inactive
-    var linearDamping: Float                // Linear damping coefficient
-    var angularDamping: Float               // Angular damping coefficient
-    var restitution: Float                  // Coefficient of restitution
-    var friction: Float                     // Friction coefficient
-    var halfExtents: SIMD3<Float>             // Local half extents (AABB in rest pose)
-    var boundingRadius: Float              // Bounding sphere radius
-}
-
 // MARK: - Enums
 enum RenderMode {
     case particles

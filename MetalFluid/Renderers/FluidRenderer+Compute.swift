@@ -350,15 +350,6 @@ extension MPMFluidRenderer {
             (mass / 12.0) * (hx*hx + hy*hy)
         )
 
-        // Optionally fetch GPU-updated velocities from rigidBodyStateBuffer[0]
-        if useGPUVelocities {
-            let rbPtr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
-            let vGPU = rbPtr[0].linearVelocity
-            let wGPU = rbPtr[0].angularVelocity
-            sdfRigidLinearVelocity = vGPU
-            sdfRigidAngularVelocity = wGPU
-        }
-
         // Optional gravity for SDF rigid body from per-SDF settings - simplified for now
         // let primaryGravity = collisionManager.getSDFSettings(index: 0)?.useGravity ?? false
         let primaryGravity = true  // Assume gravity enabled for now
