@@ -930,8 +930,8 @@ class ViewController: UIViewController {
             materialModeButton.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.8)
         case .neoHookeanElastic:
             renderer.materialParameters.currentMaterialMode = .fluid
-            materialModeButton.setTitle("Rigid Body", for: .normal)
-            materialModeButton.backgroundColor = UIColor.systemBrown.withAlphaComponent(0.8)
+            materialModeButton.setTitle("Fluid", for: .normal)
+            materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
         }
         
         // Reset simulation when material mode changes
