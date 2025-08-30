@@ -50,6 +50,8 @@ class ViewController: UIViewController {
     private var gridSizeLabel: UILabel!
     private var sdfScaleSlider: UISlider!
     private var sdfScaleLabel: UILabel!
+    private var sdfYOffsetSlider: UISlider!
+    private var sdfYOffsetLabel: UILabel!
     
     // Collision controls panel (right side)
     private var collisionPanel: UIView!
@@ -353,6 +355,24 @@ class ViewController: UIViewController {
         sdfScaleLabel.textColor = .white
         sdfScaleLabel.font = UIFont.systemFont(ofSize: 14)
         sdfScaleLabel.textAlignment = .center
+        
+        // SDF Y offset slider
+        sdfYOffsetSlider = UISlider()
+        sdfYOffsetSlider.minimumValue = -50.0
+        sdfYOffsetSlider.maximumValue = 50.0
+        sdfYOffsetSlider.value = 0.0
+        sdfYOffsetSlider.addTarget(
+            self,
+            action: #selector(sdfYOffsetChanged),
+            for: .valueChanged
+        )
+        
+        // SDF Y offset label
+        sdfYOffsetLabel = UILabel()
+        sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", sdfYOffsetSlider.value)
+        sdfYOffsetLabel.textColor = .white
+        sdfYOffsetLabel.font = UIFont.systemFont(ofSize: 14)
+        sdfYOffsetLabel.textAlignment = .center
 
         // Add buttons to control panel
         controlPanel.addSubview(modeButton)
@@ -370,6 +390,8 @@ class ViewController: UIViewController {
         controlPanel.addSubview(gridSizeLabel)
         controlPanel.addSubview(sdfScaleSlider)
         controlPanel.addSubview(sdfScaleLabel)
+        controlPanel.addSubview(sdfYOffsetSlider)
+        controlPanel.addSubview(sdfYOffsetLabel)
 
         // Setup constraints
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
@@ -388,6 +410,8 @@ class ViewController: UIViewController {
         gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
         sdfScaleSlider.translatesAutoresizingMaskIntoConstraints = false
         sdfScaleLabel.translatesAutoresizingMaskIntoConstraints = false
+        sdfYOffsetSlider.translatesAutoresizingMaskIntoConstraints = false
+        sdfYOffsetLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // Control panel constraints
@@ -626,9 +650,39 @@ class ViewController: UIViewController {
             ),
             sdfScaleSlider.heightAnchor.constraint(equalToConstant: 30),
             
+            // SDF Y offset label constraints
+            sdfYOffsetLabel.topAnchor.constraint(
+                equalTo: sdfScaleSlider.bottomAnchor,
+                constant: 10
+            ),
+            sdfYOffsetLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYOffsetLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYOffsetLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // SDF Y offset slider constraints
+            sdfYOffsetSlider.topAnchor.constraint(
+                equalTo: sdfYOffsetLabel.bottomAnchor,
+                constant: 5
+            ),
+            sdfYOffsetSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfYOffsetSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfYOffsetSlider.heightAnchor.constraint(equalToConstant: 30),
+            
             // Bottom constraint to define controlPanel height
             controlPanel.bottomAnchor.constraint(
-                equalTo: sdfScaleSlider.bottomAnchor,
+                equalTo: sdfYOffsetSlider.bottomAnchor,
                 constant: 10
             ),
         ])
@@ -781,6 +835,12 @@ class ViewController: UIViewController {
         let scale = slider.value
         sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", scale)
         fluidRenderer.collisionManager?.meshScale = scale
+    }
+    
+    @objc private func sdfYOffsetChanged(_ slider: UISlider) {
+        let offset = slider.value
+        sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", offset)
+        fluidRenderer.collisionManager?.meshYOffset = offset
     }
     
     @objc private func toggleRenderMode() {

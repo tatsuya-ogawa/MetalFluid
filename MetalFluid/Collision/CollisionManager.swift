@@ -23,8 +23,14 @@ class CollisionManager {
     // Current mesh data
     private var currentTriangles: [Triangle] = []
     
-    // Scale control
+    // Scale and offset control
     public var meshScale: Float = 1.0 {
+        didSet {
+            updateCollisionTransform()
+        }
+    }
+    
+    public var meshYOffset: Float = 0.0 {
         didSet {
             updateCollisionTransform()
         }
@@ -85,9 +91,13 @@ class CollisionManager {
         let meshCenter = (meshMin + meshMax) * 0.5
         
         // Calculate translation to center mesh in grid (XZ) and align bottom (Y), plus offset
+        // For Y alignment, we need to account for scaling effect on mesh height
+        let scaledMeshHeight = (meshMax.y - meshMin.y) * scale.y
+        let scaledMeshBottom = meshMin.y * scale.y + meshCenter.y * (scale.y - 1.0)
+        
         let translation = SIMD3<Float>(
             gridCenter.x - meshCenter.x + offset.x,  // Center X + offset
-            gridMin.y - meshMin.y + offset.y,        // Align bottom Y + offset
+            gridMin.y - scaledMeshBottom + offset.y, // Align scaled bottom Y + offset
             gridCenter.z - meshCenter.z + offset.z   // Center Z + offset
         )
         
@@ -127,12 +137,14 @@ class CollisionManager {
         guard currentGridMin != nil && currentGridMax != nil else { return }
         
         let scaleVec = SIMD3<Float>(meshScale, meshScale, meshScale)
+        let offsetVec = SIMD3<Float>(0.0, meshYOffset, 0.0)
         let (transform, invTransform) = calculateCollisionTransform(
             meshMin: currentMeshMin,
             meshMax: currentMeshMax,
             gridMin: currentGridMin,
             gridMax: currentGridMax,
-            scale: scaleVec
+            scale: scaleVec,
+            offset: offsetVec
         )
         
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
@@ -175,6 +187,7 @@ class CollisionManager {
         if sdfTexture != nil {
             // Calculate collision transform using meshScale combined with provided scale
             let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
+            let combinedOffset = offset + SIMD3<Float>(0.0, meshYOffset, 0.0)
             let (transform, invTransform) = calculateCollisionTransform(
                 meshMin: minBounds,
                 meshMax: maxBounds,
@@ -182,7 +195,7 @@ class CollisionManager {
                 gridMax: gridBoundaryMax,
                 scale: combinedScale,
                 rotation: rotation,
-                offset: offset
+                offset: combinedOffset
             )
             
             // Update collision uniforms
