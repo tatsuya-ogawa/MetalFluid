@@ -13,10 +13,10 @@ struct SDFTriangle {
 }
 
 class SDFGenerator {
+    private let useOptimized:Bool = false
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
-    private var sdfComputePipelineState: MTLComputePipelineState?
-    private var sdfOptimizedPipelineState: MTLComputePipelineState?
+    private var sdfPipelineState: MTLComputePipelineState?
     let padding: Float = 0.1
 
     init(device: MTLDevice) {
@@ -36,12 +36,14 @@ class SDFGenerator {
         }
         
         do {
-            if let sdfFunction = library.makeFunction(name: "generateSDF") {
-                sdfComputePipelineState = try device.makeComputePipelineState(function: sdfFunction)
-            }
-            
-            if let optimizedFunction = library.makeFunction(name: "generateSDFOptimized") {
-                sdfOptimizedPipelineState = try device.makeComputePipelineState(function: optimizedFunction)
+            if useOptimized{
+                if let optimizedFunction = library.makeFunction(name: "generateSDFOptimized") {
+                    sdfPipelineState = try device.makeComputePipelineState(function: optimizedFunction)
+                }
+            }else{
+                if let function = library.makeFunction(name: "generateSDF") {
+                    sdfPipelineState = try device.makeComputePipelineState(function: function)
+                }
             }
         } catch {
             print("Failed to create SDF compute pipeline states: \(error)")
@@ -50,11 +52,14 @@ class SDFGenerator {
     
     
     func generateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, boundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)) -> MTLTexture? {
-        guard let pipelineState = sdfComputePipelineState else {
-            print("SDF compute pipeline not available")
-            return nil
+//        guard let pipelineState = sdfComputePipelineState else {
+//            print("SDF compute pipeline not available")
+//            return nil
+//        }
+        guard let pipelineState = sdfPipelineState else {
+            print("Optimized SDF compute pipeline not available, falling back to standard")
+            return generateSDF(triangles: triangles, resolution: resolution, boundingBox: boundingBox)
         }
-        
         // Convert triangles to GPU format
         let sdfTriangles = triangles.map { triangle in
             SDFTriangle(v0: triangle.v0, v1: triangle.v1, v2: triangle.v2)
@@ -162,20 +167,6 @@ class SDFGenerator {
         print("GPU SDF generation completed successfully")
         return sdfTexture
     }
-    
-    // Fast GPU-based SDF generation with optimized memory access
-    func generateSDFOptimized(triangles: [Triangle], resolution: SIMD3<Int32>, boundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)) -> MTLTexture? {
-        guard let pipelineState = sdfOptimizedPipelineState else {
-            print("Optimized SDF compute pipeline not available, falling back to standard")
-            return generateSDF(triangles: triangles, resolution: resolution, boundingBox: boundingBox)
-        }
-        
-        // Use optimized pipeline for better performance with large meshes
-        // Similar implementation but with shared memory optimization
-        // Implementation details similar to generateSDF but with optimized pipeline
-        return generateSDF(triangles: triangles, resolution: resolution, boundingBox: boundingBox)
-    }
-    
     // MARK: - AR Mesh SDF Generation
     
     #if canImport(ARKit)
@@ -252,7 +243,7 @@ class SDFGenerator {
         print("📦 Bounding box: min=\(meshBoundingBox.min), max=\(meshBoundingBox.max)")
         
         // Generate SDF using existing function
-        return generateSDFOptimized(triangles: triangles, resolution: sdfResolution, boundingBox: meshBoundingBox)
+        return generateSDF(triangles: triangles, resolution: sdfResolution, boundingBox: meshBoundingBox)
     }
     
     @available(iOS 13.4, macOS 10.15.4, *)
@@ -324,7 +315,7 @@ class SDFGenerator {
         print("🔄 Generating combined SDF from \(meshAnchors.count) AR meshes: \(allTriangles.count) total triangles")
         print("📦 Combined bounding box: min=\(combinedBoundingBox.min), max=\(combinedBoundingBox.max)")
         
-        return generateSDFOptimized(triangles: allTriangles, resolution: sdfResolution, boundingBox: combinedBoundingBox)
+        return generateSDF(triangles: allTriangles, resolution: sdfResolution, boundingBox: combinedBoundingBox)
     }
     
     private func transformPoint(_ point: SIMD3<Float>, by transform: simd_float4x4) -> SIMD3<Float> {
