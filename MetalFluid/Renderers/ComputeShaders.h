@@ -236,8 +236,8 @@ inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture
     return float4(sdfValue, normal);
 }
 
-#define MAX_RIGIDS 8
+constant int MAX_COLLISION_SDF = 8;
 struct SDFSet {
-    array<texture3d<float, access::sample>, MAX_RIGIDS> sdf [[id(0)]];
-    array<constant CollisionUniforms*, MAX_RIGIDS> collision [[id(MAX_RIGIDS)]];
+    array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdf [[id(0)]];
+    array<constant CollisionUniforms*, MAX_COLLISION_SDF> collision [[id(MAX_COLLISION_SDF)]];
 };

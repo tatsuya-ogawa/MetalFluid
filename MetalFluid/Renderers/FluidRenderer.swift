@@ -648,7 +648,7 @@ class MPMFluidRenderer: NSObject {
         )!
 
         // SDF impulse accumulator buffer (one per SDF, currently use index 0)
-        let accumulatorSize = MemoryLayout<SDFImpulseAccumulator>.stride * CollisionManager.MAX_RIGIDS
+        let accumulatorSize = MemoryLayout<SDFImpulseAccumulator>.stride * CollisionManager.MAX_COLLISION_SDF
         sdfImpulseAccumulatorBuffer = device.makeBuffer(length: accumulatorSize, options: .storageModeShared)
         sdfImpulseAccumulatorBuffer?.label = "SDFImpulseAccumulatorBuffer"
     }
@@ -742,8 +742,8 @@ class MPMFluidRenderer: NSObject {
         
         // Clear SDF impulse accumulator
         if let accBuf = sdfImpulseAccumulatorBuffer {
-            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
-            for i in 0..<CollisionManager.MAX_RIGIDS {
+            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
+            for i in 0..<CollisionManager.MAX_COLLISION_SDF {
                 accPtr[i] = SDFImpulseAccumulator(
                     impulse_x: 0, impulse_y: 0, impulse_z: 0,
                     torque_x: 0, torque_y: 0, torque_z: 0

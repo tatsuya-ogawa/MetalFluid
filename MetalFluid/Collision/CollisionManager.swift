@@ -331,7 +331,7 @@ class CollisionItem{
 
 }
 class CollisionManager {
-    static let MAX_RIGIDS = 8
+    static let MAX_COLLISION_SDF = 8
     private let device: MTLDevice
     
     // SDF generation and collision detection

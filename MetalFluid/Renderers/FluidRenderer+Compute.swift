@@ -355,14 +355,14 @@ extension MPMFluidRenderer {
             sdfTextureDesc.textureType = .type3D
             sdfTextureDesc.index = 0
             sdfTextureDesc.access = .readOnly
-            sdfTextureDesc.arrayLength = CollisionManager.MAX_RIGIDS
+            sdfTextureDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
             
             // CollisionUniforms buffer array at index 1
             let collisionBufferDesc = MTLArgumentDescriptor()
             collisionBufferDesc.dataType = .pointer
             collisionBufferDesc.index = 1
             collisionBufferDesc.access = .readOnly
-            collisionBufferDesc.arrayLength = CollisionManager.MAX_RIGIDS
+            collisionBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
             
             let enc = device.makeArgumentEncoder(arguments: [sdfTextureDesc, collisionBufferDesc])!
             let buf = device.makeBuffer(length: enc.encodedLength, options: [])!
@@ -385,12 +385,12 @@ extension MPMFluidRenderer {
 //        // Static mode from per-SDF settings
 //        let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
 //        if !primaryMoves {
-//            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+//            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
 //            accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
 //            return
 //        }
 //        // Read accumulator (index 0)
-//        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+//        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
 //        let acc = accPtr[0]
 //        let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
 //        let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
