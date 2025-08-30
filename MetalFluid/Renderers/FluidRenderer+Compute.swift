@@ -427,8 +427,8 @@ extension MPMFluidRenderer {
         // Read accumulator (index 0)
         let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
         let acc = accPtr[0]
-        let J = acc.impulse
-        let Tau = acc.torque
+        let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
+        let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
         if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 { return }
 
         // Read SDF size to approximate inertia as a solid box
@@ -440,7 +440,7 @@ extension MPMFluidRenderer {
 
         // Simple physical params
         let dt = timeStep
-        let mass: Float = 50.0 // approximate mass of SDF body
+        let mass: Float = max(1e-4, cuPtr[0].sdfMass)
         let I = SIMD3<Float>(
             (mass / 12.0) * (hy*hy + hz*hz),
             (mass / 12.0) * (hx*hx + hz*hz),
@@ -448,7 +448,7 @@ extension MPMFluidRenderer {
         )
 
         // Damped velocity integration
-        let linearDamping: Float = 0.05
+        let linearDamping: Float = 0.2
         let angularDamping: Float = 0.1
         sdfRigidLinearVelocity *= exp(-linearDamping * dt)
         sdfRigidAngularVelocity *= exp(-angularDamping * dt)
@@ -465,7 +465,7 @@ extension MPMFluidRenderer {
         sdfRigidLinearVelocity = simd_clamp(sdfRigidLinearVelocity, -SIMD3<Float>(repeating: maxLin), SIMD3<Float>(repeating: maxLin))
         sdfRigidAngularVelocity = simd_clamp(sdfRigidAngularVelocity, -SIMD3<Float>(repeating: maxAng), SIMD3<Float>(repeating: maxAng))
 
-        // Build delta transform
+        // Build delta transform (translation scaled by dt; rotation around COM)
         let dTrans = float4x4(translation: sdfRigidLinearVelocity * dt)
         let omegaDt = sdfRigidAngularVelocity * dt
         let angle = simd_length(omegaDt)
@@ -492,17 +492,28 @@ extension MPMFluidRenderer {
             let c1 = SIMD4<Float>(rot3.columns.1.x, rot3.columns.1.y, rot3.columns.1.z, 0)
             let c2 = SIMD4<Float>(rot3.columns.2.x, rot3.columns.2.y, rot3.columns.2.z, 0)
             let c3 = SIMD4<Float>(0, 0, 0, 1)
-            dRot = float4x4(columns: (c0, c1, c2, c3))
+            dRot = float4x4(c0, c1, c2, c3)
         }
 
-        // Apply on top of current transform (rotation around origin approximation)
+        // Compute world-space COM from local SDF center
+        let comLocal = cuPtr[0].sdfOrigin + 0.5 * cuPtr[0].sdfSize
+        let comWorld4 = cuPtr[0].collisionTransform * SIMD4<Float>(comLocal.x, comLocal.y, comLocal.z, 1.0)
+        let comWorld = SIMD3<Float>(comWorld4.x, comWorld4.y, comWorld4.z)
+
+        let Tcom = float4x4(translation: comWorld)
+        let TcomInv = float4x4(translation: -comWorld)
+
+        // Apply on top of current transform: translate, then rotate about COM
         var T = cuPtr[0].collisionTransform
-        T = dTrans * dRot * T
+        T = dTrans * (Tcom * dRot * TcomInv) * T
         cuPtr[0].collisionTransform = T
         cuPtr[0].collisionInvTransform = T.inverse
 
         // Optionally reset accumulator (we also clear it before next frame)
-        accPtr[0] = SDFImpulseAccumulator(impulse: .zero, torque: .zero)
+        accPtr[0] = SDFImpulseAccumulator(
+            impulse_x: 0, impulse_y: 0, impulse_z: 0,
+            torque_x: 0, torque_y: 0, torque_z: 0
+        )
     }
 
     // MARK: - MPM Simulation Pipeline

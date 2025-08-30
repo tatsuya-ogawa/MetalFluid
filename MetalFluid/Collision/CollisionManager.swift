@@ -77,6 +77,7 @@ class CollisionManager {
             collisionStiffness: 1.0,  // Not used in velocity-based approach
             collisionDamping: 0.8,    // Not used in velocity-based approach  
             enableCollision: 0, // Disabled by default
+            sdfMass: 100.0,
             collisionTransform: matrix_identity_float4x4, // Default identity transform
             collisionInvTransform: matrix_identity_float4x4 // Default identity inverse transform
         )
@@ -213,6 +214,11 @@ class CollisionManager {
                 capacity: 1
             )
             
+            // Estimate mass from AABB volume (simple proxy), allow future override
+            let extent = (maxBounds - minBounds)
+            let volume = max(1e-4, extent.x * extent.y * extent.z)
+            let estimatedMass: Float = volume * 10.0 // density coefficient
+
             collisionUniformPointer[0] = CollisionUniforms(
                 sdfOrigin: minBounds,
                 sdfSize: maxBounds - minBounds,
@@ -220,6 +226,7 @@ class CollisionManager {
                 collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
                 collisionDamping: 0.8,    // Not directly used in new velocity-based approach
                 enableCollision: 1,
+                sdfMass: estimatedMass,
                 collisionTransform: transform,
                 collisionInvTransform: invTransform
             )
@@ -254,9 +261,11 @@ class CollisionManager {
             gridMax: gridBoundaryMax
         )
         
-        // Update the collision transforms
+        // Update the collision transforms (preserve mass)
+        let prevMass = collisionUniformPointer[0].sdfMass
         collisionUniformPointer[0].collisionTransform = transform
         collisionUniformPointer[0].collisionInvTransform = invTransform
+        collisionUniformPointer[0].sdfMass = prevMass
         
         print("Updated collision transform for new grid boundaries")
     }

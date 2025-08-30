@@ -103,6 +103,7 @@ typedef struct {
     float collisionStiffness;     // Collision response strength
     float collisionDamping;       // Velocity damping on collision
     uint32_t enableCollision;     // Enable/disable collision detection
+    float sdfMass;                // Effective mass of SDF rigid object
     simd_float4x4 collisionTransform;  // Transform matrix (scale, rotation, translation)
     simd_float4x4 collisionInvTransform; // Inverse transform matrix for world->mesh space
 } CollisionUniforms;

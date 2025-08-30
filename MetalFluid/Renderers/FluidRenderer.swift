@@ -59,6 +59,7 @@ struct CollisionUniforms {
     var collisionStiffness: Float
     var collisionDamping: Float
     var enableCollision: UInt32
+    var sdfMass: Float
     var collisionTransform: float4x4
     var collisionInvTransform: float4x4
 }
@@ -510,8 +511,12 @@ class MPMFluidRenderer: NSObject {
 
     // --- SDF rigid-body impulse aggregation & state ---
     struct SDFImpulseAccumulator {
-        var impulse: SIMD3<Float>
-        var torque: SIMD3<Float>
+        var impulse_x: Float
+        var impulse_y: Float
+        var impulse_z: Float
+        var torque_x: Float
+        var torque_y: Float
+        var torque_z: Float
     }
     internal var sdfImpulseAccumulatorBuffer: MTLBuffer?
     internal var sdfRigidLinearVelocity: SIMD3<Float> = .zero
