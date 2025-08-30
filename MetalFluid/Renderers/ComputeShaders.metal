@@ -322,9 +322,8 @@ kernel void gridToParticlesFluid1(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                            constant CollisionUniforms& collision [[buffer(3)]],
-                            constant SDFSet& sdfSet [[buffer(4)]],
-                            device SDFImpulseAccumulator* sdfAccumulators [[buffer(5)]],
+                            constant SDFSet& sdfSet [[buffer(3)]],
+                            device SDFImpulseAccumulator* sdfAccumulators [[buffer(4)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -379,6 +378,7 @@ kernel void gridToParticlesFluid1(
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
 
     // Enhanced SDF collision using improved impulse-based approach
+    constant CollisionUniforms& collision = *sdfSet.collision[0];
     float3 collisionImpulse = computeParticleSDFCollisionImpulse(
         particles[id].position,  // Position is modified directly in the function
         particles[id].velocity,
@@ -465,9 +465,8 @@ kernel void gridToParticlesElastic(
                                   device MPMParticle* particles [[buffer(0)]],
                                   constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                                  constant CollisionUniforms& collision [[buffer(3)]],
-                                  constant SDFSet& sdfSet [[buffer(4)]],
-                                  device SDFImpulseAccumulator* sdfAccumulators [[buffer(5)]],
+                                  constant SDFSet& sdfSet [[buffer(3)]],
+                                  device SDFImpulseAccumulator* sdfAccumulators [[buffer(4)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
@@ -549,6 +548,7 @@ kernel void gridToParticlesElastic(
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
     // Enhanced SDF collision using improved impulse-based approach
+    constant CollisionUniforms& collision = *sdfSet.collision[0];
     float3 collisionImpulse = computeParticleSDFCollisionImpulse(
         particles[id].position,  // Position is modified directly in the function
         particles[id].velocity,
