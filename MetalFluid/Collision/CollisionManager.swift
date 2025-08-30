@@ -2,11 +2,6 @@ import Foundation
 import Metal
 import MetalKit
 import simd
-struct Triangle {
-    var v0: SIMD3<Float>
-    var v1: SIMD3<Float>
-    var v2: SIMD3<Float>
-}
 class CollisionManager {
     static let MAX_RIGIDS = 8
     let padding: Float = 1.0
@@ -50,6 +45,10 @@ class CollisionManager {
     private var currentMeshMax: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     private var currentGridMin: SIMD3<Float>?
     private var currentGridMax: SIMD3<Float>?
+    
+    // Store initial SDF state for reset functionality
+    private var initialCollisionTransform: float4x4 = matrix_identity_float4x4
+    private var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
     
     init(device: MTLDevice) {
         self.device = device
@@ -270,6 +269,10 @@ class CollisionManager {
                 collisionInvTransform: invTransform
             )
             
+            // Store initial transform for reset functionality
+            initialCollisionTransform = transform
+            initialCollisionInvTransform = invTransform
+            
             // Load mesh into renderer for visualization
             meshRenderer.loadMesh(triangles: triangles)
             
@@ -349,6 +352,17 @@ class CollisionManager {
             capacity: 1
         )
         collisionUniformPointer[0].collisionDamping = damping
+    }
+    
+    func resetSDFTransform() {
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        collisionUniformPointer[0].collisionTransform = initialCollisionTransform
+        collisionUniformPointer[0].collisionInvTransform = initialCollisionInvTransform
+        
+        print("🔄 SDF transform reset to initial position")
     }
     
     // MARK: - Rendering Controls

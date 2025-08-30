@@ -52,18 +52,6 @@ struct ComputeShaderUniforms {
     var rigidBodyCount: UInt32  // Number of active rigid bodies
 }
 
-struct CollisionUniforms {
-    var sdfOrigin: SIMD3<Float>
-    var sdfSize: SIMD3<Float>
-    var sdfResolution: SIMD3<Int32>
-    var collisionStiffness: Float
-    var collisionDamping: Float
-    var enableCollision: UInt32
-    var sdfMass: Float
-    var collisionTransform: float4x4
-    var collisionInvTransform: float4x4
-}
-
 // Vertex shader specific uniforms
 struct VertexShaderUniforms {
     var projectionMatrix: float4x4
@@ -877,6 +865,26 @@ class MPMFluidRenderer: NSObject {
     func reset() {
         setupParticles()
         frameIndex = 0
+        
+        // Reset SDF rigid body velocities to zero
+        sdfRigidLinearVelocity = .zero
+        sdfRigidAngularVelocity = .zero
+        
+        // Reset SDF collision transform to initial position
+        collisionManager?.resetSDFTransform()
+        
+        // Clear SDF impulse accumulator
+        if let accBuf = sdfImpulseAccumulatorBuffer {
+            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+            for i in 0..<CollisionManager.MAX_RIGIDS {
+                accPtr[i] = SDFImpulseAccumulator(
+                    impulse_x: 0, impulse_y: 0, impulse_z: 0,
+                    torque_x: 0, torque_y: 0, torque_z: 0
+                )
+            }
+        }
+        
+        print("🔄 Simulation reset - particles and SDF state restored")
     }
     
     // MARK: - AR SDF Integration

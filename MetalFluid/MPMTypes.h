@@ -135,4 +135,10 @@ typedef struct {
     simd_float4 meshColor;
 } CollisionMeshUniforms;
 
+// Triangle structure
+struct Triangle {
+    float3 v0;
+    float3 v1;
+    float3 v2;
+};
 #endif /* MPMTypes_h */

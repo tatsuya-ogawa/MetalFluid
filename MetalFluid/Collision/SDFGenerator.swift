@@ -5,14 +5,7 @@ import simd
 import ARKit
 #endif
 
-// GPU Triangle structure (must match Metal shader)
-struct SDFTriangle {
-    let v0: SIMD3<Float>
-    let v1: SIMD3<Float>
-    let v2: SIMD3<Float>
-}
-
-class SDFGenerator {
+public class SDFGenerator {
     private let useOptimized:Bool = false
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -20,7 +13,7 @@ class SDFGenerator {
     private var wallPipelineState: MTLComputePipelineState?
     let padding: Float = 0.1
 
-    init(device: MTLDevice) {
+    public init(device: MTLDevice) {
         self.device = device
         guard let queue = device.makeCommandQueue() else {
             fatalError("Failed to create command queue for SDF generator")
@@ -66,13 +59,13 @@ class SDFGenerator {
         }
         // Convert triangles to GPU format
         let sdfTriangles = triangles.map { triangle in
-            SDFTriangle(v0: triangle.v0, v1: triangle.v1, v2: triangle.v2)
+            Triangle(v0: triangle.v0, v1: triangle.v1, v2: triangle.v2)
         }
         
         // Create buffers
         guard let triangleBuffer = device.makeBuffer(
             bytes: sdfTriangles,
-            length: MemoryLayout<SDFTriangle>.stride * sdfTriangles.count,
+            length: MemoryLayout<Triangle>.stride * sdfTriangles.count,
             options: .storageModeShared
         ) else {
             print("Failed to create triangle buffer")

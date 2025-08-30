@@ -2,15 +2,8 @@
 #include "../MPMTypes.h"
 using namespace metal;
 
-// Triangle structure for SDF generation
-struct SDFTriangle {
-    float3 v0;
-    float3 v1;
-    float3 v2;
-};
-
 // Distance from point to triangle
-inline float unsignedDistanceToTriangle(float3 point, SDFTriangle triangle) {
+inline float unsignedDistanceToTriangle(float3 point, Triangle triangle) {
     float3 v0 = triangle.v0;
     float3 v1 = triangle.v1;
     float3 v2 = triangle.v2;
@@ -57,7 +50,7 @@ inline float unsignedDistanceToTriangle(float3 point, SDFTriangle triangle) {
         return min(dist1, min(dist2, dist3));
     }
 }
-inline float signedDistanceToTriangle(float3 point, SDFTriangle triangle) {
+inline float signedDistanceToTriangle(float3 point, Triangle triangle) {
     float d = unsignedDistanceToTriangle(point, triangle);
 
     // 法線で符号付け（単一三角形ならこれでOK）
@@ -78,7 +71,7 @@ inline float signedDistanceToTriangle(float3 point, SDFTriangle triangle) {
 
 // SDF generation compute shader
 kernel void generateSDF(
-    device const SDFTriangle* triangles [[buffer(0)]],
+    device const Triangle* triangles [[buffer(0)]],
     device float* sdfData [[buffer(1)]],
     constant uint& triangleCount [[buffer(2)]],
     constant float3& sdfOrigin [[buffer(3)]],
@@ -113,7 +106,7 @@ kernel void generateSDF(
 
 // Optimized SDF generation with shared memory (for better performance)
 kernel void generateSDFOptimized(
-    device const SDFTriangle* triangles [[buffer(0)]],
+    device const Triangle* triangles [[buffer(0)]],
     device float* sdfData [[buffer(1)]],
     constant uint& triangleCount [[buffer(2)]],
     constant float3& sdfOrigin [[buffer(3)]],
@@ -124,7 +117,7 @@ kernel void generateSDFOptimized(
     uint3 tgid [[threadgroup_position_in_grid]]
 ) {
     // Shared memory for triangle cache (adjust size based on available memory)
-    threadgroup SDFTriangle sharedTriangles[64];
+    threadgroup Triangle sharedTriangles[64];
     
     // Check bounds
     if (gid.x >= uint(resolution.x) || 

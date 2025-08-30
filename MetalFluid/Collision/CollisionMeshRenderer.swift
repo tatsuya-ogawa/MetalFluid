@@ -13,7 +13,7 @@ struct CollisionMeshUniforms {
     var meshColor: simd_float4
 }
 
-class CollisionMeshRenderer {
+public class CollisionMeshRenderer {
     private let device: MTLDevice
     
     // Rendering resources
@@ -38,7 +38,7 @@ class CollisionMeshRenderer {
     // Mesh color uniforms buffer
     private var meshUniformsBuffer: MTLBuffer?
     
-    init(device: MTLDevice) {
+    public init(device: MTLDevice) {
         self.device = device
         setupPipelines()
         setupDepthStencil()
