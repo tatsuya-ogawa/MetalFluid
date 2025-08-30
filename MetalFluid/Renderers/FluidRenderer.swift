@@ -485,7 +485,7 @@ class MPMFluidRenderer: NSObject {
     // Screen size for depth filtering
     internal var screenSize: SIMD2<Float> = SIMD2<Float>(800, 600)
     // Collision detection
-    internal var collisionManager: CollisionManager?
+    public var collisionManager: CollisionManager?
 
     // Cached argument buffer for SDF textures (avoid per-dispatch creation)
     internal var sdfArgumentEncoder: MTLArgumentEncoder?

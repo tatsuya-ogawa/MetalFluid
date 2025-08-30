@@ -48,6 +48,8 @@ class ViewController: UIViewController {
     private var particleCountLabel: UILabel!
     private var gridSizeSlider: UISlider!
     private var gridSizeLabel: UILabel!
+    private var sdfScaleSlider: UISlider!
+    private var sdfScaleLabel: UILabel!
     
     // Collision controls panel (right side)
     private var collisionPanel: UIView!
@@ -333,6 +335,24 @@ class ViewController: UIViewController {
         gridSizeLabel.textColor = .white
         gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
         gridSizeLabel.textAlignment = .center
+        
+        // SDF scale slider
+        sdfScaleSlider = UISlider()
+        sdfScaleSlider.minimumValue = 1.0
+        sdfScaleSlider.maximumValue = 3.0
+        sdfScaleSlider.value = 1.0
+        sdfScaleSlider.addTarget(
+            self,
+            action: #selector(sdfScaleChanged),
+            for: .valueChanged
+        )
+        
+        // SDF scale label
+        sdfScaleLabel = UILabel()
+        sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", sdfScaleSlider.value)
+        sdfScaleLabel.textColor = .white
+        sdfScaleLabel.font = UIFont.systemFont(ofSize: 14)
+        sdfScaleLabel.textAlignment = .center
 
         // Add buttons to control panel
         controlPanel.addSubview(modeButton)
@@ -348,6 +368,8 @@ class ViewController: UIViewController {
         controlPanel.addSubview(particleCountLabel)
         controlPanel.addSubview(gridSizeSlider)
         controlPanel.addSubview(gridSizeLabel)
+        controlPanel.addSubview(sdfScaleSlider)
+        controlPanel.addSubview(sdfScaleLabel)
 
         // Setup constraints
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
@@ -364,6 +386,8 @@ class ViewController: UIViewController {
         particleCountLabel.translatesAutoresizingMaskIntoConstraints = false
         gridSizeSlider.translatesAutoresizingMaskIntoConstraints = false
         gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
+        sdfScaleSlider.translatesAutoresizingMaskIntoConstraints = false
+        sdfScaleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             // Control panel constraints
@@ -572,9 +596,39 @@ class ViewController: UIViewController {
             ),
             gridSizeSlider.heightAnchor.constraint(equalToConstant: 30),
             
+            // SDF scale label constraints
+            sdfScaleLabel.topAnchor.constraint(
+                equalTo: gridSizeSlider.bottomAnchor,
+                constant: 10
+            ),
+            sdfScaleLabel.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfScaleLabel.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfScaleLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // SDF scale slider constraints
+            sdfScaleSlider.topAnchor.constraint(
+                equalTo: sdfScaleLabel.bottomAnchor,
+                constant: 5
+            ),
+            sdfScaleSlider.leadingAnchor.constraint(
+                equalTo: controlPanel.leadingAnchor,
+                constant: 10
+            ),
+            sdfScaleSlider.trailingAnchor.constraint(
+                equalTo: controlPanel.trailingAnchor,
+                constant: -10
+            ),
+            sdfScaleSlider.heightAnchor.constraint(equalToConstant: 30),
+            
             // Bottom constraint to define controlPanel height
             controlPanel.bottomAnchor.constraint(
-                equalTo: gridSizeSlider.bottomAnchor,
+                equalTo: sdfScaleSlider.bottomAnchor,
                 constant: 10
             ),
         ])
@@ -721,6 +775,12 @@ class ViewController: UIViewController {
         let size = Int(slider.value)
         gridSizeLabel.text = "Grid: \(size)³"
         fluidRenderer.setGridSize(size)
+    }
+    
+    @objc private func sdfScaleChanged(_ slider: UISlider) {
+        let scale = slider.value
+        sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", scale)
+        fluidRenderer.collisionManager?.meshScale = scale
     }
     
     @objc private func toggleRenderMode() {

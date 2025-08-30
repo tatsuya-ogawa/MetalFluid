@@ -23,6 +23,19 @@ class CollisionManager {
     // Current mesh data
     private var currentTriangles: [Triangle] = []
     
+    // Scale control
+    public var meshScale: Float = 1.0 {
+        didSet {
+            updateCollisionTransform()
+        }
+    }
+    
+    // Store current transform parameters for updates
+    private var currentMeshMin: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
+    private var currentMeshMax: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
+    private var currentGridMin: SIMD3<Float>?
+    private var currentGridMax: SIMD3<Float>?
+    
     init(device: MTLDevice) {
         self.device = device
         self.sdfGenerator = SDFGenerator(device: device)
@@ -110,11 +123,36 @@ class CollisionManager {
         
         return (min: minBounds, max: maxBounds)
     }
+    private func updateCollisionTransform() {
+        guard currentGridMin != nil && currentGridMax != nil else { return }
+        
+        let scaleVec = SIMD3<Float>(meshScale, meshScale, meshScale)
+        let (transform, invTransform) = calculateCollisionTransform(
+            meshMin: currentMeshMin,
+            meshMax: currentMeshMax,
+            gridMin: currentGridMin,
+            gridMax: currentGridMax,
+            scale: scaleVec
+        )
+        
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        
+        collisionUniformPointer[0].collisionTransform = transform
+        collisionUniformPointer[0].collisionInvTransform = invTransform
+    }
+    
     public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?, scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1), offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0), rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) {
         currentTriangles = triangles
         
-        // Calculate bounding box using MeshLoader
+        // Store current parameters for scale updates
         let boundingBox = calculateBoundingBox(triangles: triangles)
+        currentMeshMin = boundingBox.min
+        currentMeshMax = boundingBox.max
+        currentGridMin = gridBoundaryMin
+        currentGridMax = gridBoundaryMax
         
         // Expand bounds slightly for safety
         let padding: Float = 2.0
@@ -136,13 +174,14 @@ class CollisionManager {
         print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
         
         if sdfTexture != nil {
-            // Calculate collision transform using provided scale, offset, and rotation
+            // Calculate collision transform using meshScale combined with provided scale
+            let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
             let (transform, invTransform) = calculateCollisionTransform(
                 meshMin: minBounds,
                 meshMax: maxBounds,
                 gridMin: gridBoundaryMin,
                 gridMax: gridBoundaryMax,
-                scale: scale,
+                scale: combinedScale,
                 rotation: rotation,
                 offset: offset
             )
