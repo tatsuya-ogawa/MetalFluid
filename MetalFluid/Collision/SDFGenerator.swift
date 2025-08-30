@@ -17,7 +17,8 @@ class SDFGenerator {
     private let commandQueue: MTLCommandQueue
     private var sdfComputePipelineState: MTLComputePipelineState?
     private var sdfOptimizedPipelineState: MTLComputePipelineState?
-    
+    let padding: Float = 0.1
+
     init(device: MTLDevice) {
         self.device = device
         guard let queue = device.makeCommandQueue() else {
@@ -242,7 +243,6 @@ class SDFGenerator {
         let sdfResolution = resolution ?? SIMD3<Int32>(64, 64, 64)
         
         // Add some padding to bounding box
-        let padding: Float = 0.1
         let size = meshBoundingBox.max - meshBoundingBox.min
         let paddingVector = size * padding
         meshBoundingBox.min -= paddingVector

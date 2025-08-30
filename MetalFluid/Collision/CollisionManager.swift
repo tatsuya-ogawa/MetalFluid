@@ -9,7 +9,7 @@ struct Triangle {
 }
 class CollisionManager {
     static let MAX_RIGIDS = 8
-
+    let padding: Float = 1.0
     private let device: MTLDevice
     
     // SDF generation and collision detection
@@ -155,7 +155,6 @@ class CollisionManager {
         currentGridMax = gridBoundaryMax
         
         // Expand bounds slightly for safety
-        let padding: Float = 2.0
         let minBounds = boundingBox.min - SIMD3<Float>(padding, padding, padding)
         let maxBounds = boundingBox.max + SIMD3<Float>(padding, padding, padding)
         
