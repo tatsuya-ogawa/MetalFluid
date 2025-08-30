@@ -97,57 +97,6 @@ inline float3 computeParticleSDFCollisionImpulse(
         return normalImpulse + tangentialImpulse + positionImpulse;
     }
 }
-// Improved collision handling following taichi-mpm approaches
-inline void handleCollisionTaichi(device float3 &position, device float3 &velocity,
-                           float3 worldPos, texture3d<float> sdfTexture,
-                           constant CollisionUniforms &collision) {
-    if (!collision.enableCollision) return;
-    
-    // Compute SDF texture coordinates from world position
-    float3 relativePos = worldToSDFTexCoord(worldPos, collision);
-    if (any(relativePos < 0.0) || any(relativePos > 1.0)) {
-        return; // Outside SDF bounds, no collision
-    }
-    
-    // Sample SDF texture directly using the computed coordinates
-    constexpr sampler sdfSampler(coord::normalized, filter::linear, address::clamp_to_edge);
-    float phi = sdfTexture.sample(sdfSampler, relativePos).r;
-    
-    // Check for valid SDF value
-    if (!isfinite(phi)) {
-        return; // Invalid SDF value, skip collision
-    }
-    
-    // Handle collision with larger detection threshold
-    const float collisionThreshold = 0.0; // Larger threshold for early detection
-    if (phi < collisionThreshold) {
-        // We already have phi (SDF value), just compute the normal
-        float3 gradient = computeSDFNormal(worldPos, sdfTexture, collision);
-        
-        // Taichi-MPM position correction: p.pos -= gradient * phi * delta_x
-        // Move particle outside surface proportional to penetration depth
-        position -= gradient * phi;
-        
-        // Taichi-MPM velocity projection: v = v - dot(gradient, v) * gradient
-        // Remove normal component of velocity (no penetration)
-        float normalVelocity = dot(gradient, velocity);
-        velocity = velocity - normalVelocity * gradient;
-        
-        // Apply friction using improved friction projection
-        const float friction = collision.collisionStiffness * 0.1; // Use collision stiffness as base
-        const float restitution = 0.8; // Moderate restitution
-        
-        // Add slight restitution if particle was moving into surface
-        if (normalVelocity < 0.0) {
-            velocity += gradient * (-normalVelocity * restitution);
-        }
-        
-        // Apply friction to tangential velocity using frictionProject
-        float3 baseVelocity = float3(0.0); // Static surface
-        velocity = frictionProject(velocity, baseVelocity, gradient, friction);
-    }
-}
-
 
 // Taichi-MPM style rigid body to SDF collision impulse
 inline float3 computeRigidBodySDFCollisionImpulse(

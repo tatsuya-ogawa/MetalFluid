@@ -28,40 +28,7 @@ extension MPMFluidRenderer {
         particlesToGridElasticPipelineState = createComputePipelineState(library: library, functionName: "particlesToGridElastic")
         gridToParticlesElasticPipelineState = createComputePipelineState(library: library, functionName: "gridToParticlesElastic")
     }
-    
-    internal func setupComputePipelinesRigid(library: MTLLibrary) {
-        accumulateRigidBodyForcesPipelineState = createComputePipelineState(library: library, functionName: "accumulateRigidBodyForces")
-        updateRigidBodyDynamicsPipelineState = createComputePipelineState(library: library, functionName: "updateRigidBodyDynamics")
-        projectRigidBodyParticlesPipelineState = createComputePipelineState(library: library, functionName: "projectRigidBodyParticles")
         
-        // Optional collision solver (only used if multiple rigid bodies)
-        if library.makeFunction(name: "solveRigidBodyCollisions") != nil {
-            solveRigidBodyCollisionsPipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyCollisions")
-        }
-    }
-    
-    internal func setupSDFCollisionPipelines(library: MTLLibrary) {
-        // SDF Collision (Projection-Based Dynamics) pipelines
-        if library.makeFunction(name: "processParticleSDFCollisions") != nil {
-            processParticleSDFCollisionsPipelineState = createComputePipelineState(library: library, functionName: "processParticleSDFCollisions")
-        }
-        
-        if library.makeFunction(name: "solveParticleConstraintsIterative") != nil {
-            solveParticleConstraintsIterativePipelineState = createComputePipelineState(library: library, functionName: "solveParticleConstraintsIterative")
-        }
-        
-        if library.makeFunction(name: "processRigidBodySDFCollisions") != nil {
-            processRigidBodySDFCollisionsPipelineState = createComputePipelineState(library: library, functionName: "processRigidBodySDFCollisions")
-        }
-        
-        if library.makeFunction(name: "solveRigidBodyConstraintsIterative") != nil {
-            solveRigidBodyConstraintsIterativePipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyConstraintsIterative")
-        }
-        
-        if library.makeFunction(name: "solveRigidBodyToRigidBodyCollisions") != nil {
-            solveRigidBodyToRigidBodyCollisionsPipelineState = createComputePipelineState(library: library, functionName: "solveRigidBodyToRigidBodyCollisions")
-        }
-    }
     internal func setupComputePipelines() {
         guard let library = device.makeDefaultLibrary() else {
             fatalError("Could not create default library")
@@ -75,8 +42,6 @@ extension MPMFluidRenderer {
 
         setupComputePipelinesFluid(library: library)
         setupComputePipelinesElastic(library: library)
-        setupComputePipelinesRigid(library: library)
-        setupSDFCollisionPipelines(library: library)
     }
     
     internal func setupParticles() {
@@ -169,7 +134,7 @@ extension MPMFluidRenderer {
         let cubeSize = min(range.x, range.y, range.z) * 0.6
         let spacing = cubeSize / Float(particlesPerDim - 1)
         let cubeOrigin = center - SIMD3<Float>(cubeSize * 0.5, cubeSize * 0.5, cubeSize * 0.5)
-        let isRigidBody = materialParameters.currentMaterialMode == .rigidBody
+        let isRigidBody = false
         
         var particleIndex = 0
         
@@ -256,56 +221,6 @@ extension MPMFluidRenderer {
         print("🌊 Created fluid sphere: radius \(maxRadius)")
     }
     
-    private func initializeRigidBodyStates() {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
-        
-        // Set up pipeline for rigid body initialization
-        guard let library = device.makeDefaultLibrary(),
-              let initFunction = library.makeFunction(name: "initializeRigidBodies") else {
-            print("⚠️ Could not find initializeRigidBodies function")
-            return
-        }
-        
-        do {
-            let initPipelineState = try device.makeComputePipelineState(function: initFunction)
-            
-            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                computeEncoder.setComputePipelineState(initPipelineState)
-                computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 1)
-                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
-                // Rigid info buffer now required by initializeRigidBodies kernel
-                computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
-                
-                let rigidBodyCount = materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
-                let threadgroupSize = min(initPipelineState.maxTotalThreadsPerThreadgroup, 256)
-                let threadgroups = MTLSize(
-                    width: (rigidBodyCount + threadgroupSize - 1) / threadgroupSize,
-                    height: 1,
-                    depth: 1
-                )
-                let threadsPerThreadgroup = MTLSize(
-                    width: threadgroupSize,
-                    height: 1,
-                    depth: 1
-                )
-                
-                computeEncoder.dispatchThreadgroups(
-                    threadgroups,
-                    threadsPerThreadgroup: threadsPerThreadgroup
-                )
-                computeEncoder.endEncoding()
-            }
-            
-            commandBuffer.commit()
-            commandBuffer.waitUntilCompleted()
-            
-            print("🔶 Initialized rigid body states")
-            
-        } catch {
-            print("⚠️ Could not create rigid body initialization pipeline: \(error)")
-        }
-    }
     // MARK: - Main Compute Function
     func compute(commandBuffer: MTLCommandBuffer) {
         // Skip if compute is already in progress

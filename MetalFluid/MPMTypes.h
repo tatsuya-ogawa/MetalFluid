@@ -92,7 +92,6 @@ typedef struct {
     uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     float youngsModulus;       // Young's modulus for elastic material
     float poissonsRatio;       // Poisson's ratio for elastic material
-    uint32_t rigidBodyCount;   // Number of active rigid bodies
 } ComputeShaderUniforms;
 
 // Collision detection uniforms

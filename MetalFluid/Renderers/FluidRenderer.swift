@@ -219,8 +219,6 @@ class MaterialParameters {
                 return 2
             case .neoHookeanElastic:
                 return 2
-            case .rigidBody:
-                return 1  // Rigid body is stable with single substep
             }
         }
     }
@@ -239,8 +237,6 @@ class MaterialParameters {
                 return  -2.5 //-9.81
             case .neoHookeanElastic:
                 return -1.5
-            case .rigidBody:
-                return -2.0  // Standard gravity for rigid body
             }
         }
     }
@@ -283,20 +279,7 @@ class MPMFluidRenderer: NSObject {
     // Elastic material compute pipeline states
     public var particlesToGridElasticPipelineState: MTLComputePipelineState!
     public var gridToParticlesElasticPipelineState: MTLComputePipelineState!
-    
-    // Rigid body material compute pipeline states (renamed for clarity)
-    public var accumulateRigidBodyForcesPipelineState: MTLComputePipelineState!
-    public var updateRigidBodyDynamicsPipelineState: MTLComputePipelineState!
-    public var projectRigidBodyParticlesPipelineState: MTLComputePipelineState!
-    public var solveRigidBodyCollisionsPipelineState: MTLComputePipelineState! // Collision solver between rigid bodies
-    
-    // SDF Collision (Projection-Based Dynamics) pipeline states
-    public var processParticleSDFCollisionsPipelineState: MTLComputePipelineState!
-    public var solveParticleConstraintsIterativePipelineState: MTLComputePipelineState!
-    public var processRigidBodySDFCollisionsPipelineState: MTLComputePipelineState!
-    public var solveRigidBodyConstraintsIterativePipelineState: MTLComputePipelineState!
-    public var solveRigidBodyToRigidBodyCollisionsPipelineState: MTLComputePipelineState!
-    
+        
     // Force application pipeline state
     public var applyForceToGridPipelineState: MTLComputePipelineState!
     
@@ -879,7 +862,6 @@ class MPMFluidRenderer: NSObject {
             materialMode: materialParameters.materialMode,
             youngsModulus: materialParameters.youngsModulus,
             poissonsRatio: materialParameters.poissonsRatio,
-            rigidBodyCount: materialParameters.currentMaterialMode == .rigidBody ? 1 : 0
         )
     }
     

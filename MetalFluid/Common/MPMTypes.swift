@@ -83,7 +83,6 @@ struct ComputeShaderUniforms {
     var materialMode: UInt32  // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     var youngsModulus: Float  // Young's modulus for elastic material
     var poissonsRatio: Float  // Poisson's ratio for elastic material
-    var rigidBodyCount: UInt32  // Number of active rigid bodies
 }
 
 struct VertexShaderUniforms {
@@ -155,7 +154,6 @@ enum RenderMode {
 enum MaterialMode {
     case fluid
     case neoHookeanElastic
-    case rigidBody
 }
 
 enum ParticleRenderMode {
