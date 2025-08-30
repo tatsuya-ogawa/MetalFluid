@@ -323,7 +323,6 @@ kernel void gridToParticlesFluid1(
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
                             constant SDFSet& sdfSet [[buffer(3)]],
-                            device SDFImpulseAccumulator* sdfAccumulators [[buffer(4)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -404,13 +403,14 @@ kernel void gridToParticlesFluid1(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_x, torque.x, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_y, torque.y, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_z, torque.z, uniforms);
+            // Atomically accumulate linear and angular impulses to SDF accumulator (index 0)
+            device SDFImpulseAccumulator* acc = sdfSet.accum[0];
+            atomicAddWithUniform(&((*acc).impulse_x), negJ.x, uniforms);
+            atomicAddWithUniform(&((*acc).impulse_y), negJ.y, uniforms);
+            atomicAddWithUniform(&((*acc).impulse_z), negJ.z, uniforms);
+            atomicAddWithUniform(&((*acc).torque_x), torque.x, uniforms);
+            atomicAddWithUniform(&((*acc).torque_y), torque.y, uniforms);
+            atomicAddWithUniform(&((*acc).torque_z), torque.z, uniforms);
         }
     }
     float impulseStrength = length(collisionImpulse);
@@ -463,7 +463,6 @@ kernel void gridToParticlesElastic(
                                   constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
                                   constant SDFSet& sdfSet [[buffer(3)]],
-                                  device SDFImpulseAccumulator* sdfAccumulators [[buffer(4)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
@@ -570,13 +569,14 @@ kernel void gridToParticlesElastic(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_x, negJ.x, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_y, negJ.y, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].impulse_z, negJ.z, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_x, torque.x, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_y, torque.y, uniforms);
-            atomicAddWithUniform(&sdfAccumulators[0].torque_z, torque.z, uniforms);
+            // Atomically accumulate linear and angular impulses to SDF accumulator (index 0)
+            device SDFImpulseAccumulator* acc = sdfSet.accum[0];
+            atomicAddWithUniform(&((*acc).impulse_x), negJ.x, uniforms);
+            atomicAddWithUniform(&((*acc).impulse_y), negJ.y, uniforms);
+            atomicAddWithUniform(&((*acc).impulse_z), negJ.z, uniforms);
+            atomicAddWithUniform(&((*acc).torque_x), torque.x, uniforms);
+            atomicAddWithUniform(&((*acc).torque_y), torque.y, uniforms);
+            atomicAddWithUniform(&((*acc).torque_z), torque.z, uniforms);
         }
     }
     float impulseStrength = length(collisionImpulse);

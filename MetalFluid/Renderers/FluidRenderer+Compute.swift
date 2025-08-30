@@ -363,8 +363,14 @@ extension MPMFluidRenderer {
             collisionBufferDesc.index = CollisionManager.MAX_COLLISION_SDF
             collisionBufferDesc.access = .readOnly
             collisionBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-            
-            let enc = device.makeArgumentEncoder(arguments: [sdfTextureDesc, collisionBufferDesc])!
+            // Accumulator array occupies indices [2*MAX .. 3*MAX-1]
+            let accumBufferDesc = MTLArgumentDescriptor()
+            accumBufferDesc.dataType = .pointer
+            accumBufferDesc.index = CollisionManager.MAX_COLLISION_SDF * 2
+            accumBufferDesc.access = .readOnly
+            accumBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
+
+            let enc = device.makeArgumentEncoder(arguments: [sdfTextureDesc, collisionBufferDesc, accumBufferDesc])!
             let buf = device.makeBuffer(length: enc.encodedLength, options: [])!
             enc.setArgumentBuffer(buf, offset: 0)
             sdfArgumentEncoder = enc
@@ -703,13 +709,14 @@ extension MPMFluidRenderer {
                             argumentEncoder.setTexture(tex, index: i)
                             computeEncoder.useResource(tex, usage: .read)
                             // Set collision uniforms in argument buffer at index 1
-                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF+i)
+                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
+                            // Set accumulator buffer at index 2*MAX + i (use shared accumulator 0 for now)
+                            if let accBuf = sdfImpulseAccumulatorBuffer {
+                                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
+                            }
                         }
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
-                        // Bind SDF impulse accumulator for aggregation
-                        if let accBuf = sdfImpulseAccumulatorBuffer {
-                            computeEncoder.setBuffer(accBuf, offset: 0, index: 4)
-                        }
+                        // No direct accumulator binding; provided via argument buffer
                     }
                     
                     computeEncoder.dispatchThreadgroups(
@@ -736,13 +743,13 @@ extension MPMFluidRenderer {
                             argumentEncoder.setTexture(tex, index: i)
                             computeEncoder.useResource(tex, usage: .read)
                             // Set collision uniforms in argument buffer at index 1
-                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF+i)
+                            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
+                            if let accBuf = sdfImpulseAccumulatorBuffer {
+                                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
+                            }
                         }                        
                         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
-                        // Bind SDF impulse accumulator for aggregation
-                        if let accBuf = sdfImpulseAccumulatorBuffer {
-                            computeEncoder.setBuffer(accBuf, offset: 0, index: 4)
-                        }
+                        // No direct accumulator binding
                     }
                     
                     computeEncoder.dispatchThreadgroups(

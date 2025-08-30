@@ -246,4 +246,6 @@ constant int MAX_COLLISION_SDF = 8;
 struct SDFSet {
     array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdf [[id(0)]];
     array<constant CollisionUniforms*, MAX_COLLISION_SDF> collision [[id(MAX_COLLISION_SDF)]];
+    // Per-SDF dynamic accumulators (device memory, atomic)
+    array<device SDFImpulseAccumulator*, MAX_COLLISION_SDF> accum [[id(2*MAX_COLLISION_SDF)]];
 };
