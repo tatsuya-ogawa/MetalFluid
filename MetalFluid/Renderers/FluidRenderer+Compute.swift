@@ -561,8 +561,8 @@ extension MPMFluidRenderer {
         
         computeSimulation(commandBuffer: commandBuffer)
 
-        // GPU SDF vs Wall collision using dual SDF solver
-        if let collisionManager = collisionManager,
+        // GPU SDF vs Wall collision using dual SDF solver (only if SDF is allowed to move)
+        if sdfMoves, let collisionManager = collisionManager,
            let objectTex = collisionManager.getSDFTexture() {
             let (bmin, bmax) = getBoundaryMinMax()
             collisionManager.ensureWallSDF(gridBoundaryMin: bmin, gridBoundaryMax: bmax, gridSpacing: gridSpacing)
@@ -698,6 +698,12 @@ extension MPMFluidRenderer {
     internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
         guard let accBuf = sdfImpulseAccumulatorBuffer,
               let collisionManager = collisionManager else { return }
+        // Static mode: do not move SDF; clear accumulator and exit
+        if !sdfMoves {
+            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+            accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
+            return
+        }
         // Read accumulator (index 0)
         let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
         let acc = accPtr[0]
@@ -728,6 +734,11 @@ extension MPMFluidRenderer {
             let wGPU = rbPtr[0].angularVelocity
             sdfRigidLinearVelocity = vGPU
             sdfRigidAngularVelocity = wGPU
+        }
+
+        // Optional gravity for SDF rigid body
+        if sdfUseGravity {
+            sdfRigidLinearVelocity.y += materialParameters.gravity * dt
         }
 
         // Damped velocity integration

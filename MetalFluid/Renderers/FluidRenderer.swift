@@ -376,6 +376,9 @@ class MPMFluidRenderer: NSObject {
     internal var sdfImpulseAccumulatorBuffer: MTLBuffer?
     internal var sdfRigidLinearVelocity: SIMD3<Float> = .zero
     internal var sdfRigidAngularVelocity: SIMD3<Float> = .zero
+    // Movement modes for SDF mesh
+    public var sdfMoves: Bool = true              // false: SDF is static (no transform updates)
+    public var sdfUseGravity: Bool = true        // true: apply gravity to SDF rigid linear velocity
     
     // Texture cache for screen size optimization
     internal let textureCacheManager: TextureCacheManager<FluidRenderTextures>
