@@ -10,7 +10,7 @@ struct SDFTriangle {
 };
 
 // Distance from point to triangle
-inline float distanceToTriangle(float3 point, SDFTriangle triangle) {
+inline float unsignedDistanceToTriangle(float3 point, SDFTriangle triangle) {
     float3 v0 = triangle.v0;
     float3 v1 = triangle.v1;
     float3 v2 = triangle.v2;
@@ -57,6 +57,24 @@ inline float distanceToTriangle(float3 point, SDFTriangle triangle) {
         return min(dist1, min(dist2, dist3));
     }
 }
+inline float signedDistanceToTriangle(float3 point, SDFTriangle triangle) {
+    float d = unsignedDistanceToTriangle(point, triangle);
+
+    // 法線で符号付け（単一三角形ならこれでOK）
+    float3 v0 = triangle.v0;
+    float3 v1 = triangle.v1;
+    float3 v2 = triangle.v2;
+
+    float3 n = normalize(cross(v1 - v0, v2 - v0));
+
+    // 最近傍点を平面に投影
+    float3 projected = point - dot(point - v0, n) * n;
+
+    // 法線方向で内外判定（注意: メッシュ全体だと不十分）
+    float signVal = dot(point - projected, n);
+
+    return signVal >= 0.0 ? d : -d;
+}
 
 // SDF generation compute shader
 kernel void generateSDF(
@@ -82,8 +100,10 @@ kernel void generateSDF(
     float minDistance = INFINITY;
     
     for (uint i = 0; i < triangleCount; i++) {
-        float distance = distanceToTriangle(worldPos, triangles[i]);
-        minDistance = min(minDistance, distance);
+        float distance = signedDistanceToTriangle(worldPos, triangles[i]);
+        if(abs(distance) < abs(minDistance)){
+            minDistance = distance;
+        }
     }
     
     // Store result
@@ -139,8 +159,10 @@ kernel void generateSDFOptimized(
         
         // Calculate distances to triangles in this batch
         for (uint i = 0; i < batchCount; i++) {
-            float distance = distanceToTriangle(worldPos, sharedTriangles[i]);
-            minDistance = min(minDistance, distance);
+            float distance = signedDistanceToTriangle(worldPos, sharedTriangles[i]);
+            if(abs(distance) < abs(minDistance)){
+                minDistance = distance;
+            }
         }
         
         threadgroup_barrier(mem_flags::mem_threadgroup);
