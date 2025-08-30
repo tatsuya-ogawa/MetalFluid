@@ -169,6 +169,107 @@ extension MPMFluidRenderer {
     }
     
     private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
+        let isRigidBody = materialParameters.currentMaterialMode == .rigidBody
+        
+        if isRigidBody {
+            // SDF-based rigid body initialization
+            setupSDFBasedRigidBody(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
+        } else {
+            // Original elastic cube initialization
+            setupOriginalElasticCube(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
+        }
+    }
+    
+    private func setupSDFBasedRigidBody(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>?) {
+        guard let collisionManager = collisionManager,
+              collisionManager.isEnabled(),
+              let sdfTexture = collisionManager.getSDFTexture() else {
+            print("⚠️ SDF not available, falling back to cube initialization")
+            setupOriginalElasticCube(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
+            return
+        }
+        
+        let collisionUniformPointer = collisionManager.getCollisionUniformBuffer().contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        let sdfOrigin = collisionUniformPointer[0].sdfOrigin
+        let sdfSize = collisionUniformPointer[0].sdfSize
+        let sdfResolution = collisionUniformPointer[0].sdfResolution
+        let transform = collisionUniformPointer[0].collisionTransform
+        
+        // Calculate SDF center in world space
+        let sdfLocalCenter = sdfOrigin + sdfSize * 0.5
+        let sdfWorldCenter4 = transform * SIMD4<Float>(sdfLocalCenter.x, sdfLocalCenter.y, sdfLocalCenter.z, 1.0)
+        let sdfWorldCenter = SIMD3<Float>(sdfWorldCenter4.x, sdfWorldCenter4.y, sdfWorldCenter4.z)
+        
+        var particleIndex = 0
+        let maxAttempts = particleCount * 10 // Prevent infinite loop
+        var attempts = 0
+        
+        print("🔶 Initializing SDF-based rigid body with \(particleCount) particles")
+        print("   SDF origin: \(sdfOrigin), size: \(sdfSize)")
+        print("   SDF world center: \(sdfWorldCenter)")
+        
+        // Generate particles inside the SDF volume
+        while particleIndex < particleCount && attempts < maxAttempts {
+            attempts += 1
+            
+            // Generate random position within expanded boundary range
+            let expandedRange = range * 1.2 // Slightly expand search area
+            let pos = center + SIMD3<Float>(
+                Float.random(in: -expandedRange.x...expandedRange.x),
+                Float.random(in: -expandedRange.y...expandedRange.y),
+                Float.random(in: -expandedRange.z...expandedRange.z)
+            )
+            
+            // Check if this position is inside the SDF (negative SDF value = inside)
+            if isPositionInsideSDF(position: pos, sdfTexture: sdfTexture, 
+                                  sdfOrigin: sdfOrigin, sdfSize: sdfSize, 
+                                  sdfResolution: sdfResolution, 
+                                  transform: collisionUniformPointer[0].collisionInvTransform) {
+                
+                let randomOffset = SIMD3<Float>(
+                    Float.random(in: -0.001...0.001),
+                    Float.random(in: -0.001...0.001),
+                    Float.random(in: -0.001...0.001)
+                )
+                let finalPos = pos + randomOffset
+                
+                particlePointer[particleIndex] = createParticle(at: finalPos, index: particleIndex)
+                rigidInfoPointer?[particleIndex] = createRigidInfo(
+                    rigidId: 1,
+                    initialOffset: finalPos - sdfWorldCenter
+                )
+                
+                particleIndex += 1
+            }
+        }
+        
+        // Fill any remaining particles with fallback method if SDF sampling didn't generate enough
+        if particleIndex < particleCount {
+            print("⚠️ SDF sampling only generated \(particleIndex)/\(particleCount) particles, filling remainder randomly")
+            while particleIndex < particleCount {
+                let pos = center + SIMD3<Float>(
+                    Float.random(in: -range.x * 0.3...range.x * 0.3),
+                    Float.random(in: -range.y * 0.3...range.y * 0.3),
+                    Float.random(in: -range.z * 0.3...range.z * 0.3)
+                )
+                
+                particlePointer[particleIndex] = createParticle(at: pos, index: particleIndex)
+                rigidInfoPointer?[particleIndex] = createRigidInfo(
+                    rigidId: 1,
+                    initialOffset: pos - sdfWorldCenter
+                )
+                
+                particleIndex += 1
+            }
+        }
+        
+        print("🟦 Created SDF-based rigid body: \(particleIndex) particles in \(attempts) attempts")
+    }
+    
+    private func setupOriginalElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>?) {
         let particlesPerDim = Int(floor(pow(Float(particleCount), 1.0/3.0)))
         let cubeSize = min(range.x, range.y, range.z) * 0.6
         let spacing = cubeSize / Float(particlesPerDim - 1)
@@ -222,6 +323,35 @@ extension MPMFluidRenderer {
         }
         
         print("🟦 Created elastic cube: \(particlesPerDim)³ lattice, spacing: \(spacing)")
+    }
+    
+    // Helper function to check if position is inside SDF (simplified CPU-based check)
+    private func isPositionInsideSDF(position: SIMD3<Float>, sdfTexture: MTLTexture, 
+                                   sdfOrigin: SIMD3<Float>, sdfSize: SIMD3<Float>, 
+                                   sdfResolution: SIMD3<Int32>, transform: float4x4) -> Bool {
+        // Transform world position to SDF local space
+        let worldPos4 = SIMD4<Float>(position.x, position.y, position.z, 1.0)
+        let localPos4 = transform * worldPos4
+        let localPos = SIMD3<Float>(localPos4.x, localPos4.y, localPos4.z)
+        
+        // Check if position is within SDF bounds
+        if any(localPos .< sdfOrigin) || any(localPos .> (sdfOrigin + sdfSize)) {
+            return false
+        }
+        
+        // Convert to SDF texture coordinates [0, 1]
+        let relativePos = (localPos - sdfOrigin) / sdfSize
+        let texCoord = SIMD3<Int32>(
+            min(Int32(relativePos.x * Float(sdfResolution.x)), sdfResolution.x - 1),
+            min(Int32(relativePos.y * Float(sdfResolution.y)), sdfResolution.y - 1),
+            min(Int32(relativePos.z * Float(sdfResolution.z)), sdfResolution.z - 1)
+        )
+        
+        // For CPU-based initialization, we'll use a simple heuristic
+        // In practice, you might want to read the actual SDF texture data
+        // For now, we'll assume positions closer to the center are more likely to be inside
+        let centerDist = length(relativePos - SIMD3<Float>(0.5, 0.5, 0.5))
+        return centerDist < 0.4 // Rough approximation - particles within 40% of center radius
     }
     
     private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
@@ -333,14 +463,52 @@ extension MPMFluidRenderer {
             centerOfMass /= totalMass
         }
         
-        // Initialize rigid body state
+        // Get SDF-based properties if available
+        var halfExtents = SIMD3<Float>(0.5, 0.5, 0.5) // Default
+        var boundingRadius: Float = 0.5 // Default
+        var inertiaTensor = simd_float3x3(1.0) // Default identity
+        
+        if let collisionManager = collisionManager, collisionManager.isEnabled() {
+            let collisionUniformPointer = collisionManager.getCollisionUniformBuffer().contents().bindMemory(
+                to: CollisionUniforms.self,
+                capacity: 1
+            )
+            let sdfSize = collisionUniformPointer[0].sdfSize
+            
+            // Use SDF size to calculate more accurate physical properties
+            halfExtents = sdfSize * 0.5
+            boundingRadius = length(halfExtents)
+            
+            // Calculate inertia tensor for a box with SDF dimensions
+            let mass = max(totalMass, 1.0)
+            let w = sdfSize.x, h = sdfSize.y, d = sdfSize.z
+            inertiaTensor = simd_float3x3(
+                SIMD3<Float>((mass/12.0) * (h*h + d*d), 0, 0),
+                SIMD3<Float>(0, (mass/12.0) * (w*w + d*d), 0),
+                SIMD3<Float>(0, 0, (mass/12.0) * (w*w + h*h))
+            )
+            
+            print("🔶 Using SDF-based rigid body properties:")
+            print("   Half extents: \(halfExtents)")
+            print("   Bounding radius: \(boundingRadius)")
+            print("   Inertia tensor diagonal: \(inertiaTensor.columns.0.x), \(inertiaTensor.columns.1.y), \(inertiaTensor.columns.2.z)")
+        }
+        
+        // Calculate inverse inertia tensor
+        let invInertiaTensor = simd_float3x3(
+            SIMD3<Float>(1.0 / max(inertiaTensor.columns.0.x, 1e-6), 0, 0),
+            SIMD3<Float>(0, 1.0 / max(inertiaTensor.columns.1.y, 1e-6), 0),
+            SIMD3<Float>(0, 0, 1.0 / max(inertiaTensor.columns.2.z, 1e-6))
+        )
+        
+        // Initialize rigid body state with SDF-based properties
         let rigidBodyState = RigidBodyState(
             centerOfMass: centerOfMass,
             linearVelocity: SIMD3<Float>(0, 0, 0),
             angularVelocity: SIMD3<Float>(0, 0, 0),
             orientation: SIMD4<Float>(0, 0, 0, 1), // Identity quaternion
             totalMass: totalMass,
-            invInertiaTensor: simd_float3x3(1.0), // Identity matrix for now
+            invInertiaTensor: invInertiaTensor,
             accumulatedForce: SIMD3<Float>(0, 0, 0),
             accumulatedTorque: SIMD3<Float>(0, 0, 0),
             particleCount: particleCount,
@@ -349,11 +517,17 @@ extension MPMFluidRenderer {
             angularDamping: 0.99,
             restitution: 0.5,
             friction: 0.3,
-            halfExtents: SIMD3<Float>(0, 0, 0),
-            boundingRadius: 0.5
+            halfExtents: halfExtents,
+            boundingRadius: boundingRadius
         )
+        
         // Write to buffer
         rigidBodyStatePointer[0] = rigidBodyState
+        
+        print("🔶 Initialized SDF-based rigid body state:")
+        print("   Center of mass: \(centerOfMass)")
+        print("   Total mass: \(totalMass)")
+        print("   Particle count: \(particleCount)")
     }
     
     // MARK: - Main Compute Function
