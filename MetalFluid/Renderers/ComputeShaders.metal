@@ -322,10 +322,9 @@ kernel void gridToParticlesFluid1(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                            constant SDFTexSet& texSet [[buffer(3)]],
-                            constant CollisionUniforms* collisions [[buffer(4)]],
-                            device SDFPhysicsState* physicsStates [[buffer(5)]],
-                            constant uint& sdfCount [[buffer(6)]],
+                            constant SDFSet& sdfSet [[buffer(3)]],
+                            device SDFPhysicsState* physicsStates [[buffer(4)]],
+                            constant uint& sdfCount [[buffer(5)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
@@ -379,8 +378,8 @@ kernel void gridToParticlesFluid1(
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
     for (uint i = 0; i < sdfCount; i++) {
-        constant CollisionUniforms& collision = collisions[i];
-        texture3d<float> sdfTexture = texSet.sdf[i];
+        constant CollisionUniforms& collision = *sdfSet.collision[i];
+        texture3d<float> sdfTexture = sdfSet.sdf[i];
         float3 collisionImpulse = computeParticleSDFCollisionImpulse(
              particles[id].position,
              particles[id].velocity,
@@ -460,10 +459,9 @@ kernel void gridToParticlesElastic(
                                   device MPMParticle* particles [[buffer(0)]],
                                   constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                                  constant SDFTexSet& texSet [[buffer(3)]],
-                                  constant CollisionUniforms* collisions [[buffer(4)]],
-                                  device SDFPhysicsState* physicsStates [[buffer(5)]],
-                                  constant uint& sdfCount [[buffer(6)]],
+                                  constant SDFSet& sdfSet [[buffer(3)]],
+                                  device SDFPhysicsState* physicsStates [[buffer(4)]],
+                                  constant uint& sdfCount [[buffer(5)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
@@ -545,8 +543,8 @@ kernel void gridToParticlesElastic(
     
     for (uint i = 0; i < sdfCount; i++) {
         particles[i].position = float3(0,0,0);
-        constant CollisionUniforms& collision = collisions[i];
-        texture3d<float> sdfTexture = texSet.sdf[i];
+        constant CollisionUniforms& collision = *sdfSet.collision[i];
+        texture3d<float> sdfTexture = sdfSet.sdf[i];
         float3 collisionImpulse = computeParticleSDFCollisionImpulse(
              particles[id].position,
              particles[id].velocity,

@@ -263,37 +263,25 @@ extension MPMFluidRenderer {
             self?.endComputeAndSwapToRender()
         }
     }
-    // Bind SDF resources: textures via lightweight argument buffer (texture array only), others direct
+    // Bind SDF resources: textures + uniforms via argument buffer (SDFSet), physics direct
     private func setupSdfArgumentBufferForCompute(computeEncoder: MTLComputeCommandEncoder, collisionManager: CollisionManager) {
         let items = collisionManager.items.filter{ $0.isEnabled() }
         let count = min(items.count, CollisionManager.MAX_COLLISION_SDF)
-        // Build texture-only argument buffer for SDFTexSet (buffer index 3)
+        // Build argument buffer for SDFSet (textures + uniform pointers) → buffer(3)
         let (argBuf, argEnc) = ensureSdfArgumentBuffer()
         for i in 0..<count {
             if let tex = items[i].getSDFTexture() {
                 argEnc.setTexture(tex, index: i)
                 computeEncoder.useResource(tex, usage: .read)
             }
+            argEnc.setBuffer(items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
         }
         computeEncoder.setBuffer(argBuf, offset: 0, index: 3)
-        // Build contiguous CollisionUniforms array
-        let elemSize = MemoryLayout<CollisionUniforms>.stride
-        let totalSize = max(elemSize, elemSize * count)
-        if sdfCollisionsArrayBuffer == nil || sdfCollisionsArrayBuffer!.length < totalSize {
-            sdfCollisionsArrayBuffer = device.makeBuffer(length: totalSize, options: .storageModeShared)
-        }
-        if let buf = sdfCollisionsArrayBuffer {
-            let dst = buf.contents()
-            for i in 0..<count {
-                memcpy(dst.advanced(by: elemSize * i), items[i].getCollisionUniformBuffer().contents(), elemSize)
-            }
-            computeEncoder.setBuffer(buf, offset: 0, index: 4)
-        }
         // Physics buffer
-        if let phy = sdfPhysicsBuffer { computeEncoder.setBuffer(phy, offset: 0, index: 5) }
+        if let phy = sdfPhysicsBuffer { computeEncoder.setBuffer(phy, offset: 0, index: 4) }
         // Count
         var c32 = UInt32(count)
-        computeEncoder.setBytes(&c32, length: MemoryLayout<UInt32>.size, index: 6)
+        computeEncoder.setBytes(&c32, length: MemoryLayout<UInt32>.size, index: 5)
     }
     
     // Lazy init & reuse of SDF argument buffer (avoid per-dispatch creation cost)    
@@ -301,14 +289,19 @@ extension MPMFluidRenderer {
         if let sdfArgumentEncoder, let sdfArgumentBuffer{
             return (sdfArgumentBuffer, sdfArgumentEncoder)
         }else{
-            // Texture-only argument buffer matching SDFTexSet
+            // SDFSet: textures + uniform pointers
             let texDesc = MTLArgumentDescriptor()
             texDesc.dataType = .texture
             texDesc.textureType = .type3D
             texDesc.index = 0
             texDesc.access = .readOnly
             texDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-            let enc = device.makeArgumentEncoder(arguments: [texDesc])!
+            let uniDesc = MTLArgumentDescriptor()
+            uniDesc.dataType = .pointer
+            uniDesc.index = CollisionManager.MAX_COLLISION_SDF
+            uniDesc.access = .readOnly
+            uniDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
+            let enc = device.makeArgumentEncoder(arguments: [texDesc, uniDesc])!
             let buf = device.makeBuffer(length: enc.encodedLength, options: [])!
             enc.setArgumentBuffer(buf, offset: 0)
             sdfArgumentEncoder = enc

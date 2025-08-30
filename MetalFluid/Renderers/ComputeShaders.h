@@ -243,7 +243,8 @@ inline float3 worldSDFMassCenter(constant CollisionUniforms &collision) {
 }
 
 constant int MAX_COLLISION_SDF = 8;
-// Texture-only argument buffer for SDF textures
-struct SDFTexSet {
+// Argument buffer for SDF textures + per‑SDF collision uniforms (no physics here)
+struct SDFSet {
     array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdf [[id(0)]];
+    array<constant CollisionUniforms*, MAX_COLLISION_SDF> collision [[id(MAX_COLLISION_SDF)]];
 };
