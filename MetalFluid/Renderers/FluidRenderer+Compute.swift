@@ -69,7 +69,10 @@ extension MPMFluidRenderer {
 
         clearGridPipelineState = createComputePipelineState(library: library, functionName: "clearGrid")
         updateGridVelocityPipelineState = createComputePipelineState(library: library, functionName: "updateGridVelocity")
-        
+
+        // Force application pipeline
+        applyForceToGridPipelineState = createComputePipelineState(library: library, functionName: "applyForceToGrid")
+
         setupComputePipelinesFluid(library: library)
         setupComputePipelinesElastic(library: library)
         setupComputePipelinesRigid(library: library)
@@ -516,6 +519,9 @@ extension MPMFluidRenderer {
                 // Rigid body mode: P2G handled separately via dedicated rigid body simulation
                 print("🔶 Rigid body simulation mode - P2G skipped, using projection-based dynamics")
             }
+
+            // Apply queued forces to grid (after P2G, before grid velocity update)
+            applyQueuedForcesToGrid(commandBuffer: commandBuffer)
 
             // 3. Update grid velocity - Grid velocity update and boundary condition application
             if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {

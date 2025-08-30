@@ -596,3 +596,36 @@ kernel void gridToParticlesElastic(
                                   float3(max_velocity));
 }
 
+// Apply force to grid nodes within radius
+kernel void applyForceToGrid(
+    device MPMGridNode* grid [[buffer(0)]],
+    constant ComputeShaderUniforms& uniforms [[buffer(1)]],
+    constant float3& forcePosition [[buffer(2)]],
+    constant float3& forceVector [[buffer(3)]],
+    constant float& forceRadius [[buffer(4)]],
+    uint id [[thread_position_in_grid]]
+) {
+    if (id >= uniforms.gridNodeCount) return;
+    
+    // Get grid coordinates from linear index
+    uint3 gridCoord = gridXYZ(id, uniforms);
+    
+    // Convert grid coordinate to world position
+    float3 gridWorldPos = uniforms.domainOrigin + float3(gridCoord) * uniforms.gridSpacing;
+    
+    float distance = length(gridWorldPos - forcePosition);
+    
+    if (distance < forceRadius) {
+        float mass = atomicLoadWithUniform(&grid[id].mass, uniforms);
+        if (mass > 1e-6) {  // Only apply force to grid nodes with mass
+            float falloff = exp(-distance * 8.0);
+            float3 force = forceVector * falloff * uniforms.deltaTime;
+            
+            // Add force as velocity impulse
+            atomicAddWithUniform(&grid[id].velocity_x, force.x, uniforms);
+            atomicAddWithUniform(&grid[id].velocity_y, force.y, uniforms);
+            atomicAddWithUniform(&grid[id].velocity_z, force.z, uniforms);
+        }
+    }
+}
+

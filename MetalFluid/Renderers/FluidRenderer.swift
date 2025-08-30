@@ -441,6 +441,18 @@ class MPMFluidRenderer: NSObject {
     public var solveRigidBodyConstraintsIterativePipelineState: MTLComputePipelineState!
     public var solveRigidBodyToRigidBodyCollisionsPipelineState: MTLComputePipelineState!
     
+    // Force application pipeline state
+    public var applyForceToGridPipelineState: MTLComputePipelineState!
+    
+    // Force queue system
+    struct QueuedForce {
+        let position: SIMD3<Float>
+        let vector: SIMD3<Float>
+        let radius: Float
+    }
+    private var forceQueue: [QueuedForce] = []
+    private let forceQueueLock = NSLock()
+    
     // Rigid body state buffer
     public var rigidBodyStateBuffer: MTLBuffer!
     
@@ -792,27 +804,54 @@ class MPMFluidRenderer: NSObject {
         frameIndex += 1
     }
     
+    // Apply all queued forces to grid (called after P2G phase)
+    internal func applyQueuedForcesToGrid(commandBuffer: MTLCommandBuffer) {
+        forceQueueLock.lock()
+        let currentForces = forceQueue
+        forceQueue.removeAll()
+        forceQueueLock.unlock()
+        
+        guard !currentForces.isEmpty,
+              let computeEncoder = commandBuffer.makeComputeCommandEncoder() else { return }
+        
+        for force in currentForces {
+            // Create temporary buffers for force parameters
+            let forcePositionBuffer = device.makeBuffer(bytes: [force.position], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
+            let forceVectorBuffer = device.makeBuffer(bytes: [force.vector], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
+            let forceRadiusBuffer = device.makeBuffer(bytes: [force.radius], length: MemoryLayout<Float>.stride, options: .storageModeShared)!
+            
+            // Dispatch force application to grid
+            computeEncoder.setComputePipelineState(applyForceToGridPipelineState)
+            computeEncoder.setBuffer(computeGridBuffer, offset: 0, index: 0)
+            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
+            computeEncoder.setBuffer(forcePositionBuffer, offset: 0, index: 2)
+            computeEncoder.setBuffer(forceVectorBuffer, offset: 0, index: 3)
+            computeEncoder.setBuffer(forceRadiusBuffer, offset: 0, index: 4)
+            
+            let gridThreadsPerThreadgroup = MTLSize(width: 64, height: 1, depth: 1)
+            let gridThreadgroups = MTLSize(
+                width: (gridNodes + gridThreadsPerThreadgroup.width - 1) / gridThreadsPerThreadgroup.width,
+                height: 1,
+                depth: 1
+            )
+            
+            computeEncoder.dispatchThreadgroups(gridThreadgroups, threadsPerThreadgroup: gridThreadsPerThreadgroup)
+        }
+        
+        computeEncoder.endEncoding()
+    }
+    
     // For interaction (add force on tap)
     func addForce(at position: SIMD2<Float>, force: SIMD2<Float>) {
-        return
-        //FIXME private GPU
-        // Always apply force to compute buffer (active simulation data)
-        let particlePointer = computeParticleBuffer.contents().bindMemory(
-            to: MPMParticle.self,
-            capacity: particleCount
-        )
-        
-        // Convert 2D screen position to 3D world position (assume z=0)
+        // Convert 2D screen position to 3D world position (assume z=0)  
         let worldPos = SIMD3<Float>(position.x, position.y, 0.0)
         let force3D = SIMD3<Float>(force.x, force.y, 0.0)
+        let forceRadius: Float = 0.15
         
-        for i in 0..<particleCount {
-            let distance = length(particlePointer[i].position - worldPos)
-            if distance < 0.15 {
-                let falloff = exp(-distance * 8.0)
-                particlePointer[i].velocity += force3D * falloff * 0.5
-            }
-        }
+        // Add force to queue (thread-safe)
+        forceQueueLock.lock()
+        forceQueue.append(QueuedForce(position: worldPos, vector: force3D, radius: forceRadius))
+        forceQueueLock.unlock()
     }
     
     // Reset simulation
