@@ -561,9 +561,11 @@ extension MPMFluidRenderer {
         
         computeSimulation(commandBuffer: commandBuffer)
 
-        // GPU SDF vs Wall collision using dual SDF solver (only if SDF is allowed to move)
-        if sdfMoves, let collisionManager = collisionManager,
+        // GPU SDF vs Wall collision using dual SDF solver (only if primary SDF is allowed to move)
+        if let collisionManager = collisionManager,
            let objectTex = collisionManager.getSDFTexture() {
+            let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
+            if primaryMoves {
             let (bmin, bmax) = getBoundaryMinMax()
             collisionManager.ensureWallSDF(gridBoundaryMin: bmin, gridBoundaryMax: bmax, gridSpacing: gridSpacing)
             if let wallTex = collisionManager.getWallSDFTexture(),
@@ -587,6 +589,7 @@ extension MPMFluidRenderer {
                     enc.dispatchThreadgroups(tg, threadsPerThreadgroup: tg)
                     enc.endEncoding()
                 }
+            }
             }
         }
         
@@ -698,8 +701,9 @@ extension MPMFluidRenderer {
     internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
         guard let accBuf = sdfImpulseAccumulatorBuffer,
               let collisionManager = collisionManager else { return }
-        // Static mode: do not move SDF; clear accumulator and exit
-        if !sdfMoves {
+        // Static mode from per-SDF settings
+        let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
+        if !primaryMoves {
             let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
             accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
             return
@@ -736,8 +740,9 @@ extension MPMFluidRenderer {
             sdfRigidAngularVelocity = wGPU
         }
 
-        // Optional gravity for SDF rigid body
-        if sdfUseGravity {
+        // Optional gravity for SDF rigid body from per-SDF settings
+        let primaryGravity = collisionManager.getSDFSettings(index: 0)?.useGravity ?? false
+        if primaryGravity {
             sdfRigidLinearVelocity.y += materialParameters.gravity * dt
         }
 

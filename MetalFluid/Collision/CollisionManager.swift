@@ -46,6 +46,10 @@ class CollisionManager {
     private var currentGridMin: SIMD3<Float>?
     private var currentGridMax: SIMD3<Float>?
     
+    // Per-SDF settings (index 0 = primary, index 1 = wall if created)
+    struct SDFSettings { var moves: Bool; var useGravity: Bool; var name: String; var isWall: Bool }
+    private var sdfSettings: [SDFSettings] = [SDFSettings(moves: true, useGravity: false, name: "PrimarySDF", isWall: false)]
+    
     // Store initial SDF state for reset functionality
     private var initialCollisionTransform: float4x4 = matrix_identity_float4x4
     private var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
@@ -116,6 +120,8 @@ class CollisionManager {
         )
         wallCollisionUniformBuffer = buf
         print("🧱 Wall SDF created with resolution \(resolution)")
+        // Register wall settings (static, no gravity by default)
+        sdfSettings.append(SDFSettings(moves: false, useGravity: false, name: "WallSDF", isWall: true))
     }
 
     public func getWallSDFTexture() -> MTLTexture? { wallSDFTexture }
@@ -412,5 +418,19 @@ class CollisionManager {
             vertexUniformBuffer: vertexUniformBuffer,
             collisionUniformBuffer: collisionUniformBuffer
         )
+    }
+
+    // MARK: - Multi SDF settings accessors
+    public func getSDFCount() -> Int { sdfSettings.count }
+    public func getSDFSettings(index: Int) -> (moves: Bool, useGravity: Bool, name: String, isWall: Bool)? {
+        guard index >= 0 && index < sdfSettings.count else { return nil }
+        let s = sdfSettings[index]
+        return (s.moves, s.useGravity, s.name, s.isWall)
+    }
+    public func setSDFSettings(index: Int, moves: Bool? = nil, useGravity: Bool? = nil, name: String? = nil) {
+        guard index >= 0 && index < sdfSettings.count else { return }
+        if let moves { sdfSettings[index].moves = moves }
+        if let useGravity { sdfSettings[index].useGravity = useGravity }
+        if let name { sdfSettings[index].name = name }
     }
 }
