@@ -352,7 +352,7 @@ class CollisionManager {
         self.device = device
         self.sdfGenerator = SDFGenerator(device: device)
         self.meshRenderer = CollisionMeshRenderer(device: device)
-        self.bunnyItem = CollisionItem(device: device)
+        self.representativeItem = CollisionItem(device: device)
     }
     private func renderMesh(item:CollisionItem,renderPassDescriptor: MTLRenderPassDescriptor,
                            commandBuffer: MTLCommandBuffer,
@@ -383,10 +383,10 @@ class CollisionManager {
         }
     }
     private var internalItems:[CollisionItem] = []
-    public var bunnyItem:CollisionItem
+    public var representativeItem:CollisionItem
     public var items:[CollisionItem]{
         get{
-            return Array(([bunnyItem] + internalItems).prefix(CollisionManager.MAX_COLLISION_SDF))
+            return Array(([representativeItem] + internalItems).prefix(CollisionManager.MAX_COLLISION_SDF))
         }
     }
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {

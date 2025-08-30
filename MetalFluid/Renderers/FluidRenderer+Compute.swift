@@ -333,7 +333,7 @@ extension MPMFluidRenderer {
         computeEncoder.setComputePipelineState(applySdfImpulseToTransformPipelineState)
         
         // Set buffers
-        computeEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 0)
+        computeEncoder.setBuffer(collisionManager.representativeItem.getCollisionUniformBuffer(), offset: 0, index: 0)
         computeEncoder.setBuffer(phyBuf, offset: 0, index: 1)
         computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
         
