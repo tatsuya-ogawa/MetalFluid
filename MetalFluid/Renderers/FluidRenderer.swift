@@ -738,7 +738,7 @@ class MPMFluidRenderer: NSObject {
         sdfRigidAngularVelocity = .zero
         
         // Reset SDF collision transform to initial position
-        collisionManager?.resetSDFTransform()
+        collisionManager?.resetSDFTransforms()
         
         // Clear SDF impulse accumulator
         if let accBuf = sdfImpulseAccumulatorBuffer {
@@ -818,7 +818,7 @@ class MPMFluidRenderer: NSObject {
         }
         
         // Render collision mesh using the existing encoder
-        collisionManager.renderMeshInEncoder(
+        collisionManager.renderMeshesInEncoder(
             renderEncoder: renderEncoder,
             vertexUniformBuffer: vertexUniformBuffer
         )

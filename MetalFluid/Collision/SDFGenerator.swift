@@ -262,9 +262,9 @@ public class SDFGenerator {
             let v2Pointer = vertexBuffer.contents().advanced(by: v2Offset).assumingMemoryBound(to: Float.self)
             
             // Get vertex positions in local space
-            var v0Local = SIMD3<Float>(v0Pointer[0], v0Pointer[1], v0Pointer[2])
-            var v1Local = SIMD3<Float>(v1Pointer[0], v1Pointer[1], v1Pointer[2])
-            var v2Local = SIMD3<Float>(v2Pointer[0], v2Pointer[1], v2Pointer[2])
+            let v0Local = SIMD3<Float>(v0Pointer[0], v0Pointer[1], v0Pointer[2])
+            let v1Local = SIMD3<Float>(v1Pointer[0], v1Pointer[1], v1Pointer[2])
+            let v2Local = SIMD3<Float>(v2Pointer[0], v2Pointer[1], v2Pointer[2])
             
             // Transform vertices to world space
             let v0World = transformPoint(v0Local, by: transform)

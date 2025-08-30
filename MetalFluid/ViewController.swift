@@ -134,8 +134,9 @@ class ViewController: UIViewController {
                 completion(false)
                 return
             }
-            
-            self.fluidRenderer.collisionManager?.processAndGenerateSDF(triangles: triangles, resolution: resolution, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            if let collisionManager = fluidRenderer.collisionManager{
+                collisionManager.bunnyItem.processAndGenerateSDF(sdfGenerator: collisionManager.sdfGenerator, triangles: triangles, resolution: resolution, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+            }
             completion(true)
         }
     }
@@ -158,7 +159,7 @@ class ViewController: UIViewController {
                 print("✅ Stanford Bunny loaded successfully!")
                 // Configure collision visualization
                 self?.fluidRenderer.collisionManager?.setMeshVisible(true)
-                self?.fluidRenderer.collisionManager?.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent white
+                self?.fluidRenderer.collisionManager?.bunnyItem.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent white
                 print("🐰 Stanford Bunny collision mesh configured!")
             } else {
                 print("❌ Failed to load Stanford Bunny. Collision detection disabled.")
@@ -888,19 +889,19 @@ class ViewController: UIViewController {
     @objc private func sdfScaleChanged(_ slider: UISlider) {
         let scale = slider.value
         sdfScaleLabel.text = String(format: "SDF Scale: %.1fx", scale)
-        fluidRenderer.collisionManager?.meshScale = scale
+        fluidRenderer.collisionManager?.bunnyItem.meshScale = scale
     }
     
     @objc private func sdfYOffsetChanged(_ slider: UISlider) {
         let offset = slider.value
         sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", offset)
-        fluidRenderer.collisionManager?.meshYOffset = offset
+        fluidRenderer.collisionManager?.bunnyItem.meshYOffset = offset
     }
     
     @objc private func sdfYRotationChanged(_ slider: UISlider) {
         let rotation = slider.value
         sdfYRotationLabel.text = String(format: "SDF Y Rotation: %.0f°", rotation)
-        fluidRenderer.collisionManager?.meshYRotation = rotation
+        fluidRenderer.collisionManager?.bunnyItem.meshYRotation = rotation
     }
     
     @objc private func toggleRenderMode() {
@@ -974,10 +975,10 @@ class ViewController: UIViewController {
     // MARK: - Collision Control Actions
     
     @objc private func toggleCollision() {
-        guard let isEnabled = fluidRenderer.collisionManager?.isEnabled() else {
+        guard let isEnabled = fluidRenderer.collisionManager?.bunnyItem.isEnabled() else {
             return
         }
-        fluidRenderer.collisionManager?.setEnabled(!isEnabled)
+        fluidRenderer.collisionManager?.bunnyItem.setEnabled(!isEnabled)
         
         if !isEnabled{
             collisionToggleButton.setTitle("Collision: ON", for: .normal)
@@ -1007,7 +1008,7 @@ class ViewController: UIViewController {
         // Toggle between wireframe and solid rendering
         isWireframeMode.toggle()
         
-        fluidRenderer.collisionManager?.setMeshWireframe(isWireframeMode)
+        fluidRenderer.collisionManager?.bunnyItem.setMeshWireframe(isWireframeMode)
         
         if isWireframeMode {
             wireframeButton.setTitle("Solid", for: .normal)

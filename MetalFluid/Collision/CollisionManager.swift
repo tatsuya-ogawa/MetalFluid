@@ -2,25 +2,9 @@ import Foundation
 import Metal
 import MetalKit
 import simd
-class CollisionManager {
-    static let MAX_RIGIDS = 8
-    let padding: Float = 1.0
-    private let device: MTLDevice
-    
-    // SDF generation and collision detection
-    private var sdfGenerator: SDFGenerator
-    private var sdfTexture: MTLTexture?
-    private var collisionUniformBuffer: MTLBuffer
-    // Wall SDF
-    private var wallSDFTexture: MTLTexture?
-    private var wallCollisionUniformBuffer: MTLBuffer?
-    
-    // Mesh rendering
-    private var meshRenderer: CollisionMeshRenderer
-    
-    // Current mesh data
-    private var currentTriangles: [Triangle] = []
-    
+class CollisionItem{
+    public var sdfTexture: MTLTexture?
+    public var collisionUniformBuffer: MTLBuffer
     // Scale and offset control
     public var meshScale: Float = 1.0 {
         didSet {
@@ -41,96 +25,15 @@ class CollisionManager {
     }
     
     // Store current transform parameters for updates
-    private var currentMeshMin: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
-    private var currentMeshMax: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
-    private var currentGridMin: SIMD3<Float>?
-    private var currentGridMax: SIMD3<Float>?
-    
-    // Per-SDF settings (index 0 = primary, index 1 = wall if created)
-    struct SDFSettings { var moves: Bool; var useGravity: Bool; var name: String; var isWall: Bool }
-    private var sdfSettings: [SDFSettings] = [SDFSettings(moves: true, useGravity: false, name: "PrimarySDF", isWall: false)]
-    
-    // Store initial SDF state for reset functionality
-    private var initialCollisionTransform: float4x4 = matrix_identity_float4x4
-    private var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
-    
-    init(device: MTLDevice) {
-        self.device = device
-        self.sdfGenerator = SDFGenerator(device: device)
-        self.meshRenderer = CollisionMeshRenderer(device: device)
-        
-        // Create collision uniform buffer
-        let collisionUniformSize = MemoryLayout<CollisionUniforms>.stride
-        guard let buffer = device.makeBuffer(length: collisionUniformSize, options: .storageModeShared) else {
-            fatalError("Failed to create collision uniform buffer")
-        }
-        self.collisionUniformBuffer = buffer
-        
-        // Initialize with default values
-        initializeCollisionUniforms()
-    }
-    
-    private func initializeCollisionUniforms() {
-        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
-            to: CollisionUniforms.self,
-            capacity: 1
-        )
-        
-        collisionUniformPointer[0] = CollisionUniforms(
-            sdfOrigin: SIMD3<Float>(0, 0, 0),
-            sdfSize: SIMD3<Float>(1, 1, 1),
-            sdfResolution: SIMD3<Int32>(64, 64, 64),
-            collisionStiffness: 1.0,  // Not used in velocity-based approach
-            collisionDamping: 0.8,    // Not used in velocity-based approach  
-            enableCollision: 0, // Disabled by default
-            sdfMass: 100.0,
-            collisionTransform: matrix_identity_float4x4, // Default identity transform
-            collisionInvTransform: matrix_identity_float4x4 // Default identity inverse transform
-        )
-    }
-
-    // Ensure wall SDF exists; create if needed based on grid boundaries
-    public func ensureWallSDF(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>, gridSpacing: Float) {
-        if wallSDFTexture != nil && wallCollisionUniformBuffer != nil { return }
-        let resolution = SIMD3<Int32>(64, 64, 64)
-        let origin = gridBoundaryMin
-        let size = gridBoundaryMax - gridBoundaryMin
-        let thickness = gridSpacing
-
-        guard let tex = sdfGenerator.generateWallSDF(resolution: resolution, origin: origin, size: size, wallThickness: thickness) else {
-            print("⚠️ Failed to generate wall SDF")
-            return
-        }
-        wallSDFTexture = tex
-
-        // Build wall collision uniforms
-        let buf = device.makeBuffer(length: MemoryLayout<CollisionUniforms>.stride, options: .storageModeShared)!
-        buf.label = "WallCollisionUniforms"
-        let p = buf.contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
-        p[0] = CollisionUniforms(
-            sdfOrigin: origin,
-            sdfSize: size,
-            sdfResolution: resolution,
-            collisionStiffness: 1.0,
-            collisionDamping: 0.8,
-            enableCollision: 1,
-            sdfMass: 0.0, // not used for wall
-            collisionTransform: matrix_identity_float4x4,
-            collisionInvTransform: matrix_identity_float4x4
-        )
-        wallCollisionUniformBuffer = buf
-        print("🧱 Wall SDF created with resolution \(resolution)")
-        // Register wall settings (static, no gravity by default)
-        sdfSettings.append(SDFSettings(moves: false, useGravity: false, name: "WallSDF", isWall: true))
-    }
-
-    public func getWallSDFTexture() -> MTLTexture? { wallSDFTexture }
-    public func getWallCollisionUniformBuffer() -> MTLBuffer? { wallCollisionUniformBuffer }
+    public var currentMeshMin: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
+    public var currentMeshMax: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
+    public var currentGridMin: SIMD3<Float>?
+    public var currentGridMax: SIMD3<Float>?
     
     // MARK: - Private Helper Methods
     
-    private func calculateCollisionTransform(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>, 
-                                           gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?, 
+    public func calculateCollisionTransform(meshMin: SIMD3<Float>, meshMax: SIMD3<Float>,
+                                           gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?,
                                            scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1),
                                            rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0),
                                            offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) -> (float4x4, float4x4) {
@@ -154,8 +57,8 @@ class CollisionManager {
         
         // Create transform matrix: T * R * S (applied in reverse order)
         let scaleMatrix = float4x4(scaling: scale)
-        let rotationMatrix = float4x4(rotationX: rotation.x) * 
-                            float4x4(rotationY: rotation.y) * 
+        let rotationMatrix = float4x4(rotationX: rotation.x) *
+                            float4x4(rotationY: rotation.y) *
                             float4x4(rotationZ: rotation.z)
         let translationMatrix = float4x4(translation: translation)
         
@@ -163,26 +66,6 @@ class CollisionManager {
         let invTransform = transform.inverse
         
         return (transform, invTransform)
-    }
-    /// Calculate bounding box for given triangles
-    func calculateBoundingBox(triangles: [Triangle]) -> (min: SIMD3<Float>, max: SIMD3<Float>) {
-        guard !triangles.isEmpty else {
-            return (min: SIMD3<Float>(0, 0, 0), max: SIMD3<Float>(0, 0, 0))
-        }
-        
-        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
-        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
-        
-        for triangle in triangles {
-            minBounds = min(minBounds, triangle.v0)
-            minBounds = min(minBounds, triangle.v1)
-            minBounds = min(minBounds, triangle.v2)
-            maxBounds = max(maxBounds, triangle.v0)
-            maxBounds = max(maxBounds, triangle.v1)
-            maxBounds = max(maxBounds, triangle.v2)
-        }
-        
-        return (min: minBounds, max: maxBounds)
     }
     private func updateCollisionTransform() {
         guard currentGridMin != nil && currentGridMax != nil else { return }
@@ -199,7 +82,6 @@ class CollisionManager {
             rotation: rotationVec,
             offset: offsetVec
         )
-        
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
             to: CollisionUniforms.self,
             capacity: 1
@@ -208,88 +90,45 @@ class CollisionManager {
         collisionUniformPointer[0].collisionTransform = transform
         collisionUniformPointer[0].collisionInvTransform = invTransform
     }
-    
-    public func processAndGenerateSDF(triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?, scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1), offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0), rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)) {
-        currentTriangles = triangles
-        
-        // Store current parameters for scale updates
-        let boundingBox = calculateBoundingBox(triangles: triangles)
-        currentMeshMin = boundingBox.min
-        currentMeshMax = boundingBox.max
-        currentGridMin = gridBoundaryMin
-        currentGridMax = gridBoundaryMax
-        
-        // Expand bounds slightly for safety
-        let minBounds = boundingBox.min - SIMD3<Float>(padding, padding, padding)
-        let maxBounds = boundingBox.max + SIMD3<Float>(padding, padding, padding)
-        
-        // Generate SDF texture with specified resolution using GPU
-        print("🚀 Starting GPU SDF generation...")
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
-        sdfTexture = sdfGenerator.generateSDF(
-            triangles: triangles,
-            resolution: resolution,
-            boundingBox: (min: minBounds, max: maxBounds)
-        )
-        
-        let endTime = CFAbsoluteTimeGetCurrent()
-        let duration = endTime - startTime
-        print("⚡ GPU SDF generation completed in \(String(format: "%.3f", duration))s")
-        
-        if sdfTexture != nil {
-            // Calculate collision transform using meshScale combined with provided scale
-            let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
-            let combinedOffset = offset + SIMD3<Float>(0.0, meshYOffset, 0.0)
-            let combinedRotation = rotation + SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0)
-            let (transform, invTransform) = calculateCollisionTransform(
-                meshMin: minBounds,
-                meshMax: maxBounds,
-                gridMin: gridBoundaryMin,
-                gridMax: gridBoundaryMax,
-                scale: combinedScale,
-                rotation: combinedRotation,
-                offset: combinedOffset
-            )
-            
-            // Update collision uniforms
-            let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
-                to: CollisionUniforms.self,
-                capacity: 1
-            )
-            
-            // Estimate mass from AABB volume (simple proxy), allow future override
-            let extent = (maxBounds - minBounds)
-            let volume = max(1e-4, extent.x * extent.y * extent.z)
-            let estimatedMass: Float = volume * 2.5 // density coefficient
-
-            collisionUniformPointer[0] = CollisionUniforms(
-                sdfOrigin: minBounds,
-                sdfSize: maxBounds - minBounds,
-                sdfResolution: resolution,
-                collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
-                collisionDamping: 0.8,    // Not directly used in new velocity-based approach
-                enableCollision: 1,
-                sdfMass: estimatedMass,
-                collisionTransform: transform,
-                collisionInvTransform: invTransform
-            )
-            
-            // Store initial transform for reset functionality
-            initialCollisionTransform = transform
-            initialCollisionInvTransform = invTransform
-            
-            // Load mesh into renderer for visualization
-            meshRenderer.loadMesh(triangles: triangles)
-            
-            print("Successfully loaded collision mesh with \(triangles.count) triangles")
-            print("SDF resolution: \(resolution)x\(resolution)x\(resolution)")
-            print("SDF bounds: \(minBounds) to \(maxBounds)")
-        } else {
-            print("Failed to generate SDF texture")
+    private let device: MTLDevice
+    init(device: MTLDevice) {
+        self.device = device
+        // Create collision uniform buffer
+        let collisionUniformSize = MemoryLayout<CollisionUniforms>.stride
+        guard let buffer = device.makeBuffer(length: collisionUniformSize, options: .storageModeShared) else {
+            fatalError("Failed to create collision uniform buffer")
         }
+        self.collisionUniformBuffer = buffer
+        meshRendererItem = CollisionMeshRendererItem(device: device)
+        // Initialize with default values
+        initializeCollisionUniforms()
     }
     
+    private func initializeCollisionUniforms() {
+        let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+            to: CollisionUniforms.self,
+            capacity: 1
+        )
+        
+        collisionUniformPointer[0] = CollisionUniforms(
+            sdfOrigin: SIMD3<Float>(0, 0, 0),
+            sdfSize: SIMD3<Float>(1, 1, 1),
+            sdfResolution: SIMD3<Int32>(64, 64, 64),
+            collisionStiffness: 1.0,  // Not used in velocity-based approach
+            collisionDamping: 0.8,    // Not used in velocity-based approach
+            enableCollision: 0, // Disabled by default
+            sdfMass: 100.0,
+            collisionTransform: matrix_identity_float4x4, // Default identity transform
+            collisionInvTransform: matrix_identity_float4x4 // Default identity inverse transform
+        )
+    }
+    // Store initial SDF state for reset functionality
+    public var initialCollisionTransform: float4x4 = matrix_identity_float4x4
+    public var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
+    public var canMove: Bool = false
+    public var useGravity: Bool = false
+    // Current mesh data
+    public var currentTriangles: [Triangle] = []
     // MARK: - Configuration
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
@@ -370,25 +209,7 @@ class CollisionManager {
         
         print("🔄 SDF transform reset to initial position")
     }
-    
-    // MARK: - Rendering Controls
-    
-    func setMeshVisible(_ visible: Bool) {
-        meshRenderer.isVisible = visible
-    }
-    
-    func isMeshVisible() -> Bool {
-        return meshRenderer.isVisible
-    }
-    
-    func setMeshColor(_ color: SIMD4<Float>) {
-        meshRenderer.setColor(color)
-    }
-    
-    func setMeshWireframe(_ wireframe: Bool) {
-        meshRenderer.setWireframeMode(wireframe)
-    }
-    
+        
     // MARK: - Internal Access (for FluidRenderer)
     
     internal func getSDFTexture() -> MTLTexture? {
@@ -398,39 +219,182 @@ class CollisionManager {
     internal func getCollisionUniformBuffer() -> MTLBuffer {
         return collisionUniformBuffer
     }
+    var meshRendererItem: CollisionMeshRendererItem
+    // MARK: - Rendering Controls
+    func setMeshColor(_ color: SIMD4<Float>) {
+        meshRendererItem.setColor(color)
+    }
     
-    internal func renderMesh(renderPassDescriptor: MTLRenderPassDescriptor,
+    func setMeshWireframe(_ wireframe: Bool) {
+        meshRendererItem.setWireframeMode(wireframe)
+    }
+    let padding: Float = 1.0
+    /// Calculate bounding box for given triangles
+    func calculateBoundingBox(triangles: [Triangle]) -> (min: SIMD3<Float>, max: SIMD3<Float>) {
+        guard !triangles.isEmpty else {
+            return (min: SIMD3<Float>(0, 0, 0), max: SIMD3<Float>(0, 0, 0))
+        }
+        
+        var minBounds = SIMD3<Float>(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+        var maxBounds = SIMD3<Float>(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+        
+        for triangle in triangles {
+            minBounds = min(minBounds, triangle.v0)
+            minBounds = min(minBounds, triangle.v1)
+            minBounds = min(minBounds, triangle.v2)
+            maxBounds = max(maxBounds, triangle.v0)
+            maxBounds = max(maxBounds, triangle.v1)
+            maxBounds = max(maxBounds, triangle.v2)
+        }
+        
+        return (min: minBounds, max: maxBounds)
+    }
+
+    public func processAndGenerateSDF(sdfGenerator: SDFGenerator,triangles: [Triangle], resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>?, gridBoundaryMax: SIMD3<Float>?) {
+        
+        let scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
+        let offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
+        let rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
+        
+        currentTriangles = triangles
+        
+        // Store current parameters for scale updates
+        let boundingBox = calculateBoundingBox(triangles: triangles)
+        currentMeshMin = boundingBox.min
+        currentMeshMax = boundingBox.max
+        currentGridMin = gridBoundaryMin
+        currentGridMax = gridBoundaryMax
+        
+        // Expand bounds slightly for safety
+        let minBounds = boundingBox.min - SIMD3<Float>(padding, padding, padding)
+        let maxBounds = boundingBox.max + SIMD3<Float>(padding, padding, padding)
+        
+        sdfTexture = sdfGenerator.generateSDF(
+            triangles: triangles,
+            resolution: resolution,
+            boundingBox: (min: minBounds, max: maxBounds)
+        )
+                
+        if sdfTexture != nil {
+            // Calculate collision transform using meshScale combined with provided scale
+            let combinedScale = SIMD3<Float>(meshScale, meshScale, meshScale) * scale
+            let combinedOffset = offset + SIMD3<Float>(0.0, meshYOffset, 0.0)
+            let combinedRotation = rotation + SIMD3<Float>(0.0, meshYRotation * Float.pi / 180.0, 0.0)
+            let (transform, invTransform) = calculateCollisionTransform(
+                meshMin: minBounds,
+                meshMax: maxBounds,
+                gridMin: gridBoundaryMin,
+                gridMax: gridBoundaryMax,
+                scale: combinedScale,
+                rotation: combinedRotation,
+                offset: combinedOffset
+            )
+            
+            // Update collision uniforms
+            let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
+                to: CollisionUniforms.self,
+                capacity: 1
+            )
+            
+            // Estimate mass from AABB volume (simple proxy), allow future override
+            let extent = (maxBounds - minBounds)
+            let volume = max(1e-4, extent.x * extent.y * extent.z)
+            let estimatedMass: Float = volume * 2.5 // density coefficient
+
+            collisionUniformPointer[0] = CollisionUniforms(
+                sdfOrigin: minBounds,
+                sdfSize: maxBounds - minBounds,
+                sdfResolution: resolution,
+                collisionStiffness: 1.0,  // Not directly used in new velocity-based approach
+                collisionDamping: 0.8,    // Not directly used in new velocity-based approach
+                enableCollision: 1,
+                sdfMass: estimatedMass,
+                collisionTransform: transform,
+                collisionInvTransform: invTransform
+            )
+            
+            // Store initial transform for reset functionality
+            initialCollisionTransform = transform
+            initialCollisionInvTransform = invTransform
+            
+            
+            // Load mesh into renderer for visualization
+            meshRendererItem.loadMesh(triangles: triangles)
+            
+            print("Successfully loaded collision mesh with \(triangles.count) triangles")
+            print("SDF resolution: \(resolution)x\(resolution)x\(resolution)")
+            print("SDF bounds: \(minBounds) to \(maxBounds)")
+        } else {
+            print("Failed to generate SDF texture")
+        }
+    }
+
+}
+class CollisionManager {
+    static let MAX_RIGIDS = 8
+    private let device: MTLDevice
+    
+    // SDF generation and collision detection
+    public var sdfGenerator: SDFGenerator
+    
+    // Mesh rendering
+    private var meshRenderer: CollisionMeshRenderer
+    
+    init(device: MTLDevice) {
+        self.device = device
+        self.sdfGenerator = SDFGenerator(device: device)
+        self.meshRenderer = CollisionMeshRenderer(device: device)
+        self.bunnyItem = CollisionItem(device: device)
+    }
+    private func renderMesh(item:CollisionItem,renderPassDescriptor: MTLRenderPassDescriptor,
                            commandBuffer: MTLCommandBuffer,
                            vertexUniformBuffer: MTLBuffer) {
         meshRenderer.render(
+            item:item.meshRendererItem,
             renderPassDescriptor: renderPassDescriptor,
             commandBuffer: commandBuffer,
             vertexUniformBuffer: vertexUniformBuffer,
-            collisionUniformBuffer: collisionUniformBuffer
+            collisionUniformBuffer: item.collisionUniformBuffer
         )
     }
     
     // New method to render within an existing render encoder
-    internal func renderMeshInEncoder(renderEncoder: MTLRenderCommandEncoder,
+    private func renderMeshInEncoder(item:CollisionItem,renderEncoder: MTLRenderCommandEncoder,
                                     vertexUniformBuffer: MTLBuffer) {
         meshRenderer.renderInEncoder(
+            item:item.meshRendererItem,
             renderEncoder: renderEncoder,
             vertexUniformBuffer: vertexUniformBuffer,
-            collisionUniformBuffer: collisionUniformBuffer
+            collisionUniformBuffer: item.collisionUniformBuffer
         )
     }
-
-    // MARK: - Multi SDF settings accessors
-    public func getSDFCount() -> Int { sdfSettings.count }
-    public func getSDFSettings(index: Int) -> (moves: Bool, useGravity: Bool, name: String, isWall: Bool)? {
-        guard index >= 0 && index < sdfSettings.count else { return nil }
-        let s = sdfSettings[index]
-        return (s.moves, s.useGravity, s.name, s.isWall)
+    func renderMeshesInEncoder(renderEncoder: MTLRenderCommandEncoder,
+                             vertexUniformBuffer: MTLBuffer) {
+        for item in items {
+            self.renderMeshInEncoder(item: item, renderEncoder: renderEncoder, vertexUniformBuffer: vertexUniformBuffer)
+        }
     }
-    public func setSDFSettings(index: Int, moves: Bool? = nil, useGravity: Bool? = nil, name: String? = nil) {
-        guard index >= 0 && index < sdfSettings.count else { return }
-        if let moves { sdfSettings[index].moves = moves }
-        if let useGravity { sdfSettings[index].useGravity = useGravity }
-        if let name { sdfSettings[index].name = name }
+    private var internalItems:[CollisionItem] = []
+    public var bunnyItem:CollisionItem
+    private var items:[CollisionItem]{
+        get{
+            return [bunnyItem] + internalItems
+        }
     }
+    func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
+        for item in items {
+            item.updateGridBoundaries(gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
+        }
+    }
+    func resetSDFTransforms(){
+        for item in items {
+            item.resetSDFTransform()
+        }
+    }
+    func isMeshVisible() -> Bool {
+        return meshRenderer.isVisible
+    }
+    func setMeshVisible(_ visible: Bool) {
+        meshRenderer.isVisible = visible
+    }    
 }

@@ -99,12 +99,8 @@ extension MPMFluidRenderer {
 
         if materialParameters.currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
-            setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range)
-            
-        } else if materialParameters.currentMaterialMode == .rigidBody{
             setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range, rigidInfoPointer: stagingRigidInfoPointer)
-            // Initialize rigid body states if in rigid body mode
-            initializeRigidBodyStatesCPU(particlePointer: stagingParticlePointer, rigidInfoPointer: stagingRigidInfoPointer, center: center)
+            
         } else {
             // Original spherical distribution for fluid
             setupFluidSphere(particlePointer: stagingParticlePointer, center: center, range: range, boundaryMin: boundaryMin, boundaryMax: boundaryMax, rigidInfoPointer: stagingRigidInfoPointer)
@@ -167,109 +163,8 @@ extension MPMFluidRenderer {
     private func createRigidInfo(rigidId: UInt32, initialOffset: SIMD3<Float>) -> MPMParticleRigidInfo {
         return MPMParticleRigidInfo(rigidId: rigidId, initialOffset: initialOffset)
     }
-    
-    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
-        let isRigidBody = materialParameters.currentMaterialMode == .rigidBody
-        
-        if isRigidBody {
-            // SDF-based rigid body initialization
-            setupSDFBasedRigidBody(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
-        } else {
-            // Original elastic cube initialization
-            setupOriginalElasticCube(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
-        }
-    }
-    
-    private func setupSDFBasedRigidBody(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>?) {
-        guard let collisionManager = collisionManager,
-              collisionManager.isEnabled(),
-              let sdfTexture = collisionManager.getSDFTexture() else {
-            print("⚠️ SDF not available, falling back to cube initialization")
-            setupOriginalElasticCube(particlePointer: particlePointer, center: center, range: range, rigidInfoPointer: rigidInfoPointer)
-            return
-        }
-        
-        let collisionUniformPointer = collisionManager.getCollisionUniformBuffer().contents().bindMemory(
-            to: CollisionUniforms.self,
-            capacity: 1
-        )
-        let sdfOrigin = collisionUniformPointer[0].sdfOrigin
-        let sdfSize = collisionUniformPointer[0].sdfSize
-        let sdfResolution = collisionUniformPointer[0].sdfResolution
-        let transform = collisionUniformPointer[0].collisionTransform
-        
-        // Calculate SDF center in world space
-        let sdfLocalCenter = sdfOrigin + sdfSize * 0.5
-        let sdfWorldCenter4 = transform * SIMD4<Float>(sdfLocalCenter.x, sdfLocalCenter.y, sdfLocalCenter.z, 1.0)
-        let sdfWorldCenter = SIMD3<Float>(sdfWorldCenter4.x, sdfWorldCenter4.y, sdfWorldCenter4.z)
-        
-        var particleIndex = 0
-        let maxAttempts = particleCount * 10 // Prevent infinite loop
-        var attempts = 0
-        
-        print("🔶 Initializing SDF-based rigid body with \(particleCount) particles")
-        print("   SDF origin: \(sdfOrigin), size: \(sdfSize)")
-        print("   SDF world center: \(sdfWorldCenter)")
-        
-        // Generate particles inside the SDF volume
-        while particleIndex < particleCount && attempts < maxAttempts {
-            attempts += 1
             
-            // Generate random position within expanded boundary range
-            let expandedRange = range * 1.2 // Slightly expand search area
-            let pos = center + SIMD3<Float>(
-                Float.random(in: -expandedRange.x...expandedRange.x),
-                Float.random(in: -expandedRange.y...expandedRange.y),
-                Float.random(in: -expandedRange.z...expandedRange.z)
-            )
-            
-            // Check if this position is inside the SDF (negative SDF value = inside)
-            if isPositionInsideSDF(position: pos, sdfTexture: sdfTexture, 
-                                  sdfOrigin: sdfOrigin, sdfSize: sdfSize, 
-                                  sdfResolution: sdfResolution, 
-                                  transform: collisionUniformPointer[0].collisionInvTransform) {
-                
-                let randomOffset = SIMD3<Float>(
-                    Float.random(in: -0.001...0.001),
-                    Float.random(in: -0.001...0.001),
-                    Float.random(in: -0.001...0.001)
-                )
-                let finalPos = pos + randomOffset
-                
-                particlePointer[particleIndex] = createParticle(at: finalPos, index: particleIndex)
-                rigidInfoPointer?[particleIndex] = createRigidInfo(
-                    rigidId: 1,
-                    initialOffset: finalPos - sdfWorldCenter
-                )
-                
-                particleIndex += 1
-            }
-        }
-        
-        // Fill any remaining particles with fallback method if SDF sampling didn't generate enough
-        if particleIndex < particleCount {
-            print("⚠️ SDF sampling only generated \(particleIndex)/\(particleCount) particles, filling remainder randomly")
-            while particleIndex < particleCount {
-                let pos = center + SIMD3<Float>(
-                    Float.random(in: -range.x * 0.3...range.x * 0.3),
-                    Float.random(in: -range.y * 0.3...range.y * 0.3),
-                    Float.random(in: -range.z * 0.3...range.z * 0.3)
-                )
-                
-                particlePointer[particleIndex] = createParticle(at: pos, index: particleIndex)
-                rigidInfoPointer?[particleIndex] = createRigidInfo(
-                    rigidId: 1,
-                    initialOffset: pos - sdfWorldCenter
-                )
-                
-                particleIndex += 1
-            }
-        }
-        
-        print("🟦 Created SDF-based rigid body: \(particleIndex) particles in \(attempts) attempts")
-    }
-    
-    private func setupOriginalElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>?) {
+    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>?) {
         let particlesPerDim = Int(floor(pow(Float(particleCount), 1.0/3.0)))
         let cubeSize = min(range.x, range.y, range.z) * 0.6
         let spacing = cubeSize / Float(particlesPerDim - 1)
@@ -324,36 +219,7 @@ extension MPMFluidRenderer {
         
         print("🟦 Created elastic cube: \(particlesPerDim)³ lattice, spacing: \(spacing)")
     }
-    
-    // Helper function to check if position is inside SDF (simplified CPU-based check)
-    private func isPositionInsideSDF(position: SIMD3<Float>, sdfTexture: MTLTexture, 
-                                   sdfOrigin: SIMD3<Float>, sdfSize: SIMD3<Float>, 
-                                   sdfResolution: SIMD3<Int32>, transform: float4x4) -> Bool {
-        // Transform world position to SDF local space
-        let worldPos4 = SIMD4<Float>(position.x, position.y, position.z, 1.0)
-        let localPos4 = transform * worldPos4
-        let localPos = SIMD3<Float>(localPos4.x, localPos4.y, localPos4.z)
         
-        // Check if position is within SDF bounds
-        if any(localPos .< sdfOrigin) || any(localPos .> (sdfOrigin + sdfSize)) {
-            return false
-        }
-        
-        // Convert to SDF texture coordinates [0, 1]
-        let relativePos = (localPos - sdfOrigin) / sdfSize
-        let texCoord = SIMD3<Int32>(
-            min(Int32(relativePos.x * Float(sdfResolution.x)), sdfResolution.x - 1),
-            min(Int32(relativePos.y * Float(sdfResolution.y)), sdfResolution.y - 1),
-            min(Int32(relativePos.z * Float(sdfResolution.z)), sdfResolution.z - 1)
-        )
-        
-        // For CPU-based initialization, we'll use a simple heuristic
-        // In practice, you might want to read the actual SDF texture data
-        // For now, we'll assume positions closer to the center are more likely to be inside
-        let centerDist = length(relativePos - SIMD3<Float>(0.5, 0.5, 0.5))
-        return centerDist < 0.4 // Rough approximation - particles within 40% of center radius
-    }
-    
     private func setupFluidSphere(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, boundaryMin: SIMD3<Float>, boundaryMax: SIMD3<Float>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>? = nil) {
         let maxRadius = min(range.x, range.y, range.z)
         
@@ -440,98 +306,7 @@ extension MPMFluidRenderer {
             print("⚠️ Could not create rigid body initialization pipeline: \(error)")
         }
     }
-    // CPU-side rigid body initialization
-    private func initializeRigidBodyStatesCPU(particlePointer: UnsafeMutablePointer<MPMParticle>, rigidInfoPointer: UnsafeMutablePointer<MPMParticleRigidInfo>, center: SIMD3<Float>) {
-        let rigidBodyStatePointer = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 1)
-        let rigidBodyId: UInt32 = 1 // We're initializing rigid body with ID 1
-        
-        // Calculate center of mass and total mass
-        var centerOfMass = SIMD3<Float>(0, 0, 0)
-        var totalMass: Float = 0.0
-        var particleCount: UInt32 = 0
-        
-        for i in 0..<self.particleCount {
-            if rigidInfoPointer[i].rigidId == rigidBodyId {
-                let particle = particlePointer[i]
-                centerOfMass += particle.position * particle.mass
-                totalMass += particle.mass
-                particleCount += 1
-            }
-        }
-        
-        if totalMass > 0.0 {
-            centerOfMass /= totalMass
-        }
-        
-        // Get SDF-based properties if available
-        var halfExtents = SIMD3<Float>(0.5, 0.5, 0.5) // Default
-        var boundingRadius: Float = 0.5 // Default
-        var inertiaTensor = simd_float3x3(1.0) // Default identity
-        
-        if let collisionManager = collisionManager, collisionManager.isEnabled() {
-            let collisionUniformPointer = collisionManager.getCollisionUniformBuffer().contents().bindMemory(
-                to: CollisionUniforms.self,
-                capacity: 1
-            )
-            let sdfSize = collisionUniformPointer[0].sdfSize
-            
-            // Use SDF size to calculate more accurate physical properties
-            halfExtents = sdfSize * 0.5
-            boundingRadius = length(halfExtents)
-            
-            // Calculate inertia tensor for a box with SDF dimensions
-            let mass = max(totalMass, 1.0)
-            let w = sdfSize.x, h = sdfSize.y, d = sdfSize.z
-            inertiaTensor = simd_float3x3(
-                SIMD3<Float>((mass/12.0) * (h*h + d*d), 0, 0),
-                SIMD3<Float>(0, (mass/12.0) * (w*w + d*d), 0),
-                SIMD3<Float>(0, 0, (mass/12.0) * (w*w + h*h))
-            )
-            
-            print("🔶 Using SDF-based rigid body properties:")
-            print("   Half extents: \(halfExtents)")
-            print("   Bounding radius: \(boundingRadius)")
-            print("   Inertia tensor diagonal: \(inertiaTensor.columns.0.x), \(inertiaTensor.columns.1.y), \(inertiaTensor.columns.2.z)")
-        }
-        
-        // Calculate inverse inertia tensor
-        let invInertiaTensor = simd_float3x3(
-            SIMD3<Float>(1.0 / max(inertiaTensor.columns.0.x, 1e-6), 0, 0),
-            SIMD3<Float>(0, 1.0 / max(inertiaTensor.columns.1.y, 1e-6), 0),
-            SIMD3<Float>(0, 0, 1.0 / max(inertiaTensor.columns.2.z, 1e-6))
-        )
-        
-        // Initialize rigid body state with SDF-based properties
-        let rigidBodyState = RigidBodyState(
-            centerOfMass: centerOfMass,
-            linearVelocity: SIMD3<Float>(0, 0, 0),
-            angularVelocity: SIMD3<Float>(0, 0, 0),
-            orientation: SIMD4<Float>(0, 0, 0, 1), // Identity quaternion
-            totalMass: totalMass,
-            invInertiaTensor: invInertiaTensor,
-            accumulatedForce: SIMD3<Float>(0, 0, 0),
-            accumulatedTorque: SIMD3<Float>(0, 0, 0),
-            particleCount: particleCount,
-            isActive: (particleCount > 0) ? 1 : 0,
-            linearDamping: 0.99,
-            angularDamping: 0.99,
-            restitution: 0.5,
-            friction: 0.3,
-            halfExtents: halfExtents,
-            boundingRadius: boundingRadius
-        )
-        
-        // Write to buffer
-        rigidBodyStatePointer[0] = rigidBodyState
-        
-        print("🔶 Initialized SDF-based rigid body state:")
-        print("   Center of mass: \(centerOfMass)")
-        print("   Total mass: \(totalMass)")
-        print("   Particle count: \(particleCount)")
-    }
-    
     // MARK: - Main Compute Function
-    
     func compute(commandBuffer: MTLCommandBuffer) {
         // Skip if compute is already in progress
         if isComputing {
@@ -560,43 +335,6 @@ extension MPMFluidRenderer {
         }
         
         computeSimulation(commandBuffer: commandBuffer)
-
-        // GPU SDF vs Wall collision using dual SDF solver (only if primary SDF is allowed to move)
-        if let collisionManager = collisionManager,
-           let objectTex = collisionManager.getSDFTexture() {
-            let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
-            if primaryMoves {
-            let (bmin, bmax) = getBoundaryMinMax()
-            collisionManager.ensureWallSDF(gridBoundaryMin: bmin, gridBoundaryMax: bmax, gridSpacing: gridSpacing)
-            if let wallTex = collisionManager.getWallSDFTexture(),
-               let wallCU = collisionManager.getWallCollisionUniformBuffer(),
-               let dualPSO = solveRigidBodyToRigidBodyCollisionsPipelineState {
-                // Prepare rigid bodies (A: object, B: wall)
-                prepareRigidBodiesForSDFWallCollision()
-                // Temporary uniforms with rigidBodyCount=2
-                var localUniforms = getCurrentComputeUniforms()
-                localUniforms.rigidBodyCount = 2
-                let tmpUBuf = device.makeBuffer(bytes: &localUniforms, length: MemoryLayout<ComputeShaderUniforms>.stride, options: .storageModeShared)!
-                if let enc = commandBuffer.makeComputeCommandEncoder() {
-                    enc.setComputePipelineState(dualPSO)
-                    enc.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                    enc.setBuffer(tmpUBuf, offset: 0, index: 1)
-                    enc.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 2)
-                    enc.setBuffer(wallCU, offset: 0, index: 3)
-                    enc.setTexture(objectTex, index: 0)
-                    enc.setTexture(wallTex, index: 1)
-                    let tg = MTLSize(width: 1, height: 1, depth: 1)
-                    enc.dispatchThreadgroups(tg, threadsPerThreadgroup: tg)
-                    enc.endEncoding()
-                }
-            }
-            }
-        }
-        
-        // Run rigid body simulation if in rigid body mode
-        if materialParameters.currentMaterialMode == .rigidBody {
-            computeRigidBodySimulation(commandBuffer: commandBuffer)
-        }
         
         // Add completion handler to swap buffers when the shared command buffer finishes
         // (This will be called when the render pass commits the command buffer)
@@ -631,249 +369,183 @@ extension MPMFluidRenderer {
         return p[0]
     }
 
-    // Prepare two rigid bodies for SDF A vs Wall B collision (written into rigidBodyStateBuffer)
-    private func prepareRigidBodiesForSDFWallCollision() {
-        guard let collisionManager = collisionManager else { return }
-        let cu = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)[0]
-        // Rigid A: current SDF state
-        let comLocal = cu.sdfOrigin + 0.5 * cu.sdfSize
-        let comWorld4 = cu.collisionTransform * SIMD4<Float>(comLocal.x, comLocal.y, comLocal.z, 1)
-        let comWorld = SIMD3<Float>(comWorld4.x, comWorld4.y, comWorld4.z)
-        var rbA = RigidBodyState(
-            centerOfMass: comWorld,
-            linearVelocity: sdfRigidLinearVelocity,
-            angularVelocity: sdfRigidAngularVelocity,
-            orientation: SIMD4<Float>(0,0,0,1),
-            totalMass: max(1e-4, cu.sdfMass),
-            invInertiaTensor: .init(),
-            accumulatedForce: .zero,
-            accumulatedTorque: .zero,
-            particleCount: 0,
-            isActive: 1,
-            linearDamping: 0.2,
-            angularDamping: 0.1,
-            restitution: 0.3,
-            friction: 0.5,
-            halfExtents: cu.sdfSize * 0.5,
-            boundingRadius: length(cu.sdfSize * 0.5)
-        )
-        let hx = max(1e-4, cu.sdfSize.x * 0.5)
-        let hy = max(1e-4, cu.sdfSize.y * 0.5)
-        let hz = max(1e-4, cu.sdfSize.z * 0.5)
-        let Ixx = rbA.totalMass * (hy*hy + hz*hz) / 12.0
-        let Iyy = rbA.totalMass * (hx*hx + hz*hz) / 12.0
-        let Izz = rbA.totalMass * (hx*hx + hy*hy) / 12.0
-        rbA.invInertiaTensor = simd_float3x3(
-            SIMD3<Float>(1.0/max(Ixx,1e-6), 0, 0),
-            SIMD3<Float>(0, 1.0/max(Iyy,1e-6), 0),
-            SIMD3<Float>(0, 0, 1.0/max(Izz,1e-6))
-        )
-
-        // Rigid B: wall (static, infinite mass)
-        let (bmin, bmax) = getBoundaryMinMax()
-        let center = (bmin + bmax) * 0.5
-        let ext = (bmax - bmin) * 0.5
-        let rbB = RigidBodyState(
-            centerOfMass: center,
-            linearVelocity: .zero,
-            angularVelocity: .zero,
-            orientation: SIMD4<Float>(0,0,0,1),
-            totalMass: 0.0, // invMass = 0
-            invInertiaTensor: simd_float3x3(.zero, .zero, .zero),
-            accumulatedForce: .zero,
-            accumulatedTorque: .zero,
-            particleCount: 0,
-            isActive: 1,
-            linearDamping: 0.0,
-            angularDamping: 0.0,
-            restitution: 0.2,
-            friction: 0.5,
-            halfExtents: ext,
-            boundingRadius: length(ext)
-        )
-
-        let ptr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
-        ptr[0] = rbA
-        ptr[1] = rbB
-    }
-
     // Integrate accumulated SDF impulses (from particles) and update collision transform
     internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
-        guard let accBuf = sdfImpulseAccumulatorBuffer,
-              let collisionManager = collisionManager else { return }
-        // Static mode from per-SDF settings
-        let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
-        if !primaryMoves {
-            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
-            accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
-            return
-        }
-        // Read accumulator (index 0)
-        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
-        let acc = accPtr[0]
-        let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
-        let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
-        if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 && !useGPUVelocities { return }
-
-        // Read SDF size to approximate inertia as a solid box
-        let cuPtr = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
-        let size = cuPtr[0].sdfSize
-        let hx = max(1e-4, size.x * 0.5)
-        let hy = max(1e-4, size.y * 0.5)
-        let hz = max(1e-4, size.z * 0.5)
-
-        // Simple physical params
-        let dt = timeStep
-        let mass: Float = max(1e-4, cuPtr[0].sdfMass)
-        let I = SIMD3<Float>(
-            (mass / 12.0) * (hy*hy + hz*hz),
-            (mass / 12.0) * (hx*hx + hz*hz),
-            (mass / 12.0) * (hx*hx + hy*hy)
-        )
-
-        // Optionally fetch GPU-updated velocities from rigidBodyStateBuffer[0]
-        if useGPUVelocities {
-            let rbPtr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
-            let vGPU = rbPtr[0].linearVelocity
-            let wGPU = rbPtr[0].angularVelocity
-            sdfRigidLinearVelocity = vGPU
-            sdfRigidAngularVelocity = wGPU
-        }
-
-        // Optional gravity for SDF rigid body from per-SDF settings
-        let primaryGravity = collisionManager.getSDFSettings(index: 0)?.useGravity ?? false
-        if primaryGravity {
-            sdfRigidLinearVelocity.y += materialParameters.gravity * dt
-        }
-
-        // Damped velocity integration
-        let linearDamping: Float = 0.2
-        let angularDamping: Float = 0.1
-        sdfRigidLinearVelocity *= exp(-linearDamping * dt)
-        sdfRigidAngularVelocity *= exp(-angularDamping * dt)
-        sdfRigidLinearVelocity += J / mass
-        sdfRigidAngularVelocity += SIMD3<Float>(
-            Tau.x / max(I.x, 1e-6),
-            Tau.y / max(I.y, 1e-6),
-            Tau.z / max(I.z, 1e-6)
-        )
-
-        // Clamp velocities for stability
-        let maxLin: Float = 5.0
-        let maxAng: Float = 5.0
-        sdfRigidLinearVelocity = simd_clamp(sdfRigidLinearVelocity, -SIMD3<Float>(repeating: maxLin), SIMD3<Float>(repeating: maxLin))
-        sdfRigidAngularVelocity = simd_clamp(sdfRigidAngularVelocity, -SIMD3<Float>(repeating: maxAng), SIMD3<Float>(repeating: maxAng))
-
-        // Build delta transform (translation scaled by dt; rotation around COM)
-        let dTrans = float4x4(translation: sdfRigidLinearVelocity * dt)
-        let omegaDt = sdfRigidAngularVelocity * dt
-        let angle = simd_length(omegaDt)
-        var dRot = matrix_identity_float4x4
-        if angle > 1e-6 {
-            let axis = simd_normalize(omegaDt)
-            let c = cos(angle)
-            let s = sin(angle)
-            let t: Float = 1 - c
-            let x = axis.x, y = axis.y, z = axis.z
-            let r00 = t*x*x + c
-            let r01 = t*x*y - s*z
-            let r02 = t*x*z + s*y
-            let r10 = t*x*y + s*z
-            let r11 = t*y*y + c
-            let r12 = t*y*z - s*x
-            let r20 = t*x*z - s*y
-            let r21 = t*y*z + s*x
-            let r22 = t*z*z + c
-            let rot3 = float3x3(SIMD3<Float>(r00, r01, r02),
-                                 SIMD3<Float>(r10, r11, r12),
-                                 SIMD3<Float>(r20, r21, r22))
-            let c0 = SIMD4<Float>(rot3.columns.0.x, rot3.columns.0.y, rot3.columns.0.z, 0)
-            let c1 = SIMD4<Float>(rot3.columns.1.x, rot3.columns.1.y, rot3.columns.1.z, 0)
-            let c2 = SIMD4<Float>(rot3.columns.2.x, rot3.columns.2.y, rot3.columns.2.z, 0)
-            let c3 = SIMD4<Float>(0, 0, 0, 1)
-            dRot = float4x4(c0, c1, c2, c3)
-        }
-
-        // Compute world-space COM from local SDF center
-        let comLocal = cuPtr[0].sdfOrigin + 0.5 * cuPtr[0].sdfSize
-        let comWorld4 = cuPtr[0].collisionTransform * SIMD4<Float>(comLocal.x, comLocal.y, comLocal.z, 1.0)
-        let comWorld = SIMD3<Float>(comWorld4.x, comWorld4.y, comWorld4.z)
-
-        let Tcom = float4x4(translation: comWorld)
-        let TcomInv = float4x4(translation: -comWorld)
-
-        // Apply on top of current transform: translate, then rotate about COM
-        var T = cuPtr[0].collisionTransform
-        T = dTrans * (Tcom * dRot * TcomInv) * T
-        // --- World-boundary collision handling for SDF OBB ---
-        // Compute world AABB of transformed SDF (OBB -> AABB using |M| * h)
-        let h = 0.5 * cuPtr[0].sdfSize
-        let centerLocal = cuPtr[0].sdfOrigin + h
-        let centerWorld4 = T * SIMD4<Float>(centerLocal.x, centerLocal.y, centerLocal.z, 1)
-        var centerWorld = SIMD3<Float>(centerWorld4.x, centerWorld4.y, centerWorld4.z)
-
-        // Upper-left 3x3 of T (rotation-scale)
-        let m = float3x3(
-            SIMD3<Float>(T.columns.0.x, T.columns.0.y, T.columns.0.z),
-            SIMD3<Float>(T.columns.1.x, T.columns.1.y, T.columns.1.z),
-            SIMD3<Float>(T.columns.2.x, T.columns.2.y, T.columns.2.z)
-        )
-        let absM = float3x3(
-            SIMD3<Float>(abs(m.columns.0.x), abs(m.columns.0.y), abs(m.columns.0.z)),
-            SIMD3<Float>(abs(m.columns.1.x), abs(m.columns.1.y), abs(m.columns.1.z)),
-            SIMD3<Float>(abs(m.columns.2.x), abs(m.columns.2.y), abs(m.columns.2.z))
-        )
-        let extents = absM * h
-        var worldMin = centerWorld - extents
-        var worldMax = centerWorld + extents
-
-        // Read simulation boundaries
-        let uPtr = computeUniformBuffer.contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
-        let bmin = uPtr[0].boundaryMin
-        let bmax = uPtr[0].boundaryMax
-        let wallThickness: Float = uPtr[0].gridSpacing // thickness = one grid cell
-        let innerMin = bmin + SIMD3<Float>(repeating: wallThickness)
-        let innerMax = bmax - SIMD3<Float>(repeating: wallThickness)
-
-        // Compute correction to keep inside [bmin, bmax]
-        var correction = SIMD3<Float>(repeating: 0)
-        var hitNormal = SIMD3<Float>(repeating: 0)
-        // Thin-wall SDF style: allow motion within [innerMin, innerMax],
-        // treat the bands [bmin, innerMin] and [innerMax, bmax] as walls of thickness 1 cell
-        if worldMin.x < innerMin.x { correction.x += (innerMin.x - worldMin.x); hitNormal.x += 1 }
-        if worldMax.x > innerMax.x { correction.x -= (worldMax.x - innerMax.x); hitNormal.x -= 1 }
-        if worldMin.y < innerMin.y { correction.y += (innerMin.y - worldMin.y); hitNormal.y += 1 }
-        if worldMax.y > innerMax.y { correction.y -= (worldMax.y - innerMax.y); hitNormal.y -= 1 }
-        if worldMin.z < innerMin.z { correction.z += (innerMin.z - worldMin.z); hitNormal.z += 1 }
-        if worldMax.z > innerMax.z { correction.z -= (worldMax.z - innerMax.z); hitNormal.z -= 1 }
-
-        if any(correction .!= 0) {
-            // Apply correction to translation
-            T.columns.3.x += correction.x
-            T.columns.3.y += correction.y
-            T.columns.3.z += correction.z
-            centerWorld += correction
-            worldMin += correction
-            worldMax += correction
-
-            // Reflect linear velocity on hit axes with restitution
-            let restitution: Float = 0.2
-            if hitNormal.x != 0 { sdfRigidLinearVelocity.x = -sdfRigidLinearVelocity.x * restitution }
-            if hitNormal.y != 0 { sdfRigidLinearVelocity.y = -sdfRigidLinearVelocity.y * restitution }
-            if hitNormal.z != 0 { sdfRigidLinearVelocity.z = -sdfRigidLinearVelocity.z * restitution }
-
-            // Damp angular velocity slightly on collision to reduce tunneling
-            sdfRigidAngularVelocity *= 0.8
-        }
-
-        cuPtr[0].collisionTransform = T
-        cuPtr[0].collisionInvTransform = T.inverse
-
-        // Optionally reset accumulator (we also clear it before next frame)
-        accPtr[0] = SDFImpulseAccumulator(
-            impulse_x: 0, impulse_y: 0, impulse_z: 0,
-            torque_x: 0, torque_y: 0, torque_z: 0
-        )
+//        guard let accBuf = sdfImpulseAccumulatorBuffer,
+//              let collisionManager = collisionManager else { return }
+//        // Static mode from per-SDF settings
+//        let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
+//        if !primaryMoves {
+//            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+//            accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
+//            return
+//        }
+//        // Read accumulator (index 0)
+//        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_RIGIDS)
+//        let acc = accPtr[0]
+//        let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
+//        let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
+//        if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 && !useGPUVelocities { return }
+//
+//        // Read SDF size to approximate inertia as a solid box
+//        let cuPtr = collisionManager.getCollisionUniformBuffer().contents().bindMemory(to: CollisionUniforms.self, capacity: 1)
+//        let size = cuPtr[0].sdfSize
+//        let hx = max(1e-4, size.x * 0.5)
+//        let hy = max(1e-4, size.y * 0.5)
+//        let hz = max(1e-4, size.z * 0.5)
+//
+//        // Simple physical params
+//        let dt = timeStep
+//        let mass: Float = max(1e-4, cuPtr[0].sdfMass)
+//        let I = SIMD3<Float>(
+//            (mass / 12.0) * (hy*hy + hz*hz),
+//            (mass / 12.0) * (hx*hx + hz*hz),
+//            (mass / 12.0) * (hx*hx + hy*hy)
+//        )
+//
+//        // Optionally fetch GPU-updated velocities from rigidBodyStateBuffer[0]
+//        if useGPUVelocities {
+//            let rbPtr = rigidBodyStateBuffer.contents().bindMemory(to: RigidBodyState.self, capacity: 2)
+//            let vGPU = rbPtr[0].linearVelocity
+//            let wGPU = rbPtr[0].angularVelocity
+//            sdfRigidLinearVelocity = vGPU
+//            sdfRigidAngularVelocity = wGPU
+//        }
+//
+//        // Optional gravity for SDF rigid body from per-SDF settings
+//        let primaryGravity = collisionManager.getSDFSettings(index: 0)?.useGravity ?? false
+//        if primaryGravity {
+//            sdfRigidLinearVelocity.y += materialParameters.gravity * dt
+//        }
+//
+//        // Damped velocity integration
+//        let linearDamping: Float = 0.2
+//        let angularDamping: Float = 0.1
+//        sdfRigidLinearVelocity *= exp(-linearDamping * dt)
+//        sdfRigidAngularVelocity *= exp(-angularDamping * dt)
+//        sdfRigidLinearVelocity += J / mass
+//        sdfRigidAngularVelocity += SIMD3<Float>(
+//            Tau.x / max(I.x, 1e-6),
+//            Tau.y / max(I.y, 1e-6),
+//            Tau.z / max(I.z, 1e-6)
+//        )
+//
+//        // Clamp velocities for stability
+//        let maxLin: Float = 5.0
+//        let maxAng: Float = 5.0
+//        sdfRigidLinearVelocity = simd_clamp(sdfRigidLinearVelocity, -SIMD3<Float>(repeating: maxLin), SIMD3<Float>(repeating: maxLin))
+//        sdfRigidAngularVelocity = simd_clamp(sdfRigidAngularVelocity, -SIMD3<Float>(repeating: maxAng), SIMD3<Float>(repeating: maxAng))
+//
+//        // Build delta transform (translation scaled by dt; rotation around COM)
+//        let dTrans = float4x4(translation: sdfRigidLinearVelocity * dt)
+//        let omegaDt = sdfRigidAngularVelocity * dt
+//        let angle = simd_length(omegaDt)
+//        var dRot = matrix_identity_float4x4
+//        if angle > 1e-6 {
+//            let axis = simd_normalize(omegaDt)
+//            let c = cos(angle)
+//            let s = sin(angle)
+//            let t: Float = 1 - c
+//            let x = axis.x, y = axis.y, z = axis.z
+//            let r00 = t*x*x + c
+//            let r01 = t*x*y - s*z
+//            let r02 = t*x*z + s*y
+//            let r10 = t*x*y + s*z
+//            let r11 = t*y*y + c
+//            let r12 = t*y*z - s*x
+//            let r20 = t*x*z - s*y
+//            let r21 = t*y*z + s*x
+//            let r22 = t*z*z + c
+//            let rot3 = float3x3(SIMD3<Float>(r00, r01, r02),
+//                                 SIMD3<Float>(r10, r11, r12),
+//                                 SIMD3<Float>(r20, r21, r22))
+//            let c0 = SIMD4<Float>(rot3.columns.0.x, rot3.columns.0.y, rot3.columns.0.z, 0)
+//            let c1 = SIMD4<Float>(rot3.columns.1.x, rot3.columns.1.y, rot3.columns.1.z, 0)
+//            let c2 = SIMD4<Float>(rot3.columns.2.x, rot3.columns.2.y, rot3.columns.2.z, 0)
+//            let c3 = SIMD4<Float>(0, 0, 0, 1)
+//            dRot = float4x4(c0, c1, c2, c3)
+//        }
+//
+//        // Compute world-space COM from local SDF center
+//        let comLocal = cuPtr[0].sdfOrigin + 0.5 * cuPtr[0].sdfSize
+//        let comWorld4 = cuPtr[0].collisionTransform * SIMD4<Float>(comLocal.x, comLocal.y, comLocal.z, 1.0)
+//        let comWorld = SIMD3<Float>(comWorld4.x, comWorld4.y, comWorld4.z)
+//
+//        let Tcom = float4x4(translation: comWorld)
+//        let TcomInv = float4x4(translation: -comWorld)
+//
+//        // Apply on top of current transform: translate, then rotate about COM
+//        var T = cuPtr[0].collisionTransform
+//        T = dTrans * (Tcom * dRot * TcomInv) * T
+//        // --- World-boundary collision handling for SDF OBB ---
+//        // Compute world AABB of transformed SDF (OBB -> AABB using |M| * h)
+//        let h = 0.5 * cuPtr[0].sdfSize
+//        let centerLocal = cuPtr[0].sdfOrigin + h
+//        let centerWorld4 = T * SIMD4<Float>(centerLocal.x, centerLocal.y, centerLocal.z, 1)
+//        var centerWorld = SIMD3<Float>(centerWorld4.x, centerWorld4.y, centerWorld4.z)
+//
+//        // Upper-left 3x3 of T (rotation-scale)
+//        let m = float3x3(
+//            SIMD3<Float>(T.columns.0.x, T.columns.0.y, T.columns.0.z),
+//            SIMD3<Float>(T.columns.1.x, T.columns.1.y, T.columns.1.z),
+//            SIMD3<Float>(T.columns.2.x, T.columns.2.y, T.columns.2.z)
+//        )
+//        let absM = float3x3(
+//            SIMD3<Float>(abs(m.columns.0.x), abs(m.columns.0.y), abs(m.columns.0.z)),
+//            SIMD3<Float>(abs(m.columns.1.x), abs(m.columns.1.y), abs(m.columns.1.z)),
+//            SIMD3<Float>(abs(m.columns.2.x), abs(m.columns.2.y), abs(m.columns.2.z))
+//        )
+//        let extents = absM * h
+//        var worldMin = centerWorld - extents
+//        var worldMax = centerWorld + extents
+//
+//        // Read simulation boundaries
+//        let uPtr = computeUniformBuffer.contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
+//        let bmin = uPtr[0].boundaryMin
+//        let bmax = uPtr[0].boundaryMax
+//        let wallThickness: Float = uPtr[0].gridSpacing // thickness = one grid cell
+//        let innerMin = bmin + SIMD3<Float>(repeating: wallThickness)
+//        let innerMax = bmax - SIMD3<Float>(repeating: wallThickness)
+//
+//        // Compute correction to keep inside [bmin, bmax]
+//        var correction = SIMD3<Float>(repeating: 0)
+//        var hitNormal = SIMD3<Float>(repeating: 0)
+//        // Thin-wall SDF style: allow motion within [innerMin, innerMax],
+//        // treat the bands [bmin, innerMin] and [innerMax, bmax] as walls of thickness 1 cell
+//        if worldMin.x < innerMin.x { correction.x += (innerMin.x - worldMin.x); hitNormal.x += 1 }
+//        if worldMax.x > innerMax.x { correction.x -= (worldMax.x - innerMax.x); hitNormal.x -= 1 }
+//        if worldMin.y < innerMin.y { correction.y += (innerMin.y - worldMin.y); hitNormal.y += 1 }
+//        if worldMax.y > innerMax.y { correction.y -= (worldMax.y - innerMax.y); hitNormal.y -= 1 }
+//        if worldMin.z < innerMin.z { correction.z += (innerMin.z - worldMin.z); hitNormal.z += 1 }
+//        if worldMax.z > innerMax.z { correction.z -= (worldMax.z - innerMax.z); hitNormal.z -= 1 }
+//
+//        if any(correction .!= 0) {
+//            // Apply correction to translation
+//            T.columns.3.x += correction.x
+//            T.columns.3.y += correction.y
+//            T.columns.3.z += correction.z
+//            centerWorld += correction
+//            worldMin += correction
+//            worldMax += correction
+//
+//            // Reflect linear velocity on hit axes with restitution
+//            let restitution: Float = 0.2
+//            if hitNormal.x != 0 { sdfRigidLinearVelocity.x = -sdfRigidLinearVelocity.x * restitution }
+//            if hitNormal.y != 0 { sdfRigidLinearVelocity.y = -sdfRigidLinearVelocity.y * restitution }
+//            if hitNormal.z != 0 { sdfRigidLinearVelocity.z = -sdfRigidLinearVelocity.z * restitution }
+//
+//            // Damp angular velocity slightly on collision to reduce tunneling
+//            sdfRigidAngularVelocity *= 0.8
+//        }
+//
+//        cuPtr[0].collisionTransform = T
+//        cuPtr[0].collisionInvTransform = T.inverse
+//
+//        // Optionally reset accumulator (we also clear it before next frame)
+//        accPtr[0] = SDFImpulseAccumulator(
+//            impulse_x: 0, impulse_y: 0, impulse_z: 0,
+//            torque_x: 0, torque_y: 0, torque_z: 0
+//        )
     }
 
     // MARK: - MPM Simulation Pipeline
@@ -1014,10 +686,10 @@ extension MPMFluidRenderer {
                     
                     // Set collision resources if available
                     if let collisionManager {
-                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        computeEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 3)
                         let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
                         
-                        if let tex = collisionManager.getSDFTexture() {
+                        if let tex = collisionManager.bunnyItem.getSDFTexture() {
                             argumentEncoder.setTexture(tex, index: 0)
                             computeEncoder.useResource(tex, usage: .read)
                         }
@@ -1046,10 +718,10 @@ extension MPMFluidRenderer {
                     
                     // Set collision resources if available
                     if let collisionManager {
-                        computeEncoder.setBuffer(collisionManager.getCollisionUniformBuffer(), offset: 0, index: 3)
+                        computeEncoder.setBuffer(collisionManager.bunnyItem.getCollisionUniformBuffer(), offset: 0, index: 3)
                         let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
                         
-                        if let tex = collisionManager.getSDFTexture() {
+                        if let tex = collisionManager.bunnyItem.getSDFTexture() {
                             argumentEncoder.setTexture(tex, index: 0)
                             computeEncoder.useResource(tex, usage: .read)
                         }
@@ -1073,94 +745,7 @@ extension MPMFluidRenderer {
             }
         }
     }
-    
-    // MARK: - Rigid Body Simulation
-    
-    internal func computeRigidBodySimulation(commandBuffer: MTLCommandBuffer) {
-        guard materialParameters.currentMaterialMode == .rigidBody else { return }
         
-        let particleThreadgroupSize = min(256, accumulateRigidBodyForcesPipelineState.maxTotalThreadsPerThreadgroup)
-        let particleThreadgroups = MTLSize(
-            width: (particleCount + particleThreadgroupSize - 1) / particleThreadgroupSize,
-            height: 1,
-            depth: 1
-        )
-        let particleThreadsPerThreadgroup = MTLSize(
-            width: particleThreadgroupSize,
-            height: 1,
-            depth: 1
-        )
-        
-        let rigidBodyCount = 1 // Currently supporting one rigid body
-        
-        // Stage 1: Accumulate forces and torques from particles to rigid bodies
-        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-            computeEncoder.setComputePipelineState(accumulateRigidBodyForcesPipelineState)
-            computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
-            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 2)
-            computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
-            
-            computeEncoder.dispatchThreadgroups(
-                particleThreadgroups,
-                threadsPerThreadgroup: particleThreadsPerThreadgroup
-            )
-            computeEncoder.endEncoding()
-        }
-        
-        // Stage 2: Update rigid body dynamics
-        if rigidBodyCount > 0 {
-            if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                computeEncoder.setComputePipelineState(updateRigidBodyDynamicsPipelineState)
-                computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                
-                let rigidBodyThreadgroups = MTLSize(
-                    width: (rigidBodyCount + particleThreadgroupSize - 1) / particleThreadgroupSize,
-                    height: 1,
-                    depth: 1
-                )
-                
-                computeEncoder.dispatchThreadgroups(
-                    rigidBodyThreadgroups,
-                    threadsPerThreadgroup: particleThreadsPerThreadgroup
-                )
-                computeEncoder.endEncoding()
-            }
-            
-            // Collision solve between rigid bodies (only if >1 bodies)
-            if rigidBodyCount > 1, let collisionPSO = solveRigidBodyCollisionsPipelineState {
-                if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-                    computeEncoder.setComputePipelineState(collisionPSO)
-                    computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 0)
-                    computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 1)
-                    let pairCount = rigidBodyCount * (rigidBodyCount - 1) / 2
-                    let tgSize = 64
-                    let tgCount = (pairCount + tgSize - 1) / tgSize
-                    let threadgroups = MTLSize(width: tgCount, height: 1, depth: 1)
-                    let threadsPerGroup = MTLSize(width: tgSize, height: 1, depth: 1)
-                    computeEncoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerGroup)
-                    computeEncoder.endEncoding()
-                }
-            }
-        }
-        
-        // Stage 3: Project particles to maintain rigid body constraints
-        if let computeEncoder = commandBuffer.makeComputeCommandEncoder() {
-            computeEncoder.setComputePipelineState(projectRigidBodyParticlesPipelineState)
-            computeEncoder.setBuffer(computeParticleBuffer, offset: 0, index: 0)
-            computeEncoder.setBuffer(rigidBodyStateBuffer, offset: 0, index: 1)
-            computeEncoder.setBuffer(computeUniformBuffer, offset: 0, index: 2)
-            computeEncoder.setBuffer(computeRigidInfoBuffer, offset: 0, index: 3)
-            
-            computeEncoder.dispatchThreadgroups(
-                particleThreadgroups,
-                threadsPerThreadgroup: particleThreadsPerThreadgroup
-            )
-            computeEncoder.endEncoding()
-        }
-    }
-    
     // MARK: - Buffer Copy Helper
     private func copyBuffersWithBlit(from sourceBuffer: MTLBuffer, to destinationBuffer: MTLBuffer, size: Int, label: String) {
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
