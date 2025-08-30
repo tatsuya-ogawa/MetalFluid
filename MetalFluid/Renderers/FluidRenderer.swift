@@ -348,15 +348,18 @@ class MPMFluidRenderer: NSObject {
     private var arSDFBoundingBox: (min: SIMD3<Float>, max: SIMD3<Float>)?
 
     // --- SDF rigid-body impulse aggregation & state ---
-    struct SDFImpulseAccumulator {
+    // Swift mirror of SDFPhysicsState (layout-compatible)
+    struct SDFPhysicsStateSwift {
         var impulse_x: Float
         var impulse_y: Float
         var impulse_z: Float
         var torque_x: Float
         var torque_y: Float
         var torque_z: Float
+        var linearVelocity: SIMD3<Float>
+        var angularVelocity: SIMD3<Float>
     }
-    internal var sdfImpulseAccumulatorBuffer: MTLBuffer?
+    internal var sdfPhysicsBuffer: MTLBuffer?
     internal var sdfRigidLinearVelocity: SIMD3<Float> = .zero
     internal var sdfRigidAngularVelocity: SIMD3<Float> = .zero
     
@@ -631,9 +634,9 @@ class MPMFluidRenderer: NSObject {
         )!
 
         // SDF impulse accumulator buffer (one per SDF, currently use index 0)
-        let accumulatorSize = MemoryLayout<SDFImpulseAccumulator>.stride * CollisionManager.MAX_COLLISION_SDF
-        sdfImpulseAccumulatorBuffer = device.makeBuffer(length: accumulatorSize, options: .storageModeShared)
-        sdfImpulseAccumulatorBuffer?.label = "SDFImpulseAccumulatorBuffer"
+        let physicsSize = MemoryLayout<SDFPhysicsStateSwift>.stride * CollisionManager.MAX_COLLISION_SDF
+        sdfPhysicsBuffer = device.makeBuffer(length: physicsSize, options: .storageModeShared)
+        sdfPhysicsBuffer?.label = "SDFPhysicsBuffer"
     }
             
     func update(deltaTime: Float, screenSize: SIMD2<Float>, projectionMatrix: float4x4, viewMatrix: float4x4)
@@ -723,14 +726,14 @@ class MPMFluidRenderer: NSObject {
         // Reset SDF collision transform to initial position
         collisionManager?.resetSDFTransforms()
         
-        // Clear SDF impulse accumulator
-        if let accBuf = sdfImpulseAccumulatorBuffer {
-            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
+        // Clear SDF physics accumulators and velocities
+        if let phyBuf = sdfPhysicsBuffer {
+            let p = phyBuf.contents().bindMemory(to: SDFPhysicsStateSwift.self, capacity: CollisionManager.MAX_COLLISION_SDF)
             for i in 0..<CollisionManager.MAX_COLLISION_SDF {
-                accPtr[i] = SDFImpulseAccumulator(
-                    impulse_x: 0, impulse_y: 0, impulse_z: 0,
-                    torque_x: 0, torque_y: 0, torque_z: 0
-                )
+                p[i].impulse_x = 0; p[i].impulse_y = 0; p[i].impulse_z = 0
+                p[i].torque_x = 0; p[i].torque_y = 0; p[i].torque_z = 0
+                p[i].linearVelocity = .zero
+                p[i].angularVelocity = .zero
             }
         }
         

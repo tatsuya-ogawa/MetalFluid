@@ -403,14 +403,14 @@ kernel void gridToParticlesFluid1(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses to SDF accumulator (index 0)
-            device SDFImpulseAccumulator* acc = sdfSet.accum[0];
-            atomicAddWithUniform(&((*acc).impulse_x), negJ.x, uniforms);
-            atomicAddWithUniform(&((*acc).impulse_y), negJ.y, uniforms);
-            atomicAddWithUniform(&((*acc).impulse_z), negJ.z, uniforms);
-            atomicAddWithUniform(&((*acc).torque_x), torque.x, uniforms);
-            atomicAddWithUniform(&((*acc).torque_y), torque.y, uniforms);
-            atomicAddWithUniform(&((*acc).torque_z), torque.z, uniforms);
+            // Atomically accumulate linear and angular impulses to SDF physics state (index 0)
+            device SDFPhysicsState* phy = sdfSet.physics[0];
+            atomicAddWithUniform(&((*phy).impulse_x), negJ.x, uniforms);
+            atomicAddWithUniform(&((*phy).impulse_y), negJ.y, uniforms);
+            atomicAddWithUniform(&((*phy).impulse_z), negJ.z, uniforms);
+            atomicAddWithUniform(&((*phy).torque_x), torque.x, uniforms);
+            atomicAddWithUniform(&((*phy).torque_y), torque.y, uniforms);
+            atomicAddWithUniform(&((*phy).torque_z), torque.z, uniforms);
         }
     }
     float impulseStrength = length(collisionImpulse);
@@ -569,14 +569,14 @@ kernel void gridToParticlesElastic(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses to SDF accumulator (index 0)
-            device SDFImpulseAccumulator* acc = sdfSet.accum[0];
-            atomicAddWithUniform(&((*acc).impulse_x), negJ.x, uniforms);
-            atomicAddWithUniform(&((*acc).impulse_y), negJ.y, uniforms);
-            atomicAddWithUniform(&((*acc).impulse_z), negJ.z, uniforms);
-            atomicAddWithUniform(&((*acc).torque_x), torque.x, uniforms);
-            atomicAddWithUniform(&((*acc).torque_y), torque.y, uniforms);
-            atomicAddWithUniform(&((*acc).torque_z), torque.z, uniforms);
+            // Atomically accumulate linear and angular impulses to SDF physics state (index 0)
+            device SDFPhysicsState* phy = sdfSet.physics[0];
+            atomicAddWithUniform(&((*phy).impulse_x), negJ.x, uniforms);
+            atomicAddWithUniform(&((*phy).impulse_y), negJ.y, uniforms);
+            atomicAddWithUniform(&((*phy).impulse_z), negJ.z, uniforms);
+            atomicAddWithUniform(&((*phy).torque_x), torque.x, uniforms);
+            atomicAddWithUniform(&((*phy).torque_y), torque.y, uniforms);
+            atomicAddWithUniform(&((*phy).torque_z), torque.z, uniforms);
         }
     }
     float impulseStrength = length(collisionImpulse);

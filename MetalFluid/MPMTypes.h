@@ -53,6 +53,21 @@ typedef struct {
     MPM_ATOMIC_FLOAT torque_z;
 } SDFImpulseAccumulator;
 
+// Unified per-SDF physics state (dynamic) to combine accumulator and basic kinematics
+typedef struct {
+    // Atomic accumulators written by particle collisions (device memory)
+    MPM_ATOMIC_FLOAT impulse_x;
+    MPM_ATOMIC_FLOAT impulse_y;
+    MPM_ATOMIC_FLOAT impulse_z;
+    MPM_ATOMIC_FLOAT torque_x;
+    MPM_ATOMIC_FLOAT torque_y;
+    MPM_ATOMIC_FLOAT torque_z;
+
+    // Dynamic kinematics (read/write by CPU integration; GPU may read if needed)
+    simd_float3 linearVelocity;
+    simd_float3 angularVelocity;
+} SDFPhysicsState;
+
 // Rigid body state for complete rigid body dynamics
 typedef struct {
     simd_float3 centerOfMass;          // Center of mass position

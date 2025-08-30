@@ -266,11 +266,10 @@ extension MPMFluidRenderer {
             let tex = collisionManager.items[i].getSDFTexture()!
             argumentEncoder.setTexture(tex, index: i)
             computeEncoder.useResource(tex, usage: .read)
-            // Set collision uniforms in argument buffer at index 1
+            // Set collision uniforms and physics buffer in argument buffer
             argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
-            // Set accumulator buffer at index 2*MAX + i (use shared accumulator 0 for now)
-            if let accBuf = sdfImpulseAccumulatorBuffer {
-                argumentEncoder.setBuffer(accBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
+            if let phyBuf = sdfPhysicsBuffer {
+                argumentEncoder.setBuffer(phyBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
             }
         }
         computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
@@ -318,21 +317,21 @@ extension MPMFluidRenderer {
 
     // Integrate accumulated SDF impulses (from particles) and update collision transform
     internal func applySDFImpulseAggregationToCollisionTransform(useGPUVelocities: Bool = false) {
-        guard let accBuf = sdfImpulseAccumulatorBuffer,
+        guard let phyBuf = sdfPhysicsBuffer,
               let collisionManager = collisionManager else { return }
         // Static mode from per-SDF settings - simplified for now
         // let primaryMoves = collisionManager.getSDFSettings(index: 0)?.moves ?? true
         let primaryMoves = true  // Assume dynamic for now
         if !primaryMoves {
-            let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
-            accPtr[0] = SDFImpulseAccumulator(impulse_x: 0, impulse_y: 0, impulse_z: 0, torque_x: 0, torque_y: 0, torque_z: 0)
+            let p = phyBuf.contents().bindMemory(to: SDFPhysicsStateSwift.self, capacity: CollisionManager.MAX_COLLISION_SDF)
+            p[0].impulse_x = 0; p[0].impulse_y = 0; p[0].impulse_z = 0
+            p[0].torque_x = 0; p[0].torque_y = 0; p[0].torque_z = 0
             return
         }
-        // Read accumulator (index 0)
-        let accPtr = accBuf.contents().bindMemory(to: SDFImpulseAccumulator.self, capacity: CollisionManager.MAX_COLLISION_SDF)
-        let acc = accPtr[0]
-        let J = SIMD3<Float>(acc.impulse_x, acc.impulse_y, acc.impulse_z)
-        let Tau = SIMD3<Float>(acc.torque_x, acc.torque_y, acc.torque_z)
+        // Read accumulators (index 0) from physics buffer
+        let p = phyBuf.contents().bindMemory(to: SDFPhysicsStateSwift.self, capacity: CollisionManager.MAX_COLLISION_SDF)
+        let J = SIMD3<Float>(p[0].impulse_x, p[0].impulse_y, p[0].impulse_z)
+        let Tau = SIMD3<Float>(p[0].torque_x, p[0].torque_y, p[0].torque_z)
         if simd_length(J) < 1e-6 && simd_length(Tau) < 1e-6 && !useGPUVelocities { return }
 
         // Read SDF size to approximate inertia as a solid box
@@ -490,11 +489,11 @@ extension MPMFluidRenderer {
         cuPtr[0].collisionTransform = T
         cuPtr[0].collisionInvTransform = T.inverse
 
-        // Optionally reset accumulator (we also clear it before next frame)
-        accPtr[0] = SDFImpulseAccumulator(
-            impulse_x: 0, impulse_y: 0, impulse_z: 0,
-            torque_x: 0, torque_y: 0, torque_z: 0
-        )
+        // Reset accumulators in physics buffer; mirror velocities for debugging/optional GPU use
+        p[0].impulse_x = 0; p[0].impulse_y = 0; p[0].impulse_z = 0
+        p[0].torque_x = 0; p[0].torque_y = 0; p[0].torque_z = 0
+        p[0].linearVelocity = sdfRigidLinearVelocity
+        p[0].angularVelocity = sdfRigidAngularVelocity
     }
 
     // MARK: - MPM Simulation Pipeline
@@ -536,11 +535,7 @@ extension MPMFluidRenderer {
         // Use multiple simulation substeps per frame for better stability.
         let substeps = max(1, materialParameters.simulationSubsteps)
 
-        // Clear SDF impulse accumulator once per frame before substeps
-        if let accBuf = sdfImpulseAccumulatorBuffer, let blit = commandBuffer.makeBlitCommandEncoder() {
-            blit.fill(buffer: accBuf, range: 0..<accBuf.length, value: 0)
-            blit.endEncoding()
-        }
+        // SDF physics accumulators are cleared after integration; do not clear here to preserve velocities
 
         for _ in 0..<substeps {
             // 1. Clear grid
