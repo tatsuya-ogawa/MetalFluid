@@ -363,6 +363,7 @@ class MPMFluidRenderer: NSObject {
         var angularVelocity: SIMD3<Float>
     }
     internal var sdfPhysicsBuffer: MTLBuffer?
+    internal var sdfCollisionsArrayBuffer: MTLBuffer?
     internal var sdfRigidLinearVelocity: SIMD3<Float> = .zero
     internal var sdfRigidAngularVelocity: SIMD3<Float> = .zero
     

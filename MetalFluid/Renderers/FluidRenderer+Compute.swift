@@ -263,20 +263,35 @@ extension MPMFluidRenderer {
             self?.endComputeAndSwapToRender()
         }
     }
-    // Set up SDF argument buffer with collision resources
+    // Bind SDF resources directly (no argument buffer)
     private func setupSdfArgumentBufferForCompute(computeEncoder: MTLComputeCommandEncoder, collisionManager: CollisionManager) {
-        let (argumentBuffer, argumentEncoder) = ensureSdfArgumentBuffer()
-        for i in 0..<collisionManager.items.count {
-            let tex = collisionManager.items[i].getSDFTexture()!
-            argumentEncoder.setTexture(tex, index: i)
-            computeEncoder.useResource(tex, usage: .read)
-            // Set collision uniforms and physics buffer in argument buffer
-            argumentEncoder.setBuffer(collisionManager.items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
-            if let phyBuf = sdfPhysicsBuffer {
-                argumentEncoder.setBuffer(phyBuf, offset: 0, index: CollisionManager.MAX_COLLISION_SDF * 2 + i)
+        let items = collisionManager.items.filter{ $0.isEnabled() }
+        let count = min(items.count, CollisionManager.MAX_COLLISION_SDF)
+        // Bind textures
+        for i in 0..<count {
+            if let tex = items[i].getSDFTexture() {
+                computeEncoder.setTexture(tex, index: i)
+                computeEncoder.useResource(tex, usage: .read)
             }
         }
-        computeEncoder.setBuffer(argumentBuffer, offset: 0, index: 3)
+        // Build contiguous CollisionUniforms array
+        let elemSize = MemoryLayout<CollisionUniforms>.stride
+        let totalSize = max(elemSize, elemSize * count)
+        if sdfCollisionsArrayBuffer == nil || sdfCollisionsArrayBuffer!.length < totalSize {
+            sdfCollisionsArrayBuffer = device.makeBuffer(length: totalSize, options: .storageModeShared)
+        }
+        if let buf = sdfCollisionsArrayBuffer {
+            let dst = buf.contents()
+            for i in 0..<count {
+                memcpy(dst.advanced(by: elemSize * i), items[i].getCollisionUniformBuffer().contents(), elemSize)
+            }
+            computeEncoder.setBuffer(buf, offset: 0, index: 3)
+        }
+        // Physics buffer
+        if let phy = sdfPhysicsBuffer { computeEncoder.setBuffer(phy, offset: 0, index: 4) }
+        // Count
+        var c32 = UInt32(count)
+        computeEncoder.setBytes(&c32, length: MemoryLayout<UInt32>.size, index: 5)
     }
     
     // Lazy init & reuse of SDF argument buffer (avoid per-dispatch creation cost)    
@@ -284,32 +299,10 @@ extension MPMFluidRenderer {
         if let sdfArgumentEncoder, let sdfArgumentBuffer{
             return (sdfArgumentBuffer, sdfArgumentEncoder)
         }else{
-            // SDF texture array occupies indices [0 .. MAX-1]
-            let sdfTextureDesc = MTLArgumentDescriptor()
-            sdfTextureDesc.dataType = .texture
-            sdfTextureDesc.textureType = .type3D
-            sdfTextureDesc.index = 0
-            sdfTextureDesc.access = .readOnly
-            sdfTextureDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-
-            // CollisionUniforms buffer array occupies indices [MAX .. 2*MAX-1]
-            let collisionBufferDesc = MTLArgumentDescriptor()
-            collisionBufferDesc.dataType = .pointer
-            collisionBufferDesc.index = CollisionManager.MAX_COLLISION_SDF
-            collisionBufferDesc.access = .readOnly
-            collisionBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-            // Accumulator array occupies indices [2*MAX .. 3*MAX-1]
-            let accumBufferDesc = MTLArgumentDescriptor()
-            accumBufferDesc.dataType = .pointer
-            accumBufferDesc.index = CollisionManager.MAX_COLLISION_SDF * 2
-            accumBufferDesc.access = .readOnly
-            accumBufferDesc.arrayLength = CollisionManager.MAX_COLLISION_SDF
-
-            let enc = device.makeArgumentEncoder(arguments: [sdfTextureDesc, collisionBufferDesc, accumBufferDesc])!
+            // Deprecated: argument buffer path no longer used; return dummy
+            let desc = MTLArgumentDescriptor()
+            let enc = device.makeArgumentEncoder(arguments: [desc])!
             let buf = device.makeBuffer(length: enc.encodedLength, options: [])!
-            enc.setArgumentBuffer(buf, offset: 0)
-            sdfArgumentEncoder = enc
-            sdfArgumentBuffer = buf
             return (buf, enc)
         }
     }

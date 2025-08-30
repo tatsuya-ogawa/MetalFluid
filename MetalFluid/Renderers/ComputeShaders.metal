@@ -322,11 +322,13 @@ kernel void gridToParticlesFluid1(
                             device MPMParticle* particles [[buffer(0)]],
                             constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                             device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                            constant SDFSet& sdfSet [[buffer(3)]],
+                            array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdfTextures [[texture(0)]],
+                            constant CollisionUniforms* collisions [[buffer(3)]],
+                            device SDFPhysicsState* physicsStates [[buffer(4)]],
+                            constant uint& sdfCount [[buffer(5)]],
                             uint id [[thread_position_in_grid]]
                             ) {
     if (id >= uniforms.particleCount) return;
-    texture3d<float> sdfTexture = sdfSet.sdf[0];
     MPMParticle p = particles[id];
     
     // Convert particle position to grid coordinates (considering domainOrigin)
@@ -375,24 +377,20 @@ kernel void gridToParticlesFluid1(
     particles[id].C = unclampedC;
     particles[id].velocity = new_velocity;
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
-
-    // Enhanced SDF collision using improved impulse-based approach
-    constant CollisionUniforms& collision = *sdfSet.collision[0];
-    float3 collisionImpulse = computeParticleSDFCollisionImpulse(
-        particles[id].position,  // Position is modified directly in the function
-        particles[id].velocity,
-        particles[id].mass,
-        sdfTexture,
-        collision,
-        uniforms.deltaTime
-    );
     
-    // Apply collision impulse to velocity
-    particles[id].velocity += collisionImpulse;
-    
-    // Aggregate equal-and-opposite impulse to SDF rigid body accumulator (index 0)
-    // Treat returned collisionImpulse as velocity delta; convert to momentum J = m * dv
-    if (collision.enableCollision == 1) {
+    for (uint i = 0; i < sdfCount; i++) {
+        constant CollisionUniforms& collision = collisions[i];
+        texture3d<float> sdfTexture = sdfTextures[i];
+        float3 collisionImpulse = computeParticleSDFCollisionImpulse(
+             particles[id].position,
+             particles[id].velocity,
+             particles[id].mass,
+             sdfTexture,
+             collision,
+             uniforms.deltaTime
+        );
+        // Apply collision impulse to velocity
+        particles[id].velocity += collisionImpulse;
         float3 J = particles[id].mass * collisionImpulse; // momentum imparted to particle
         if (any(isfinite(J))) {
             float3 negJ = -J; // equal and opposite to SDF object
@@ -403,8 +401,8 @@ kernel void gridToParticlesFluid1(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses to SDF physics state (index 0)
-            device SDFPhysicsState* phy = sdfSet.physics[0];
+            // Atomically accumulate linear and angular impulses to SDF physics state for this SDF
+            device SDFPhysicsState* phy = &physicsStates[i];
             atomicAddWithUniform(&((*phy).impulse_x), negJ.x, uniforms);
             atomicAddWithUniform(&((*phy).impulse_y), negJ.y, uniforms);
             atomicAddWithUniform(&((*phy).impulse_z), negJ.z, uniforms);
@@ -412,18 +410,18 @@ kernel void gridToParticlesFluid1(
             atomicAddWithUniform(&((*phy).torque_y), torque.y, uniforms);
             atomicAddWithUniform(&((*phy).torque_z), torque.z, uniforms);
         }
-    }
-    float impulseStrength = length(collisionImpulse);
-    if (impulseStrength > 0.1) {
-        float3 reactionDirection = -normalize(collisionImpulse);
-        
-        // Method 2: Velocity field modification to simulate SDF object movement
-        // Add a velocity contribution that simulates the SDF object moving away
-        float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
-        
-        // Apply this as an additional velocity component that decays over time
-        // This simulates the SDF object having momentum from the collision
-        particles[id].velocity += sdfVelocityContribution * (1.0 - uniforms.deltaTime * 2.0);
+        float impulseStrength = length(collisionImpulse);
+        if (impulseStrength > 0.1) {
+            float3 reactionDirection = -normalize(collisionImpulse);
+            
+            // Method 2: Velocity field modification to simulate SDF object movement
+            // Add a velocity contribution that simulates the SDF object moving away
+            float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
+            
+            // Apply this as an additional velocity component that decays over time
+            // This simulates the SDF object having momentum from the collision
+            particles[id].velocity += sdfVelocityContribution * (1.0 - uniforms.deltaTime * 2.0);
+        }
     }
     
     // Compute boundary information for this particle
@@ -462,11 +460,13 @@ kernel void gridToParticlesElastic(
                                   device MPMParticle* particles [[buffer(0)]],
                                   constant ComputeShaderUniforms& uniforms [[buffer(1)]],
                                   device const NonAtomicMPMGridNode* grid [[buffer(2)]],
-                                  constant SDFSet& sdfSet [[buffer(3)]],
+                                  array<texture3d<float, access::sample>, MAX_COLLISION_SDF> sdfTextures [[texture(0)]],
+                                  constant CollisionUniforms* collisions [[buffer(3)]],
+                                  device SDFPhysicsState* physicsStates [[buffer(4)]],
+                                  constant uint& sdfCount [[buffer(5)]],
                                   uint id [[thread_position_in_grid]]
                                   ) {
     if (id >= uniforms.particleCount) return;
-    texture3d<float> sdfTexture = sdfSet.sdf[0];
     MPMParticle p = particles[id];
     
     // Convert particle position to grid coordinates
@@ -543,22 +543,19 @@ kernel void gridToParticlesElastic(
     // Update particle position
     particles[id].position += particles[id].velocity * uniforms.deltaTime;
     
-    // Enhanced SDF collision using improved impulse-based approach
-    constant CollisionUniforms& collision = *sdfSet.collision[0];
-    float3 collisionImpulse = computeParticleSDFCollisionImpulse(
-        particles[id].position,  // Position is modified directly in the function
-        particles[id].velocity,
-        particles[id].mass,
-        sdfTexture,
-        collision,
-        uniforms.deltaTime
-    );
-    
-    // Apply collision impulse to velocity
-    particles[id].velocity += collisionImpulse;
-    
-    // Aggregate equal-and-opposite impulse to SDF rigid body accumulator (index 0)
-    if (collision.enableCollision == 1) {
+    for (uint i = 0; i < sdfCount; i++) {
+        constant CollisionUniforms& collision = collisions[i];
+        texture3d<float> sdfTexture = sdfTextures[i];
+        float3 collisionImpulse = computeParticleSDFCollisionImpulse(
+             particles[id].position,
+             particles[id].velocity,
+             particles[id].mass,
+             sdfTexture,
+             collision,
+             uniforms.deltaTime
+        );
+        // Apply collision impulse to velocity
+        particles[id].velocity += collisionImpulse;
         float3 J = particles[id].mass * collisionImpulse;
         if (any(isfinite(J))) {
             float3 negJ = -J;
@@ -569,8 +566,8 @@ kernel void gridToParticlesElastic(
             float3 r = particles[id].position - com;
             float3 torque = cross(r, negJ);
             
-            // Atomically accumulate linear and angular impulses to SDF physics state (index 0)
-            device SDFPhysicsState* phy = sdfSet.physics[0];
+            // Atomically accumulate linear and angular impulses to SDF physics state for this SDF
+            device SDFPhysicsState* phy = &physicsStates[i];
             atomicAddWithUniform(&((*phy).impulse_x), negJ.x, uniforms);
             atomicAddWithUniform(&((*phy).impulse_y), negJ.y, uniforms);
             atomicAddWithUniform(&((*phy).impulse_z), negJ.z, uniforms);
@@ -578,19 +575,20 @@ kernel void gridToParticlesElastic(
             atomicAddWithUniform(&((*phy).torque_y), torque.y, uniforms);
             atomicAddWithUniform(&((*phy).torque_z), torque.z, uniforms);
         }
+        float impulseStrength = length(collisionImpulse);
+        if (impulseStrength > 0.1) {
+            float3 reactionDirection = -normalize(collisionImpulse);
+            
+            // Method 2: Velocity field modification to simulate SDF object movement
+            // Add a velocity contribution that simulates the SDF object moving away
+            float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
+            
+            // Apply this as an additional velocity component that decays over time
+            // This simulates the SDF object having momentum from the collision
+            particles[id].velocity += sdfVelocityContribution * (1.0 - uniforms.deltaTime * 2.0);
+        }
     }
-    float impulseStrength = length(collisionImpulse);
-    if (impulseStrength > 0.1) {
-        float3 reactionDirection = -normalize(collisionImpulse);
-        
-        // Method 2: Velocity field modification to simulate SDF object movement
-        // Add a velocity contribution that simulates the SDF object moving away
-        float3 sdfVelocityContribution = reactionDirection * impulseStrength * 0.2;
-        
-        // Apply this as an additional velocity component that decays over time
-        // This simulates the SDF object having momentum from the collision
-        particles[id].velocity += sdfVelocityContribution * (1.0 - uniforms.deltaTime * 2.0);
-    }
+
     
     // Boundary conditions for elastic materials - Essential for stability
     const float k = 3.0;
