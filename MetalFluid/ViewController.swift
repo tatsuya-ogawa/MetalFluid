@@ -103,7 +103,7 @@ class ViewController: UIViewController {
     
     func setInitialWorldTransform() {
         // Just set the initial coefficients, don't apply to renderer yet
-        worldTranslation = SIMD3<Float>(0.0, 0.0, -3.0)
+        worldTranslation = SIMD3<Float>(0.0, 0.0, -1.5)
         worldYaw = 0.0
         worldPitch = 0.0
         worldScale = 1.0
@@ -116,17 +116,12 @@ class ViewController: UIViewController {
         let T = float4x4(translation: worldTranslation)
         return T * R * S
     }
-    
-    private func applyWorldTransformToRenderer() {
-        // Apply current coefficients to the renderer only when needed
+
+    private func updateRendererTransformIfNeeded() {
         let transform = computeWorldTransform()
         fluidRenderer.setWorldTransform(transform)
     }
-    
-    private func updateRendererTransformIfNeeded() {
-        // Apply transform to renderer when rendering or when needed
-        applyWorldTransformToRenderer()
-    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         let env = ProcessInfo.processInfo.environment
@@ -151,7 +146,7 @@ class ViewController: UIViewController {
         
         // Apply initial transform
         updateSdfTransfom()
-        applyWorldTransformToRenderer()
+        updateRendererTransformIfNeeded()
     }
 
     private func setupMetalView() {
@@ -1267,10 +1262,6 @@ class ViewController: UIViewController {
         worldPitch = asin(normalizedForward.y)
     }
     
-    public func getFluidWorldTransform() -> float4x4 {
-        // Return computed transform without applying to renderer
-        return computeWorldTransform()
-    }
     @objc private func toggleTransparentBackground() {
         // Swap between AR background and existing background renderer
         guard let fluidRenderer = fluidRenderer else { return }
@@ -1405,23 +1396,32 @@ class ViewController: UIViewController {
         }
         
         if #available(iOS 11.0, macOS 10.13, *) {
-            // Perform GPU raycast and generate SDF
-            if let sdfTexture = arRenderer.generateSDFFromTapPositionGPU(
-                tapPoint: tapPoint,
+            // Perform GPU raycast to get hit position
+            if let hitPosition = arRenderer.performGPURaycast(
+                at: tapPoint,
                 viewportSize: metalView.bounds.size,
-                orientation: orientation,
-                boundingBoxSize: 0.3 // 30cm bounding box
+                orientation: orientation
             ) {
-                print("✅ Successfully generated SDF from AR mesh at tap position")
+                print("✅ AR raycast hit at: \(hitPosition)")
                 
-                // Here you can use the SDF texture for collision detection
-                // For example, integrate with collision manager:
-                // fluidRenderer.collisionManager?.setCustomSDF(sdfTexture)
+                // Compensate for the internal grid transformations
+                let gridToLocalTransform = fluidRenderer.getGridToLocalTransform()
+                let inverseGridToLocal = gridToLocalTransform.inverse
+                
+                // Apply the inverse transform to get the correct world position
+                let transformedPoint = inverseGridToLocal * SIMD4<Float>(hitPosition, 1.0)
+                let compensatedPosition = SIMD3<Float>(transformedPoint.x, transformedPoint.y, transformedPoint.z)
+                
+                // Move scene transform to the compensated position
+                setFluidWorldTranslation(compensatedPosition)
                 
                 // Show visual feedback
                 showARTapFeedback(at: tapPoint)
+                
+                print("🎯 Scene moved to AR raycast position: \(hitPosition)")
+                print("🔧 Compensated world translation: \(compensatedPosition)")
             } else {
-                print("❌ Failed to generate SDF from tap position")
+                print("❌ AR raycast missed - no mesh hit at tap position")
             }
         }
         #endif

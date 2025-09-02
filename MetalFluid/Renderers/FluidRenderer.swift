@@ -354,7 +354,7 @@ class MPMFluidRenderer: NSObject {
     }
     
     func getRenderScale() -> Float{
-        return 1.0 / gridSpacing / Float(gridSize) * 2
+        return 1.0
     }
     
     internal var domainOrigin: SIMD3<Float> {
