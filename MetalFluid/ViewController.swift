@@ -1732,6 +1732,10 @@ extension ViewController{
         let boundingBoxSize: Float = 0.5 // 50cm cube around tap point
         let boundingBox = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
         
+        print("🔧 Extracting mesh with bounding box:")
+        print("  Center: \(tapWorldPosition)")
+        print("  Size: \(boundingBox)")
+        
         // Extract triangles from AR mesh around tap point
         guard let worldTriangles = arRenderer.extractMeshesInBoundingBoxGPU(
             center: tapWorldPosition,
@@ -1764,14 +1768,44 @@ extension ViewController{
         let worldTransform = computeWorldTransform() // Our world transform matrix
         let gridToLocalTransform = fluidRenderer.getGridToLocalTransform() // Internal scene transform
         
+        // Debug: Print transform matrices
+        print("🔧 World Transform:")
+        print("  [\(worldTransform.columns.0.x), \(worldTransform.columns.0.y), \(worldTransform.columns.0.z), \(worldTransform.columns.0.w)]")
+        print("  [\(worldTransform.columns.1.x), \(worldTransform.columns.1.y), \(worldTransform.columns.1.z), \(worldTransform.columns.1.w)]")
+        print("  [\(worldTransform.columns.2.x), \(worldTransform.columns.2.y), \(worldTransform.columns.2.z), \(worldTransform.columns.2.w)]")
+        print("  [\(worldTransform.columns.3.x), \(worldTransform.columns.3.y), \(worldTransform.columns.3.z), \(worldTransform.columns.3.w)]")
+        
+        print("🔧 Grid To Local Transform:")
+        print("  [\(gridToLocalTransform.columns.0.x), \(gridToLocalTransform.columns.0.y), \(gridToLocalTransform.columns.0.z), \(gridToLocalTransform.columns.0.w)]")
+        print("  [\(gridToLocalTransform.columns.1.x), \(gridToLocalTransform.columns.1.y), \(gridToLocalTransform.columns.1.z), \(gridToLocalTransform.columns.1.w)]")
+        print("  [\(gridToLocalTransform.columns.2.x), \(gridToLocalTransform.columns.2.y), \(gridToLocalTransform.columns.2.z), \(gridToLocalTransform.columns.2.w)]")
+        print("  [\(gridToLocalTransform.columns.3.x), \(gridToLocalTransform.columns.3.y), \(gridToLocalTransform.columns.3.z), \(gridToLocalTransform.columns.3.w)]")
+        
         // Complete transform: World -> Scene Local
-        // We need the inverse of: gridToLocal * worldTransform
-        let completeTransform = gridToLocalTransform * worldTransform
+        // The rendering uses: baseViewMatrix * worldTransform * gridToLocal
+        // We want to transform from world space to the space before worldTransform is applied
+        // So we need the inverse of: worldTransform * gridToLocal (not gridToLocal * worldTransform)
+        let completeTransform = worldTransform * gridToLocalTransform
         let worldToSceneLocal = completeTransform.inverse
+        
+        print("🔧 Complete Transform (worldTransform * gridToLocal):")
+        print("  [\(completeTransform.columns.0.x), \(completeTransform.columns.0.y), \(completeTransform.columns.0.z), \(completeTransform.columns.0.w)]")
+        print("  [\(completeTransform.columns.1.x), \(completeTransform.columns.1.y), \(completeTransform.columns.1.z), \(completeTransform.columns.1.w)]")
+        print("  [\(completeTransform.columns.2.x), \(completeTransform.columns.2.y), \(completeTransform.columns.2.z), \(completeTransform.columns.2.w)]")
+        print("  [\(completeTransform.columns.3.x), \(completeTransform.columns.3.y), \(completeTransform.columns.3.z), \(completeTransform.columns.3.w)]")
         
         var transformedTriangles: [Triangle] = []
         
-        for triangle in worldTriangles {
+        // Debug: Show first triangle transformation as example
+        if !worldTriangles.isEmpty {
+            let firstTriangle = worldTriangles[0]
+            print("🔍 First triangle in world coordinates:")
+            print("  v0: \(firstTriangle.v0)")
+            print("  v1: \(firstTriangle.v1)")
+            print("  v2: \(firstTriangle.v2)")
+        }
+        
+        for (index, triangle) in worldTriangles.enumerated() {
             // Transform each vertex from world coordinates to scene local coordinates
             let v0World = SIMD4<Float>(triangle.v0, 1.0)
             let v1World = SIMD4<Float>(triangle.v1, 1.0)
@@ -1786,6 +1820,14 @@ extension ViewController{
                 v1: SIMD3<Float>(v1Local.x, v1Local.y, v1Local.z),
                 v2: SIMD3<Float>(v2Local.x, v2Local.y, v2Local.z)
             )
+            
+            // Debug: Show first triangle transformation result
+            if index == 0 {
+                print("🔍 First triangle transformed to scene local:")
+                print("  v0: \(transformedTriangle.v0)")
+                print("  v1: \(transformedTriangle.v1)")
+                print("  v2: \(transformedTriangle.v2)")
+            }
             
             transformedTriangles.append(transformedTriangle)
         }
@@ -1805,6 +1847,21 @@ extension ViewController{
         // Get scene boundary for SDF resolution
         let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
         let sdfResolution = SIMD3<Int32>(64, 64, 64) // Fixed resolution
+        
+        print("🔧 SDF Generation Parameters:")
+        print("  Boundary Min: \(boundaryMin)")
+        print("  Boundary Max: \(boundaryMax)")
+        print("  SDF Resolution: \(sdfResolution)")
+        
+        // Debug: Show some transformed triangle bounds
+        if !triangles.isEmpty {
+            let firstTriangle = triangles[0]
+            let minBounds = min(min(firstTriangle.v0, firstTriangle.v1), firstTriangle.v2)
+            let maxBounds = max(max(firstTriangle.v0, firstTriangle.v1), firstTriangle.v2)
+            print("🔍 First transformed triangle bounds:")
+            print("  Min: \(minBounds)")
+            print("  Max: \(maxBounds)")
+        }
         
         // Process and generate SDF from the transformed triangles
         collisionManager.representativeItem.processAndGenerateSDF(
