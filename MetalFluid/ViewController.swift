@@ -1425,6 +1425,9 @@ class ViewController: UIViewController {
                 // Move scene transform to the compensated position
                 setFluidWorldTranslation(compensatedPosition)
                 
+                // Extract mesh triangles around tap point and create collision
+                setupCollisionFromARMesh(arRenderer: arRenderer, tapWorldPosition: hitPosition)
+                
                 // Show visual feedback
                 showARTapFeedback(at: tapPoint)
                 
@@ -1717,5 +1720,106 @@ extension ViewController{
         DispatchQueue.main.async {
             self.updateTransparentBackgroundToggleVisibility()
         }
+    }
+    
+    // MARK: - AR Mesh Collision Setup
+    
+    private func setupCollisionFromARMesh(arRenderer: ARRenderer, tapWorldPosition: SIMD3<Float>) {
+        #if canImport(ARKit)
+        print("🔍 Setting up collision from AR mesh at tap position: \(tapWorldPosition)")
+        
+        // Define bounding box size around tap point (in world coordinates)
+        let boundingBoxSize: Float = 0.5 // 50cm cube around tap point
+        let boundingBox = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
+        
+        // Extract triangles from AR mesh around tap point
+        guard let worldTriangles = arRenderer.extractMeshesInBoundingBoxGPU(
+            center: tapWorldPosition,
+            size: boundingBox
+        ) else {
+            print("❌ Failed to extract mesh triangles around tap point")
+            return
+        }
+        
+        print("✅ Extracted \(worldTriangles.count) triangles from AR mesh")
+        
+        if worldTriangles.isEmpty {
+            print("⚠️ No triangles found around tap point")
+            return
+        }
+        
+        // Transform triangles from world coordinates to scene local coordinates
+        let sceneLocalTriangles = transformTrianglesToSceneLocal(worldTriangles: worldTriangles)
+        
+        // Generate SDF from transformed triangles
+        generateSDFFromTriangles(triangles: sceneLocalTriangles)
+        
+        #endif
+    }
+    
+    private func transformTrianglesToSceneLocal(worldTriangles: [Triangle]) -> [Triangle] {
+        print("🔄 Transforming \(worldTriangles.count) triangles to scene local coordinates")
+        
+        // Get the complete transformation chain from world to scene local
+        let worldTransform = computeWorldTransform() // Our world transform matrix
+        let gridToLocalTransform = fluidRenderer.getGridToLocalTransform() // Internal scene transform
+        
+        // Complete transform: World -> Scene Local
+        // We need the inverse of: gridToLocal * worldTransform
+        let completeTransform = gridToLocalTransform * worldTransform
+        let worldToSceneLocal = completeTransform.inverse
+        
+        var transformedTriangles: [Triangle] = []
+        
+        for triangle in worldTriangles {
+            // Transform each vertex from world coordinates to scene local coordinates
+            let v0World = SIMD4<Float>(triangle.v0, 1.0)
+            let v1World = SIMD4<Float>(triangle.v1, 1.0)
+            let v2World = SIMD4<Float>(triangle.v2, 1.0)
+            
+            let v0Local = worldToSceneLocal * v0World
+            let v1Local = worldToSceneLocal * v1World
+            let v2Local = worldToSceneLocal * v2World
+            
+            let transformedTriangle = Triangle(
+                v0: SIMD3<Float>(v0Local.x, v0Local.y, v0Local.z),
+                v1: SIMD3<Float>(v1Local.x, v1Local.y, v1Local.z),
+                v2: SIMD3<Float>(v2Local.x, v2Local.y, v2Local.z)
+            )
+            
+            transformedTriangles.append(transformedTriangle)
+        }
+        
+        print("✅ Transformed triangles to scene local coordinates")
+        return transformedTriangles
+    }
+    
+    private func generateSDFFromTriangles(triangles: [Triangle]) {
+        print("🔧 Generating SDF from \(triangles.count) transformed triangles")
+        
+        guard let collisionManager = fluidRenderer.collisionManager else {
+            print("❌ Collision manager not available")
+            return
+        }
+        
+        // Get scene boundary for SDF resolution
+        let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
+        let sdfResolution = SIMD3<Int32>(64, 64, 64) // Fixed resolution
+        
+        // Process and generate SDF from the transformed triangles
+        collisionManager.representativeItem.processAndGenerateSDF(
+            sdfGenerator: collisionManager.sdfGenerator,
+            triangles: triangles,
+            resolution: sdfResolution,
+            gridBoundaryMin: boundaryMin,
+            gridBoundaryMax: boundaryMax
+        )
+        
+        // Enable collision and make mesh visible
+        collisionManager.representativeItem.setEnabled(true)
+        collisionManager.setMeshVisible(true)
+        collisionManager.representativeItem.setMeshColor(SIMD4<Float>(0.0, 1.0, 0.0, 0.8)) // Green semi-transparent
+        
+        print("✅ SDF generated and collision enabled from AR mesh")
     }
 }

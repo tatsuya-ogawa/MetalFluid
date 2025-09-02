@@ -11,6 +11,12 @@ struct Triangle {
     var v0: SIMD3<Float>
     var v1: SIMD3<Float>
     var v2: SIMD3<Float>
+    
+    init(v0: SIMD3<Float>, v1: SIMD3<Float>, v2: SIMD3<Float>) {
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+    }
 }
 
 struct CollisionVertex {
