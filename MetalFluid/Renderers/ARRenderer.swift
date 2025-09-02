@@ -678,103 +678,7 @@ extension ARRenderer {
         return totalTriangles
     }
     
-    private func raycastAgainstMesh(origin: SIMD3<Float>, direction: SIMD3<Float>) -> SIMD3<Float>? {
-        guard !currentMeshAnchors.isEmpty else { return nil }
-        
-        var closestHit: SIMD3<Float>?
-        var closestDistance = Float.infinity
-        
-        for anchor in currentMeshAnchors {
-            let geometry = anchor.geometry
-            let vertices = geometry.vertices
-            let faces = geometry.faces
-            
-            // Test against each triangle
-            let vertexCount = vertices.count
-            let faceCount = faces.count
-            
-            for faceIndex in 0..<faceCount {
-                let facePtr = faces.buffer.contents()
-                    .advanced(by: faceIndex * MemoryLayout<UInt32>.stride * 3)
-                    .assumingMemoryBound(to: UInt32.self)
-                
-                let i0 = Int(facePtr[0])
-                let i1 = Int(facePtr[1])
-                let i2 = Int(facePtr[2])
-                
-                guard i0 < vertexCount && i1 < vertexCount && i2 < vertexCount else { continue }
-                
-                // Get triangle vertices in local space
-                let v0Ptr = vertices.buffer.contents()
-                    .advanced(by: i0 * vertices.stride)
-                    .assumingMemoryBound(to: Float.self)
-                let v1Ptr = vertices.buffer.contents()
-                    .advanced(by: i1 * vertices.stride)
-                    .assumingMemoryBound(to: Float.self)
-                let v2Ptr = vertices.buffer.contents()
-                    .advanced(by: i2 * vertices.stride)
-                    .assumingMemoryBound(to: Float.self)
-                
-                let localV0 = SIMD3<Float>(v0Ptr[0], v0Ptr[1], v0Ptr[2])
-                let localV1 = SIMD3<Float>(v1Ptr[0], v1Ptr[1], v1Ptr[2])
-                let localV2 = SIMD3<Float>(v2Ptr[0], v2Ptr[1], v2Ptr[2])
-                
-                // Transform to world space
-                let worldV0 = anchor.transform.transformPoint(localV0)
-                let worldV1 = anchor.transform.transformPoint(localV1)
-                let worldV2 = anchor.transform.transformPoint(localV2)
-                
-                // Perform ray-triangle intersection
-                if let hitPoint = rayTriangleIntersection(rayOrigin: origin,
-                                                         rayDirection: direction,
-                                                         v0: worldV0,
-                                                         v1: worldV1,
-                                                         v2: worldV2) {
-                    let distance = simd_length(hitPoint - origin)
-                    if distance < closestDistance {
-                        closestDistance = distance
-                        closestHit = hitPoint
-                    }
-                }
-            }
-        }
-        
-        return closestHit
-    }
     
-    private func rayTriangleIntersection(rayOrigin: SIMD3<Float>,
-                                        rayDirection: SIMD3<Float>,
-                                        v0: SIMD3<Float>,
-                                        v1: SIMD3<Float>,
-                                        v2: SIMD3<Float>) -> SIMD3<Float>? {
-        let epsilon: Float = 1e-6
-        
-        let edge1 = v1 - v0
-        let edge2 = v2 - v0
-        let h = simd_cross(rayDirection, edge2)
-        let a = simd_dot(edge1, h)
-        
-        if abs(a) < epsilon { return nil } // Ray is parallel to triangle
-        
-        let f = 1.0 / a
-        let s = rayOrigin - v0
-        let u = f * simd_dot(s, h)
-        
-        if u < 0.0 || u > 1.0 { return nil }
-        
-        let q = simd_cross(s, edge1)
-        let v = f * simd_dot(rayDirection, q)
-        
-        if v < 0.0 || u + v > 1.0 { return nil }
-        
-        let t = f * simd_dot(edge2, q)
-        
-        if t > epsilon {
-            return rayOrigin + rayDirection * t
-        }
-        
-        return nil
-    }
     
     public func extractMeshesInBoundingBoxGPU(center: SIMD3<Float>, 
                                              size: SIMD3<Float>) -> [Triangle]? {
@@ -851,28 +755,6 @@ extension ARRenderer {
         return extractedTriangles
     }
     
-    private func triangleOverlapsBoundingBox(v0: SIMD3<Float>, v1: SIMD3<Float>, v2: SIMD3<Float>,
-                                            minBounds: SIMD3<Float>, maxBounds: SIMD3<Float>) -> Bool {
-        // Simple AABB vs triangle test - check if any vertex is inside bounds or triangle intersects bounds
-        
-        // Check if any vertex is inside the bounding box
-        let vertices = [v0, v1, v2]
-        for vertex in vertices {
-            if vertex.x >= minBounds.x && vertex.x <= maxBounds.x &&
-               vertex.y >= minBounds.y && vertex.y <= maxBounds.y &&
-               vertex.z >= minBounds.z && vertex.z <= maxBounds.z {
-                return true
-            }
-        }
-        
-        // Check if triangle's bounding box overlaps with our bounding box
-        let triMin = min(min(v0, v1), v2)
-        let triMax = max(max(v0, v1), v2)
-        
-        return triMax.x >= minBounds.x && triMin.x <= maxBounds.x &&
-               triMax.y >= minBounds.y && triMin.y <= maxBounds.y &&
-               triMax.z >= minBounds.z && triMin.z <= maxBounds.z
-    }
     
     public func generateSDFFromTapPositionGPU(tapPoint: CGPoint,
                                              viewportSize: CGSize,
