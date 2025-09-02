@@ -289,38 +289,6 @@ extension MPMFluidRenderer {
         )
     }
     
-    // MARK: - Offscreen Rendering Support
-    
-    internal func blitOffscreenToMainTarget(
-        commandBuffer: MTLCommandBuffer,
-        sourceTexture: MTLTexture,
-        renderPassDescriptor: MTLRenderPassDescriptor
-    ) {
-        // Create a blit encoder to copy the offscreen result to the main render target
-        guard let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
-            return
-        }
-        
-        guard let mainColorTexture = renderPassDescriptor.colorAttachments[0].texture else {
-            blitEncoder.endEncoding()
-            return
-        }
-        
-        // Copy offscreen texture to main render target
-        blitEncoder.copy(
-            from: sourceTexture,
-            sourceSlice: 0,
-            sourceLevel: 0,
-            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-            sourceSize: MTLSize(width: sourceTexture.width, height: sourceTexture.height, depth: 1),
-            to: mainColorTexture,
-            destinationSlice: 0,
-            destinationLevel: 0,
-            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
-        )
-        
-        blitEncoder.endEncoding()
-    }
     
     // MARK: - Main Render Function
     func render(

@@ -1477,9 +1477,6 @@ class ViewController: UIViewController {
         }
     }
     
-    private func getCameraPosition() -> SIMD3<Float> {
-        return SIMD3<Float>(0,0,0)
-    }
 
     private func getViewMatrix() -> float4x4 {
         return matrix_identity_float4x4
@@ -1708,21 +1705,5 @@ extension ViewController{
         DispatchQueue.main.async {
             self.updateTransparentBackgroundToggleVisibility()
         }
-    }
-    // MARK: - AR Controls
-    public func startAR() {
-        #if canImport(ARKit)
-        if #available(iOS 11.0, macOS 10.13, *) {
-            arRenderer?.startARSession()
-        }
-        #endif
-    }
-    
-    public func stopAR() {
-        #if canImport(ARKit)
-        if #available(iOS 11.0, macOS 10.13, *) {
-            arRenderer?.stopARSession()
-        }
-        #endif
     }
 }

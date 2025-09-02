@@ -285,10 +285,6 @@ extension MPMFluidRenderer {
         }
     }
 
-    private func getCurrentComputeUniforms() -> ComputeShaderUniforms {
-        let p = scene.getComputeUniformBuffer().contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
-        return p[0]
-    }
 
     // GPU-based SDF impulse integration and collision transform update
     internal func applySdfImpulseToTransformGPU(commandBuffer: MTLCommandBuffer) {
@@ -554,12 +550,5 @@ extension MPMFluidRenderer {
     }
     
     
-    public func getCurrentBufferInfo() -> (stage: String, computeBuffer: String, renderBuffer: String) {
-        return (
-            stage: isComputing ? "Computing" : "Rendering",
-            computeBuffer: scene.getComputeParticleBuffer().label ?? "nil",
-            renderBuffer: scene.getRenderParticleBuffer().label ?? "nil"
-        )
-    }
 
 }
