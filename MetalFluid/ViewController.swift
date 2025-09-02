@@ -1404,12 +1404,22 @@ class ViewController: UIViewController {
             ) {
                 print("✅ AR raycast hit at: \(hitPosition)")
                 
+                // Get the center bottom offset of the domain
+                let centerBottomOffset = fluidRenderer.getDomainCenterBottomOffset()
+                
+                // Apply scaling to the offset
+                let scaleFactor = fluidRenderer.getRenderScale()
+                let scaledOffset = centerBottomOffset * scaleFactor
+                
+                // Adjust hit position so center bottom of domain aligns with tap point
+                let adjustedHitPosition = hitPosition - scaledOffset
+                
                 // Compensate for the internal grid transformations
                 let gridToLocalTransform = fluidRenderer.getGridToLocalTransform()
                 let inverseGridToLocal = gridToLocalTransform.inverse
                 
                 // Apply the inverse transform to get the correct world position
-                let transformedPoint = inverseGridToLocal * SIMD4<Float>(hitPosition, 1.0)
+                let transformedPoint = inverseGridToLocal * SIMD4<Float>(adjustedHitPosition, 1.0)
                 let compensatedPosition = SIMD3<Float>(transformedPoint.x, transformedPoint.y, transformedPoint.z)
                 
                 // Move scene transform to the compensated position
@@ -1419,7 +1429,9 @@ class ViewController: UIViewController {
                 showARTapFeedback(at: tapPoint)
                 
                 print("🎯 Scene moved to AR raycast position: \(hitPosition)")
-                print("🔧 Compensated world translation: \(compensatedPosition)")
+                print("🔧 Center bottom offset: \(scaledOffset)")
+                print("🔧 Adjusted hit position: \(adjustedHitPosition)")
+                print("🔧 Final compensated world translation: \(compensatedPosition)")
             } else {
                 print("❌ AR raycast missed - no mesh hit at tap position")
             }

@@ -397,6 +397,23 @@ class MPMFluidRenderer: NSObject {
         let centeringMatrix = self.getDomainCenteringTransform()
         return scaleMatrix * centeringMatrix
     }
+    
+    // Get offset from domain origin to center bottom
+    public func getDomainCenterBottomOffset() -> SIMD3<Float> {
+        let gridRes = getGridRes()
+        let domainExtentX: Float = Float(gridRes.x) * gridSpacing
+        let domainExtentY: Float = Float(gridRes.y) * gridSpacing
+        let domainExtentZ: Float = Float(gridRes.z) * gridSpacing
+        
+        // Center in X and Z, bottom in Y
+        let centerBottomOffset = SIMD3<Float>(
+            domainExtentX * 0.5,  // Center in X
+            0.0,                   // Bottom in Y
+            domainExtentZ * 0.5   // Center in Z
+        )
+        
+        return centerBottomOffset
+    }
 
     
     let pad: Float = 5.0
