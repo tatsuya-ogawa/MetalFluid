@@ -92,6 +92,8 @@ class ViewController: UIViewController {
     // AR controls panel (bottom right)
     private var arPanel: UIView!
     private var arToggleButton: UIButton!
+    private var arMeshToggleButton: UIButton!
+    private var arCameraToggleButton: UIButton!
     private var arPanelHeightConstraint: NSLayoutConstraint!
     
     // ReplayKit recording
@@ -984,14 +986,42 @@ class ViewController: UIViewController {
             for: .touchUpInside
         )
         
+        // AR Mesh toggle button
+        arMeshToggleButton = UIButton(type: .system)
+        arMeshToggleButton.setTitle("Mesh: ON", for: .normal)
+        arMeshToggleButton.setTitleColor(.white, for: .normal)
+        arMeshToggleButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        arMeshToggleButton.layer.cornerRadius = 8
+        arMeshToggleButton.addTarget(
+            self,
+            action: #selector(toggleARMesh),
+            for: .touchUpInside
+        )
+        
+        // AR Camera toggle button
+        arCameraToggleButton = UIButton(type: .system)
+        arCameraToggleButton.setTitle("Camera: ON", for: .normal)
+        arCameraToggleButton.setTitleColor(.white, for: .normal)
+        arCameraToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        arCameraToggleButton.layer.cornerRadius = 8
+        arCameraToggleButton.addTarget(
+            self,
+            action: #selector(toggleARCamera),
+            for: .touchUpInside
+        )
+        
         // Add controls to AR panel (bottom right)
         arPanel.addSubview(arToggleButton)
+        arPanel.addSubview(arMeshToggleButton)
+        arPanel.addSubview(arCameraToggleButton)
         arPanel.addSubview(transparentBackgroundToggle)
         
         
         // Setup constraints
         arPanel.translatesAutoresizingMaskIntoConstraints = false
         arToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        arMeshToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        arCameraToggleButton.translatesAutoresizingMaskIntoConstraints = false
         transparentBackgroundToggle.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
@@ -1021,9 +1051,39 @@ class ViewController: UIViewController {
             ),
             arToggleButton.heightAnchor.constraint(equalToConstant: 40),
             
-            // Transparent background toggle constraints (below AR toggle)
-            transparentBackgroundToggle.topAnchor.constraint(
+            // AR Mesh toggle button constraints (below AR toggle)
+            arMeshToggleButton.topAnchor.constraint(
                 equalTo: arToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            arMeshToggleButton.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arMeshToggleButton.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arMeshToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // AR Camera toggle button constraints (below AR mesh toggle)
+            arCameraToggleButton.topAnchor.constraint(
+                equalTo: arMeshToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            arCameraToggleButton.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arCameraToggleButton.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arCameraToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // Transparent background toggle constraints (below AR camera toggle)
+            transparentBackgroundToggle.topAnchor.constraint(
+                equalTo: arCameraToggleButton.bottomAnchor,
                 constant: 10
             ),
             transparentBackgroundToggle.leadingAnchor.constraint(
@@ -1038,7 +1098,8 @@ class ViewController: UIViewController {
         ])
         
         // Create and manage panel height constraint (adjusted dynamically)
-        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 60)
+        // Height: AR(40) + Mesh(40) + Camera(40) + Transparent(40) + 4 spacings(40) + paddings(20) = 220
+        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 220)
         arPanelHeightConstraint.isActive = true
         
         // Initialize AR panel visibility
@@ -1478,11 +1539,11 @@ class ViewController: UIViewController {
         transparentBackgroundToggle.isHidden = !isAREnabled
         
         // Update AR panel height based on visibility
-        // Elements: AR button (always), Transparent (AR ON only), World Orbit (always)
+        // Elements: AR button (always), Mesh (always), Camera (always), Transparent (AR ON only)
         // Height formula: top padding (10) + sum(button heights + inner spacings) + bottom padding (10)
-        // - AR OFF: AR(40) + spacing(10) + World(40) + paddings(20) = 110
-        // - AR ON:  AR(40) + spacing(10) + Transparent(40) + spacing(10) + World(40) + paddings(20) = 160
-        arPanelHeightConstraint.constant = isAREnabled ? 160 : 110
+        // - AR OFF: AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + paddings(20) = 170 (Transparent hidden)
+        // - AR ON:  AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + spacing(10) + Transparent(40) + paddings(20) = 220
+        arPanelHeightConstraint.constant = isAREnabled ? 220 : 170
         
         print("📏 AR Panel height set to: \(arPanelHeightConstraint.constant)")
         
@@ -1806,5 +1867,44 @@ extension ViewController{
         collisionManager.representativeItem.setMeshColor(SIMD4<Float>(0.0, 1.0, 0.0, 0.8)) // Green semi-transparent
         
         print("✅ SDF generated and collision enabled from AR mesh")
+    }
+    
+    @objc private func toggleARMesh() {
+        guard let arRenderer = arRenderer else { return }
+        
+        let currentlyVisible = arRenderer.showARMeshWireframe
+        let newVisibility = !currentlyVisible
+        
+        arRenderer.setMeshRenderingEnabled(newVisibility)
+        
+        if newVisibility {
+            arMeshToggleButton.setTitle("Mesh: ON", for: .normal)
+            arMeshToggleButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        } else {
+            arMeshToggleButton.setTitle("Mesh: OFF", for: .normal)
+            arMeshToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+        
+        print("🔧 AR Mesh visibility: \(newVisibility)")
+    }
+    
+    @objc private func toggleARCamera() {
+        guard let arRenderer = arRenderer else { return }
+        
+        // Get current camera rendering state from ARRenderer
+        let currentlyActive = arRenderer.isCameraRenderingEnabled
+        let newActive = !currentlyActive
+        
+        arRenderer.setCameraRenderingEnabled(newActive)
+        
+        if newActive {
+            arCameraToggleButton.setTitle("Camera: ON", for: .normal)
+            arCameraToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        } else {
+            arCameraToggleButton.setTitle("Camera: OFF", for: .normal)
+            arCameraToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+        
+        print("🔧 AR Camera active: \(newActive)")
     }
 }

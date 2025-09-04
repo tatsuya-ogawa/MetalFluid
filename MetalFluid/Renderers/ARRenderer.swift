@@ -333,6 +333,12 @@ class ARRenderer:NSObject {
         guard let pipelineState = cameraBackgroundPipelineState,
               let vertexBuffer = cameraBackgroundVertexBuffer else { return }
         
+        // Check if camera rendering is disabled
+        if !isCameraRenderingEnabled {
+            renderFallbackBackground(commandEncoder: commandEncoder)
+            return
+        }
+        
         // Non-AR fallback: render solid background
         if !isARSupported {
             renderFallbackBackground(commandEncoder: commandEncoder)
@@ -359,6 +365,21 @@ class ARRenderer:NSObject {
     private func renderFallbackBackground(commandEncoder: MTLRenderCommandEncoder) {
         // Render a simple dark background when ARKit is not available
         // This could be enhanced with a test pattern or gradient
+    }
+    
+    // MARK: - Control Methods
+    
+    func setMeshRenderingEnabled(_ enabled: Bool) {
+        showARMeshWireframe = enabled
+        showARMeshSolid = enabled
+        print("🔧 AR Mesh rendering enabled: \(enabled)")
+    }
+    
+    public var isCameraRenderingEnabled = true
+    
+    func setCameraRenderingEnabled(_ enabled: Bool) {
+        isCameraRenderingEnabled = enabled
+        print("🔧 AR Camera rendering enabled: \(enabled)")
     }
 }
 
