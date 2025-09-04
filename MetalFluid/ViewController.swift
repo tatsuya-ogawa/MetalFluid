@@ -1843,10 +1843,22 @@ extension ViewController{
         
         arRenderer.setCameraRenderingEnabled(newActive)
         
+        // Switch background renderer based on camera state
         if newActive {
+            // Camera ON: Use AR background
+            if let saved = savedBackgroundRenderer {
+                fluidRenderer.backgroundRenderer = saved
+            }
+            fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: arRenderer, isTransparent: true)
             arCameraToggleButton.setTitle("Camera: ON", for: .normal)
             arCameraToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
         } else {
+            // Camera OFF: Use original fluid background
+            if let saved = savedBackgroundRenderer {
+                fluidRenderer.backgroundRenderer = saved
+            } else {
+                installDefaultBackgroundRenderer()
+            }
             arCameraToggleButton.setTitle("Camera: OFF", for: .normal)
             arCameraToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
         }
