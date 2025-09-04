@@ -79,8 +79,6 @@ class ViewController: UIViewController {
     internal var sdfYRotationSlider: UISlider!
     private var sdfYRotationLabel: UILabel!
     
-    // Transparent background control
-    private var transparentBackgroundToggle: UIButton!
     
     // Collision controls panel (right side)
     private var collisionPanel: UIView!
@@ -478,17 +476,6 @@ class ViewController: UIViewController {
             for: .valueChanged
         )
         
-        // Transparent background toggle
-        transparentBackgroundToggle = UIButton(type: .system)
-        transparentBackgroundToggle.setTitle("Transparent: OFF", for: .normal)
-        transparentBackgroundToggle.setTitleColor(.white, for: .normal)
-        transparentBackgroundToggle.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
-        transparentBackgroundToggle.layer.cornerRadius = 8
-        transparentBackgroundToggle.addTarget(
-            self,
-            action: #selector(toggleTransparentBackground),
-            for: .touchUpInside
-        )
         
         // SDF Y rotation label
         sdfYRotationLabel = UILabel()
@@ -1014,7 +1001,6 @@ class ViewController: UIViewController {
         arPanel.addSubview(arToggleButton)
         arPanel.addSubview(arMeshToggleButton)
         arPanel.addSubview(arCameraToggleButton)
-        arPanel.addSubview(transparentBackgroundToggle)
         
         
         // Setup constraints
@@ -1022,7 +1008,6 @@ class ViewController: UIViewController {
         arToggleButton.translatesAutoresizingMaskIntoConstraints = false
         arMeshToggleButton.translatesAutoresizingMaskIntoConstraints = false
         arCameraToggleButton.translatesAutoresizingMaskIntoConstraints = false
-        transparentBackgroundToggle.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
             // AR panel constraints (bottom right with fixed bottom anchor)
@@ -1080,30 +1065,16 @@ class ViewController: UIViewController {
                 constant: -10
             ),
             arCameraToggleButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Transparent background toggle constraints (below AR camera toggle)
-            transparentBackgroundToggle.topAnchor.constraint(
-                equalTo: arCameraToggleButton.bottomAnchor,
-                constant: 10
-            ),
-            transparentBackgroundToggle.leadingAnchor.constraint(
-                equalTo: arPanel.leadingAnchor,
-                constant: 10
-            ),
-            transparentBackgroundToggle.trailingAnchor.constraint(
-                equalTo: arPanel.trailingAnchor,
-                constant: -10
-            ),
-            transparentBackgroundToggle.heightAnchor.constraint(equalToConstant: 40),
         ])
         
         // Create and manage panel height constraint (adjusted dynamically)
-        // Height: AR(40) + Mesh(40) + Camera(40) + Transparent(40) + 4 spacings(40) + paddings(20) = 220
-        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 220)
+        // Height: AR OFF = AR(40) + paddings(20) = 70
+        // Height: AR ON = AR(40) + Mesh(40) + Camera(40) + 3 spacings(30) + paddings(20) = 170
+        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 70)
         arPanelHeightConstraint.isActive = true
         
         // Initialize AR panel visibility
-        updateTransparentBackgroundToggleVisibility()
+        updateARButtonsVisibility()
     }
     
     @objc private func particleSizeChanged(_ slider: UISlider) {
@@ -1323,32 +1294,6 @@ class ViewController: UIViewController {
         worldPitch = asin(normalizedForward.y)
     }
     
-    @objc private func toggleTransparentBackground() {
-        // Swap between AR background and existing background renderer
-        guard let fluidRenderer = fluidRenderer else { return }
-        if fluidRenderer.backgroundRenderer is ARBackgroundRendererAdapter {
-            // Swap back to saved (or default) background
-            if let saved = savedBackgroundRenderer {
-                fluidRenderer.backgroundRenderer = saved
-            } else {
-                installDefaultBackgroundRenderer()
-            }
-            transparentBackgroundToggle.setTitle("AR BG: OFF", for: .normal)
-            transparentBackgroundToggle.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
-        } else {
-            // Ensure AR renderer exists
-            if arRenderer == nil {
-                arRenderer = ARRenderer(device: fluidRenderer.device, commandQueue: fluidRenderer.commandQueue)
-            }
-            guard let arRenderer = arRenderer else { return }
-            // Save current background and swap to AR background
-            savedBackgroundRenderer = fluidRenderer.backgroundRenderer
-            arRenderer.startARSession()
-            fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: arRenderer, isTransparent: true)
-            transparentBackgroundToggle.setTitle("AR BG: ON", for: .normal)
-            transparentBackgroundToggle.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
-        }
-    }
     
     private var isAREnabled: Bool = false
     private var arRenderer: ARRenderer?
@@ -1530,20 +1475,21 @@ class ViewController: UIViewController {
         // Coefficients updated, no direct application to renderer
     }
 
-    private func updateTransparentBackgroundToggleVisibility() {
+    private func updateARButtonsVisibility() {
         let isAREnabled = self.isAREnabled
         
-        print("🔍 AR State: \(isAREnabled), Transparent toggle hidden: \(!isAREnabled)")
+        print("🔍 AR State: \(isAREnabled), AR buttons hidden: \(!isAREnabled)")
         
-        // Show/hide transparent background toggle based on AR state
-        transparentBackgroundToggle.isHidden = !isAREnabled
+        // Show/hide AR mesh and camera buttons based on AR state
+        arMeshToggleButton.isHidden = !isAREnabled
+        arCameraToggleButton.isHidden = !isAREnabled
         
         // Update AR panel height based on visibility
-        // Elements: AR button (always), Mesh (always), Camera (always), Transparent (AR ON only)
+        // Elements: AR button (always), Mesh and Camera (AR ON only)
         // Height formula: top padding (10) + sum(button heights + inner spacings) + bottom padding (10)
-        // - AR OFF: AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + paddings(20) = 170 (Transparent hidden)
-        // - AR ON:  AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + spacing(10) + Transparent(40) + paddings(20) = 220
-        arPanelHeightConstraint.constant = isAREnabled ? 220 : 170
+        // - AR OFF: AR(40) + paddings(20) = 70
+        // - AR ON:  AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + paddings(20) = 170
+        arPanelHeightConstraint.constant = isAREnabled ? 170 : 70
         
         print("📏 AR Panel height set to: \(arPanelHeightConstraint.constant)")
         
@@ -1779,7 +1725,7 @@ extension ViewController{
     // Called when AR state changes
     func onARStateChanged() {
         DispatchQueue.main.async {
-            self.updateTransparentBackgroundToggleVisibility()
+            self.updateARButtonsVisibility()
         }
     }
     
