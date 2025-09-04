@@ -756,47 +756,6 @@ extension ARRenderer {
     }
     
     
-    public func generateSDFFromTapPositionGPU(tapPoint: CGPoint,
-                                             viewportSize: CGSize,
-                                             orientation: UIInterfaceOrientation,
-                                             boundingBoxSize: Float = 0.5) -> MTLTexture? {
-        // Use GPU raycast
-        guard let hitPosition = performGPURaycast(at: tapPoint,
-                                                 viewportSize: viewportSize,
-                                                 orientation: orientation) else {
-            print("No mesh hit at tap position with GPU raycast")
-            return nil
-        }
-        
-        lastTapWorldPosition = hitPosition
-        
-        // Set up bounding box around hit position
-        let size = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
-        selectedMeshBounds = (center: hitPosition, size: size)
-        
-        // Extract triangles within bounding box using GPU
-        guard let triangles = extractMeshesInBoundingBoxGPU(center: hitPosition, size: size) else {
-            print("Failed to extract triangles with GPU")
-            return nil
-        }
-        
-        guard !triangles.isEmpty else {
-            print("No triangles found in bounding box")
-            return nil
-        }
-        
-        print("GPU extracted \(triangles.count) triangles for SDF generation")
-        
-        // Calculate tight bounding box for SDF generation
-        let halfSize = size * 0.5
-        let boundingBox = (min: hitPosition - halfSize, max: hitPosition + halfSize)
-        
-        // Generate SDF
-        let resolution = SIMD3<Int32>(64, 64, 64) // Fixed resolution for consistency
-        return sdfGenerator?.generateSDF(triangles: triangles,
-                                        resolution: resolution,
-                                        boundingBox: boundingBox)
-    }
     #endif
 }
 

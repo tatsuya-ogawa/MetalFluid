@@ -109,16 +109,20 @@ class ViewController: UIViewController {
         worldScale = 1.0
     }
     
-    private func computeWorldTransform() -> float4x4 {
-        // Compute transform from current coefficients: T * R * S order
+    private func computeViewManipulationTransform() -> float4x4 {
+        // Compute transform from UI manipulation coefficients: T * R * S order
+        // This is for non-AR camera/view controls only
         let S = float4x4(scale: SIMD3<Float>(worldScale, worldScale, worldScale))
         let R = float4x4(rotationY: worldYaw) * float4x4(rotationX: worldPitch)
         let T = float4x4(translation: worldTranslation)
         return T * R * S
     }
 
-    private func updateRendererTransformIfNeeded() {
-        let transform = computeWorldTransform()
+    private func updateRendererViewManipulationTransform() {
+        // Don't override AR-controlled transform
+        guard !isAREnabled else { return }
+        
+        let transform = computeViewManipulationTransform()
         fluidRenderer.setWorldTransform(transform)
     }
 
@@ -146,7 +150,7 @@ class ViewController: UIViewController {
         
         // Apply initial transform
         updateSdfTransfom()
-        updateRendererTransformIfNeeded()
+        updateRendererViewManipulationTransform()
     }
 
     private func setupMetalView() {
@@ -1516,7 +1520,7 @@ extension ViewController: MTKViewDelegate {
 
     func draw(in view: MTKView) {
         // Apply transform coefficients to renderer only when rendering
-        updateRendererTransformIfNeeded()
+        updateRendererViewManipulationTransform()
         
         let currentTime = CACurrentMediaTime()
         let deltaTime = Float(currentTime - lastFrameTime)
@@ -1539,22 +1543,38 @@ extension ViewController: MTKViewDelegate {
         )
         let aspectRatio = screenSize.x / screenSize.y
 
-        // Create transformation matrices (use AR camera when AR is enabled)
-        var baseViewMatrix = getViewMatrix()
-        var projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+        // Create transformation matrices based on mode
+        let (projectionMatrix, viewMatrix): (float4x4, float4x4)
+        
         if isAREnabled {
+            // AR Mode: Use AR camera matrices
             #if canImport(ARKit)
             if #available(iOS 11.0, macOS 10.13, *) {
                 let orientation = view.window?.windowScene?.interfaceOrientation ?? .portrait
-                if let (proj, viewM) = arRenderer?.getCameraMatrices(viewportSize: metalView.bounds.size, orientation: orientation) {
-                    projectionMatrix = proj
-                    baseViewMatrix = viewM
+                if let (arProj, arView) = arRenderer?.getCameraMatrices(viewportSize: metalView.bounds.size, orientation: orientation) {
+                    projectionMatrix = arProj
+                    // AR view matrix: AR camera view * fluid world transform * grid-to-local transform
+                    viewMatrix = arView * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
+                } else {
+                    // Fallback to non-AR if AR matrices unavailable
+                    projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+                    viewMatrix = getViewMatrix() * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
                 }
+            } else {
+                // AR not available, use non-AR matrices
+                projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+                viewMatrix = getViewMatrix() * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
             }
+            #else
+            // AR not available, use non-AR matrices
+            projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+            viewMatrix = getViewMatrix() * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
             #endif
+        } else {
+            // Non-AR Mode: Use standard camera matrices
+            projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+            viewMatrix = getViewMatrix() * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
         }
-        // Complete view matrix: View * Model(world) * Scale(sim units->world) * Centering
-        let viewMatrix = baseViewMatrix * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
         // Update simulation based on mode
         if performStep {
             fluidRenderer.update(
@@ -1765,7 +1785,7 @@ extension ViewController{
         print("🔄 Transforming \(worldTriangles.count) triangles to scene local coordinates")
         
         // Get the complete transformation chain from world to scene local
-        let worldTransform = computeWorldTransform() // Our world transform matrix
+        let worldTransform = fluidRenderer.worldTransform // FluidRenderer's actual world transform
         let gridToLocalTransform = fluidRenderer.getGridToLocalTransform() // Internal scene transform
         
         // Debug: Print transform matrices
