@@ -408,7 +408,7 @@ class MPMFluidRenderer: NSObject {
         // Center in X and Z, bottom in Y
         let centerBottomOffset = SIMD3<Float>(
             domainExtentX * 0.5,  // Center in X
-            0.0,                   // Bottom in Y
+            domainExtentY * 0.35,  // Bottom in Y
             domainExtentZ * 0.5   // Center in Z
         )
         
