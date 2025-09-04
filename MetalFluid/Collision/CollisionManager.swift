@@ -38,7 +38,7 @@ class CollisionItem{
         let meshCenter = (meshMin + meshMax) * 0.5
 
         // ▼ Pivot: Center of mesh bottom face
-        let pivot = SIMD3<Float>(meshCenter.x, meshCenter.y, meshCenter.z)
+        let pivot = SIMD3<Float>(meshCenter.x, meshMin.y, meshCenter.z)
 
         // ▼ Target position on grid (where bottom face center should be placed) + offset
         let target = SIMD3<Float>(gridCenter.x + offset.x,
@@ -58,6 +58,50 @@ class CollisionItem{
 
         // Finally, translate everything so that pivot (=bottom face center) aligns with target
         // Since rotation and scaling around pivot doesn't move the pivot itself, the difference is simply target - pivot
+        let T_align = float4x4(translation: target - pivot)
+
+        // Composition (applied from right): T_align * T_fromPivot * R * S * T_toPivot
+        let transform = T_align * T_fromPivot * R * S * T_toPivot
+        let invTransform = transform.inverse
+
+        return (transform, invTransform)
+    }
+    
+    // AR mode transform calculation using mesh center instead of bottom
+    public func calculateCollisionTransformForAR(
+        meshMin: SIMD3<Float>, meshMax: SIMD3<Float>,
+        gridMin: SIMD3<Float>?, gridMax: SIMD3<Float>?,
+        scale: SIMD3<Float> = SIMD3<Float>(1, 1, 1),
+        rotation: SIMD3<Float> = SIMD3<Float>(0, 0, 0),
+        offset: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
+    ) -> (float4x4, float4x4) {
+        guard let gridMin = gridMin, let gridMax = gridMax else {
+            return (matrix_identity_float4x4, matrix_identity_float4x4)
+        }
+
+        let gridCenter = (gridMin + gridMax) * 0.5
+        let meshCenter = (meshMin + meshMax) * 0.5
+
+        // ▼ Pivot: Center of mesh (not bottom face)
+        let pivot = meshCenter
+
+        // ▼ Target position: grid center + offset (mesh center aligns with grid center)
+        let target = SIMD3<Float>(meshCenter.x + meshCenter.x,
+                                  meshCenter.y + offset.y,
+                                  meshCenter.z + offset.z)
+
+        // Matrices (rotation order: X→Y→Z)
+        let S = float4x4(scaling: scale)
+        let Rx = float4x4(rotationX: rotation.x)
+        let Ry = float4x4(rotationY: rotation.y)
+        let Rz = float4x4(rotationZ: rotation.z)
+        let R = Rx * Ry * Rz
+
+        // Translations for rotating and scaling around pivot
+        let T_toPivot   = float4x4(translation: -pivot)
+        let T_fromPivot = float4x4(translation:  pivot)
+
+        // Translate so that pivot (mesh center) aligns with target
         let T_align = float4x4(translation: target - pivot)
 
         // Composition (applied from right): T_align * T_fromPivot * R * S * T_toPivot
@@ -104,6 +148,7 @@ class CollisionItem{
     public var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
     public var canMove: Bool = false
     public var useGravity: Bool = false
+    public var isARMode: Bool = false  // Flag to control AR positioning
     // Current mesh data
     public var currentTriangles: [Triangle] = []
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
@@ -118,15 +163,27 @@ class CollisionItem{
         let scaleVec = item.scale
         let offsetVec = item.translate
         let rotationVec = item.rotate
-        let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
-            meshMin: currentMeshMin,
-            meshMax: currentMeshMax,
-            gridMin: currentGridMin,
-            gridMax: currentGridMax,
-            scale: scaleVec,
-            rotation: rotationVec,
-            offset: offsetVec
-        )
+        
+        let (transform, invTransform) = isARMode ? 
+            calculateCollisionTransformForAR(
+                meshMin: currentMeshMin,
+                meshMax: currentMeshMax,
+                gridMin: currentGridMin,
+                gridMax: currentGridMax,
+                scale: scaleVec,
+                rotation: rotationVec,
+                offset: offsetVec
+            ) :
+            calculateCollisionTransformCenterOfBottom(
+                meshMin: currentMeshMin,
+                meshMax: currentMeshMax,
+                gridMin: currentGridMin,
+                gridMax: currentGridMax,
+                scale: scaleVec,
+                rotation: rotationVec,
+                offset: offsetVec
+            )
+        
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
             to: CollisionUniforms.self,
             capacity: 1
@@ -253,15 +310,26 @@ class CollisionItem{
             let combinedScale = sdfTransform.scale
             let combinedOffset = sdfTransform.translate
             let combinedRotation = sdfTransform.rotate
-            let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
-                meshMin: minBounds,
-                meshMax: maxBounds,
-                gridMin: gridBoundaryMin,
-                gridMax: gridBoundaryMax,
-                scale: combinedScale,
-                rotation: combinedRotation,
-                offset: combinedOffset
-            )
+            
+            let (transform, invTransform) = isARMode ?
+                calculateCollisionTransformForAR(
+                    meshMin: minBounds,
+                    meshMax: maxBounds,
+                    gridMin: gridBoundaryMin,
+                    gridMax: gridBoundaryMax,
+                    scale: combinedScale,
+                    rotation: combinedRotation,
+                    offset: combinedOffset
+                ) :
+                calculateCollisionTransformCenterOfBottom(
+                    meshMin: minBounds,
+                    meshMax: maxBounds,
+                    gridMin: gridBoundaryMin,
+                    gridMax: gridBoundaryMax,
+                    scale: combinedScale,
+                    rotation: combinedRotation,
+                    offset: combinedOffset
+                )
             
             // Update collision uniforms
             let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
@@ -321,6 +389,13 @@ class CollisionItem{
             self.sdfTransform = SdfTransform(scale: scale ?? sdfTransform.scale, translate: translate ?? sdfTransform.translate, rotate: rotate ?? sdfTransform.rotate)
             updateCollisionTransformToCenter(item: sdfTransform,currentMeshMin: currentMeshMin, currentMeshMax: currentMeshMax, currentGridMin: currentGridMin, currentGridMax: currentGridMax)
         }
+    
+    // AR mode control
+    public func setARMode(_ enabled: Bool) {
+        isARMode = enabled
+        // Recalculate transform with new mode
+        updateCollisionTransformToCenter(item: sdfTransform, currentMeshMin: currentMeshMin, currentMeshMax: currentMeshMax, currentGridMin: currentGridMin, currentGridMax: currentGridMax)
+    }
 }
 class CollisionManager {
     static let MAX_COLLISION_SDF = 8
@@ -388,5 +463,12 @@ class CollisionManager {
     }
     func setMeshVisible(_ visible: Bool) {
         meshRenderer.isVisible = visible
-    }    
+    }
+    
+    // AR mode control for all collision items
+    func setARMode(_ enabled: Bool) {
+        for item in items {
+            item.setARMode(enabled)
+        }
+    }
 }
