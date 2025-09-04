@@ -399,7 +399,7 @@ class MPMFluidRenderer: NSObject {
     }
     
     // Get offset from domain origin to center bottom
-    public func getDomainCenterBottomOffset() -> SIMD3<Float> {
+    public func getDomainCenterBottomOffsetForAr() -> SIMD3<Float> {
         let gridRes = getGridRes()
         let domainExtentX: Float = Float(gridRes.x) * gridSpacing
         let domainExtentY: Float = Float(gridRes.y) * gridSpacing

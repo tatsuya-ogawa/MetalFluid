@@ -1405,7 +1405,7 @@ class ViewController: UIViewController {
                 print("✅ AR raycast hit at: \(hitPosition)")
                 
                 // Get the center bottom offset of the domain
-                let centerBottomOffset = fluidRenderer.getDomainCenterBottomOffset()
+                let centerBottomOffset = fluidRenderer.getDomainCenterBottomOffsetForAr()
                 
                 // Apply scaling to the offset
                 let scaleFactor = fluidRenderer.getRenderScale()
@@ -1757,40 +1757,12 @@ extension ViewController{
             return
         }
         
-        // Transform triangles from world coordinates to scene local coordinates
-        let sceneLocalTriangles = transformTrianglesToSceneLocal(worldTriangles: worldTriangles)
-        
-        // Generate SDF from transformed triangles
-        generateSDFFromTriangles(triangles: sceneLocalTriangles)
+        // Use triangles directly (no transformation needed)
+        generateSDFFromTriangles(triangles: worldTriangles)
         
         #endif
     }
     
-    private func transformTrianglesToSceneLocal(worldTriangles: [Triangle]) -> [Triangle] {
-        print("🔄 Transforming \(worldTriangles.count) triangles to scene local coordinates")
-        
-        // DEBUG: Temporarily disable all transformations to see raw triangle positions
-        print("🔧 DEBUG: Using triangles without transformation to test positioning")
-        
-        var transformedTriangles: [Triangle] = []
-        
-        // Debug: Show first triangle in world coordinates
-        if !worldTriangles.isEmpty {
-            let firstTriangle = worldTriangles[0]
-            print("🔍 First triangle in world coordinates:")
-            print("  v0: \(firstTriangle.v0)")
-            print("  v1: \(firstTriangle.v1)")
-            print("  v2: \(firstTriangle.v2)")
-        }
-        
-        // Use triangles as-is (no transformation) for debugging
-        for triangle in worldTriangles {
-            transformedTriangles.append(triangle)
-        }
-        
-        print("✅ Using triangles without transformation (debug mode)")
-        return transformedTriangles
-    }
     
     private func generateSDFFromTriangles(triangles: [Triangle]) {
         print("🔧 Generating SDF from \(triangles.count) transformed triangles")
