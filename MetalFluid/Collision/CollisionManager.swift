@@ -86,7 +86,7 @@ class CollisionItem{
         let pivot = meshCenter
 
         // ▼ Target position: grid center + offset (mesh center aligns with grid center)
-        let target = SIMD3<Float>(meshCenter.x + meshCenter.x,
+        let target = SIMD3<Float>(meshCenter.x + offset.x,
                                   meshCenter.y + offset.y,
                                   meshCenter.z + offset.z)
 
