@@ -38,7 +38,7 @@ class CollisionItem{
         let meshCenter = (meshMin + meshMax) * 0.5
 
         // ▼ Pivot: Center of mesh bottom face
-        let pivot = SIMD3<Float>(meshCenter.x, meshMin.y, meshCenter.z)
+        let pivot = SIMD3<Float>(meshCenter.x, meshCenter.y, meshCenter.z)
 
         // ▼ Target position on grid (where bottom face center should be placed) + offset
         let target = SIMD3<Float>(gridCenter.x + offset.x,

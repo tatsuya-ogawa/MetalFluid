@@ -42,7 +42,7 @@ class ViewController: UIViewController {
     private var isWireframeMode: Bool = false
     
     // Transform coefficients (managed in VC, applied when needed)
-    private var worldTranslation: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, -3.0)
+    private var worldTranslation: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, 0.0)
     private var worldYaw: Float = 0.0
     private var worldPitch: Float = 0.0
     private var worldScale: Float = 1.0
@@ -56,7 +56,7 @@ class ViewController: UIViewController {
     // Initial values (shared between sliders and FluidRenderer)
     private let initialParticleCount: Float = 40000
     private let initialGridSize: Float = 64
-    private let initialGridHeightMultiplier: Float = 1.5
+    private let initialGridHeightMultiplier: Float = 1.0
 
     // UI Elements
     private var controlPanel: UIView!
@@ -103,7 +103,7 @@ class ViewController: UIViewController {
     
     func setInitialWorldTransform() {
         // Just set the initial coefficients, don't apply to renderer yet
-        worldTranslation = SIMD3<Float>(0.0, 0.0, -1.5)
+        worldTranslation = SIMD3<Float>(0.0, 0.0, 0)
         worldYaw = 0.0
         worldPitch = 0.0
         worldScale = 1.0
@@ -1732,13 +1732,18 @@ extension ViewController{
         let boundingBoxSize: Float = 0.5 // 50cm cube around tap point
         let boundingBox = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
         
+        // Offset the bounding box center slightly downward to capture surface geometry better
+        let yOffset: Float = 0.00 // Move 5cm down
+        let adjustedCenter = SIMD3<Float>(tapWorldPosition.x, tapWorldPosition.y + yOffset, tapWorldPosition.z)
+        
         print("🔧 Extracting mesh with bounding box:")
-        print("  Center: \(tapWorldPosition)")
+        print("  Original center: \(tapWorldPosition)")
+        print("  Adjusted center: \(adjustedCenter) (offset: \(yOffset))")
         print("  Size: \(boundingBox)")
         
-        // Extract triangles from AR mesh around tap point
+        // Extract triangles from AR mesh around adjusted tap point
         guard let worldTriangles = arRenderer.extractMeshesInBoundingBoxGPU(
-            center: tapWorldPosition,
+            center: adjustedCenter,
             size: boundingBox
         ) else {
             print("❌ Failed to extract mesh triangles around tap point")
@@ -1764,39 +1769,12 @@ extension ViewController{
     private func transformTrianglesToSceneLocal(worldTriangles: [Triangle]) -> [Triangle] {
         print("🔄 Transforming \(worldTriangles.count) triangles to scene local coordinates")
         
-        // Get the complete transformation chain from world to scene local
-        let worldTransform = computeWorldTransform() // Our world transform matrix
-        let gridToLocalTransform = fluidRenderer.getGridToLocalTransform() // Internal scene transform
-        
-        // Debug: Print transform matrices
-        print("🔧 World Transform:")
-        print("  [\(worldTransform.columns.0.x), \(worldTransform.columns.0.y), \(worldTransform.columns.0.z), \(worldTransform.columns.0.w)]")
-        print("  [\(worldTransform.columns.1.x), \(worldTransform.columns.1.y), \(worldTransform.columns.1.z), \(worldTransform.columns.1.w)]")
-        print("  [\(worldTransform.columns.2.x), \(worldTransform.columns.2.y), \(worldTransform.columns.2.z), \(worldTransform.columns.2.w)]")
-        print("  [\(worldTransform.columns.3.x), \(worldTransform.columns.3.y), \(worldTransform.columns.3.z), \(worldTransform.columns.3.w)]")
-        
-        print("🔧 Grid To Local Transform:")
-        print("  [\(gridToLocalTransform.columns.0.x), \(gridToLocalTransform.columns.0.y), \(gridToLocalTransform.columns.0.z), \(gridToLocalTransform.columns.0.w)]")
-        print("  [\(gridToLocalTransform.columns.1.x), \(gridToLocalTransform.columns.1.y), \(gridToLocalTransform.columns.1.z), \(gridToLocalTransform.columns.1.w)]")
-        print("  [\(gridToLocalTransform.columns.2.x), \(gridToLocalTransform.columns.2.y), \(gridToLocalTransform.columns.2.z), \(gridToLocalTransform.columns.2.w)]")
-        print("  [\(gridToLocalTransform.columns.3.x), \(gridToLocalTransform.columns.3.y), \(gridToLocalTransform.columns.3.z), \(gridToLocalTransform.columns.3.w)]")
-        
-        // Complete transform: World -> Scene Local
-        // The rendering uses: baseViewMatrix * worldTransform * gridToLocal
-        // We want to transform from world space to the space before worldTransform is applied
-        // So we need the inverse of: worldTransform * gridToLocal (not gridToLocal * worldTransform)
-        let completeTransform = worldTransform * gridToLocalTransform
-        let worldToSceneLocal = completeTransform.inverse
-        
-        print("🔧 Complete Transform (worldTransform * gridToLocal):")
-        print("  [\(completeTransform.columns.0.x), \(completeTransform.columns.0.y), \(completeTransform.columns.0.z), \(completeTransform.columns.0.w)]")
-        print("  [\(completeTransform.columns.1.x), \(completeTransform.columns.1.y), \(completeTransform.columns.1.z), \(completeTransform.columns.1.w)]")
-        print("  [\(completeTransform.columns.2.x), \(completeTransform.columns.2.y), \(completeTransform.columns.2.z), \(completeTransform.columns.2.w)]")
-        print("  [\(completeTransform.columns.3.x), \(completeTransform.columns.3.y), \(completeTransform.columns.3.z), \(completeTransform.columns.3.w)]")
+        // DEBUG: Temporarily disable all transformations to see raw triangle positions
+        print("🔧 DEBUG: Using triangles without transformation to test positioning")
         
         var transformedTriangles: [Triangle] = []
         
-        // Debug: Show first triangle transformation as example
+        // Debug: Show first triangle in world coordinates
         if !worldTriangles.isEmpty {
             let firstTriangle = worldTriangles[0]
             print("🔍 First triangle in world coordinates:")
@@ -1805,34 +1783,12 @@ extension ViewController{
             print("  v2: \(firstTriangle.v2)")
         }
         
-        for (index, triangle) in worldTriangles.enumerated() {
-            // Transform each vertex from world coordinates to scene local coordinates
-            let v0World = SIMD4<Float>(triangle.v0, 1.0)
-            let v1World = SIMD4<Float>(triangle.v1, 1.0)
-            let v2World = SIMD4<Float>(triangle.v2, 1.0)
-            
-            let v0Local = worldToSceneLocal * v0World
-            let v1Local = worldToSceneLocal * v1World
-            let v2Local = worldToSceneLocal * v2World
-            
-            let transformedTriangle = Triangle(
-                v0: SIMD3<Float>(v0Local.x, v0Local.y, v0Local.z),
-                v1: SIMD3<Float>(v1Local.x, v1Local.y, v1Local.z),
-                v2: SIMD3<Float>(v2Local.x, v2Local.y, v2Local.z)
-            )
-            
-            // Debug: Show first triangle transformation result
-            if index == 0 {
-                print("🔍 First triangle transformed to scene local:")
-                print("  v0: \(transformedTriangle.v0)")
-                print("  v1: \(transformedTriangle.v1)")
-                print("  v2: \(transformedTriangle.v2)")
-            }
-            
-            transformedTriangles.append(transformedTriangle)
+        // Use triangles as-is (no transformation) for debugging
+        for triangle in worldTriangles {
+            transformedTriangles.append(triangle)
         }
         
-        print("✅ Transformed triangles to scene local coordinates")
+        print("✅ Using triangles without transformation (debug mode)")
         return transformedTriangles
     }
     
