@@ -18,212 +18,7 @@ internal struct FluidRenderTextures {
     let bufferIndex: Int  // Buffer index for double buffering
 }
 
-// MARK: - Renderer Protocol
-protocol ModeRenderer {
-    func render(
-        renderPassDescriptor: MTLRenderPassDescriptor,
-        performCompute: Bool,
-        projectionMatrix: float4x4,
-        viewMatrix: float4x4
-    )
-}
-
-// MARK: - Particle Renderer
-class ParticleRenderer: ModeRenderer {
-    internal weak var fluidRenderer: MPMFluidRenderer?
-    
-    init(fluidRenderer: MPMFluidRenderer) {
-        self.fluidRenderer = fluidRenderer
-    }
-    
-    func render(
-        renderPassDescriptor: MTLRenderPassDescriptor,
-        performCompute: Bool,
-        projectionMatrix: float4x4,
-        viewMatrix: float4x4
-    ) {
-        guard let renderer = fluidRenderer,
-              let commandBuffer = renderer.commandQueue.makeCommandBuffer() else {
-            return
-        }
-        
-        guard let particleBuffer = self.fluidRenderer?.scene.getRenderParticleBuffer() else{
-            return
-        }
-        
-        if performCompute {
-            renderer.compute(commandBuffer: commandBuffer)
-        }
-        
-        // Update matrices for rendering
-        let screenSize = SIMD2<Float>(
-            Float(renderPassDescriptor.colorAttachments[0].texture!.width),
-            Float(renderPassDescriptor.colorAttachments[0].texture!.height)
-        )
-        
-        renderer.ensureDepthBuffer(for: renderPassDescriptor, screenSize: screenSize, label: "ParticleRenderDepthBuffer")
-        // Render background (same command buffer)
-        guard let backgroundRenderer = renderer.backgroundRenderer,let colorAttachmentTexture = renderPassDescriptor.colorAttachments[0].texture else{
-                return
-        }
-        backgroundRenderer.renderBackground(commandBuffer: commandBuffer, targetTexture: colorAttachmentTexture)
-        backgroundRenderer.updateCollisionSDFIfNeeded()
-        renderPassDescriptor.colorAttachments[0].loadAction = .load
-        
-        // Render mesh and particles with new ordering
-        if let renderEncoder = commandBuffer.makeRenderCommandEncoder(
-            descriptor: renderPassDescriptor
-        ) {
-            // Step 1: Render collision mesh with depth writing enabled
-            renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
-            
-            // Step 2: Create a new depth stencil state for particles that tests depth but doesn't write
-            let particleDepthStencilDescriptor = MTLDepthStencilDescriptor()
-            particleDepthStencilDescriptor.depthCompareFunction = .less
-            particleDepthStencilDescriptor.isDepthWriteEnabled = false  // Don't write depth for transparent particles
-            let particleDepthStencilState = renderer.device.makeDepthStencilState(descriptor: particleDepthStencilDescriptor)!
-            
-            // Step 3: Render particles with depth testing but transparent blending
-            guard let pipelineState = renderer.pressureHeatmapPipelineState else{
-                fatalError("Unable to select pipeline state")
-            }
-            
-            renderEncoder.setRenderPipelineState(pipelineState)
-            renderEncoder.setDepthStencilState(particleDepthStencilState)
-            renderEncoder.setVertexBuffer(particleBuffer, offset: 0, index: 0)
-            renderEncoder.setVertexBuffer(renderer.scene.getVertexUniformBuffer(), offset: 0, index: 1)
-            
-            // For pressure heatmap mode, also bind the render grid buffer
-            if renderer.currentParticleRenderMode == .pressureHeatmap {
-                renderEncoder.setVertexBuffer(renderer.scene.getRenderGridBuffer(), offset: 0, index: 2)
-            }
-            
-            renderEncoder.drawPrimitives(
-                type: .point,
-                vertexStart: 0,
-                vertexCount: renderer.particleCount
-            )
-            
-            // Overlay AR mesh wireframe (if AR background is active)
-            backgroundRenderer.renderOverlay(renderEncoder: renderEncoder, targetTexture: colorAttachmentTexture)
-            renderEncoder.endEncoding()
-        }
-        
-        commandBuffer.commit()
-    }
-}
-
-// MARK: - Water Renderer
-class WaterRenderer: ModeRenderer {
-    internal weak var fluidRenderer: MPMFluidRenderer?
-    
-    init(fluidRenderer: MPMFluidRenderer) {
-        self.fluidRenderer = fluidRenderer
-    }
-    
-    func render(
-        renderPassDescriptor: MTLRenderPassDescriptor,
-        performCompute: Bool,
-        projectionMatrix: float4x4,
-        viewMatrix: float4x4
-    ) {
-        guard let renderer = fluidRenderer,
-              let commandBuffer = renderer.commandQueue.makeCommandBuffer() else {
-            return
-        }
-        guard let particleBuffer = self.fluidRenderer?.scene.getRenderParticleBuffer() else{
-            return
-        }
-        if performCompute {
-            renderer.compute(commandBuffer: commandBuffer)
-        }
-        
-        // Get screen size from render pass descriptor
-        guard let colorTexture = renderPassDescriptor.colorAttachments[0].texture else {
-            return
-        }
-        let screenSize = SIMD2<Float>(Float(colorTexture.width), Float(colorTexture.height))
-        
-        guard let (textures, release) = renderer.acquireTextures(for: screenSize) else {
-            return
-        }
-        // Release textures after GPU has finished using them
-        commandBuffer.addCompletedHandler { _ in release() }
-        
-        // Step 1: Render depth map
-        renderer.renderDepthMap(commandBuffer: commandBuffer, particleBuffer: particleBuffer, textures: textures)
-        
-        // Step 2: Apply bilateral filter to depth (4 iterations)
-        for _ in 0..<4 {
-            renderer.applyDepthFilter(
-                commandBuffer: commandBuffer,
-                textures: textures,
-                depthThreshold: 0.01,
-                filterRadius: 3
-            )
-        }
-        
-        // Step 3: Render thickness map
-        renderer.renderThicknessMap(commandBuffer: commandBuffer,particleBuffer: particleBuffer, textures: textures)
-        
-        // Step 4: Apply Gaussian filter to thickness (1 iteration)
-        renderer.applyThicknessFilter(commandBuffer: commandBuffer, textures: textures, filterRadius: 4)
-        
-        // Step 5: Render final fluid surface
-        let fluidUniformPointer = renderer.scene.getFluidRenderUniformBuffer().contents().bindMemory(
-            to: FluidRenderUniforms.self,
-            capacity: 1
-        )
-        
-        let texelSize = SIMD2<Float>(1.0 / textures.screenSize.x, 1.0 / textures.screenSize.y)
-        let invProjectionMatrix = projectionMatrix.inverse
-        let invViewMatrix = viewMatrix.inverse
-        
-        fluidUniformPointer[0] = FluidRenderUniforms(
-            texelSize: texelSize,
-            sphereSize: 1.0,
-            invProjectionMatrix: invProjectionMatrix,
-            projectionMatrix: projectionMatrix,
-            viewMatrix: viewMatrix,
-            invViewMatrix: invViewMatrix
-        )
-        
-        // Draw background into the same render target, then overlay fluid using framebuffer fetch in shader
-        renderer.ensureDepthBuffer(for: renderPassDescriptor, screenSize: screenSize, label: "WaterRenderDepthBuffer")
-        guard let backgroundRenderer = renderer.backgroundRenderer,let colorAttachmentTexture = renderPassDescriptor.colorAttachments[0].texture else{
-                return
-        }
-        backgroundRenderer.renderBackground(commandBuffer: commandBuffer, targetTexture: colorAttachmentTexture)
-        backgroundRenderer.updateCollisionSDFIfNeeded()
-        renderPassDescriptor.colorAttachments[0].loadAction = .load
-
-        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
-            return
-        }
-        renderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
-        
-        let fluidDepthStencilDescriptor = MTLDepthStencilDescriptor()
-        fluidDepthStencilDescriptor.depthCompareFunction = .less
-        fluidDepthStencilDescriptor.isDepthWriteEnabled = true
-        let fluidDepthStencilState = renderer.device.makeDepthStencilState(descriptor: fluidDepthStencilDescriptor)!
-        renderEncoder.setRenderPipelineState(renderer.fluidSurfacePipelineState)
-        renderEncoder.setDepthStencilState(fluidDepthStencilState)
-        renderEncoder.setVertexBuffer(renderer.scene.getFluidRenderUniformBuffer(), offset: 0, index: 0)
-        renderEncoder.setFragmentTexture(textures.depthTexture, index: 0)
-        renderEncoder.setFragmentTexture(textures.filteredThicknessTexture, index: 1)
-        renderEncoder.setFragmentTexture(textures.environmentTexture, index: 2)
-        renderEncoder.setFragmentBuffer(renderer.scene.getFluidRenderUniformBuffer(), offset: 0, index: 0)
-        renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        
-        // Overlay AR mesh wireframe (if AR background is active)
-        if let colorAttachmentTexture = renderPassDescriptor.colorAttachments[0].texture,
-           let backgroundRenderer = renderer.backgroundRenderer {
-            backgroundRenderer.renderOverlay(renderEncoder: renderEncoder, targetTexture: colorAttachmentTexture)
-        }
-        renderEncoder.endEncoding()
-        commandBuffer.commit()
-    }
-}
+// MARK: - Legacy renderer classes - moved to IntegratedRenderer
 
 // MARK: - Material Parameters
 class MaterialParameters {
@@ -337,8 +132,6 @@ class MPMFluidRenderer: NSObject {
     // MARK: - Rendering
     public var currentRenderMode: RenderMode = .particles
     public var currentParticleRenderMode: ParticleRenderMode = .pressureHeatmap
-    internal var particleRenderer: ParticleRenderer!
-    internal var waterRenderer: WaterRenderer!
     public var backgroundRenderer: BackgroundRenderer?
     weak var viewController: UIViewController?
     
@@ -445,17 +238,12 @@ class MPMFluidRenderer: NSObject {
         setupScene()  // Create scene after Metal setup
         setupParticles()
         frameIndex = 0
-        setupModeRenderers()
     }
     
     deinit {
         print("🗑️ MPMFluidRenderer deinitialized")
     }
     
-    internal func setupModeRenderers() {
-        particleRenderer = ParticleRenderer(fluidRenderer: self)
-        waterRenderer = WaterRenderer(fluidRenderer: self)
-    }
 
     internal func setupMetal() {
         guard let device = MTLCreateSystemDefaultDevice() else {
