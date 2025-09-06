@@ -38,10 +38,8 @@ class ARRenderer:NSObject {
     private var currentMeshAnchors: [ARMeshAnchor] = []
     #endif
 
-    // AR mesh wireframe buffers
+    // AR mesh wireframe buffers (using barycentric coordinates, no line indices needed)
     private var arMeshVertexBuffer: MTLBuffer?
-    private var arMeshLineIndexBuffer: MTLBuffer?
-    private var arMeshLineIndexCount: Int = 0
     public var showARMeshWireframe: Bool = true
     
     // AR mesh solid buffers
@@ -396,13 +394,10 @@ private extension ARRenderer {
     func rebuildARMeshWireBuffers() {
         guard !currentMeshAnchors.isEmpty else {
             arMeshVertexBuffer = nil
-            arMeshLineIndexBuffer = nil
-            arMeshLineIndexCount = 0
             return
         }
 
         var positions: [SIMD3<Float>] = []
-        var lineIndices: [UInt32] = []
         var base: UInt32 = 0
 
         for anchor in currentMeshAnchors {
@@ -418,18 +413,6 @@ private extension ARRenderer {
                 let world = anchor.transform.transformPoint(local)
                 positions.append(world)
             }
-
-            // Build line indices from triangle faces
-            let fCount = geom.faces.count
-            let fBuf = geom.faces.buffer
-            let fStride = MemoryLayout<UInt32>.stride * 3
-            for fi in 0..<fCount {
-                let fptr = fBuf.contents().advanced(by: fi * fStride).assumingMemoryBound(to: UInt32.self)
-                let i0 = base + fptr[0]
-                let i1 = base + fptr[1]
-                let i2 = base + fptr[2]
-                lineIndices.append(contentsOf: [i0, i1, i1, i2, i2, i0])
-            }
             base += UInt32(vCount)
         }
 
@@ -441,15 +424,8 @@ private extension ARRenderer {
         } else {
             arMeshVertexBuffer = nil
         }
-        if !lineIndices.isEmpty {
-            arMeshLineIndexBuffer = device.makeBuffer(bytes: lineIndices,
-                                                      length: lineIndices.count * MemoryLayout<UInt32>.stride,
-                                                      options: .storageModeShared)
-            arMeshLineIndexCount = lineIndices.count
-        } else {
-            arMeshLineIndexBuffer = nil
-            arMeshLineIndexCount = 0
-        }
+        
+        // No line index buffer needed when using barycentric coordinates
     }
     
     func rebuildARMeshSolidBuffers() {
