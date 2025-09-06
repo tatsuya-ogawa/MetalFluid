@@ -134,7 +134,7 @@ class ARRenderer:NSObject {
             }
         }
 
-        // AR Mesh Wireframe Pipeline
+        // AR Mesh Wireframe Pipeline with barycentric coordinates
         if let vertexFunction = library.makeFunction(name: "arMeshWireVertex"),
            let fragmentFunction = library.makeFunction(name: "arMeshWireFragment") {
             let pipelineDescriptor = MTLRenderPipelineDescriptor()
@@ -142,6 +142,12 @@ class ARRenderer:NSObject {
             pipelineDescriptor.fragmentFunction = fragmentFunction
             pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+            
+            // Check if device supports barycentric coordinates
+            if !device.supportsShaderBarycentricCoordinates{
+                fatalError("not supportsShaderBarycentricCoordinates")
+            }
+            
             do {
                 arMeshWirePipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
                 let depthDesc = MTLDepthStencilDescriptor()
@@ -783,19 +789,22 @@ extension ARRenderer {
     func renderARMeshWireframeInEncoder(renderEncoder: MTLRenderCommandEncoder,
                                         viewportSize: CGSize,
                                         orientation: UIInterfaceOrientation,
-                                        color: SIMD4<Float> = SIMD4<Float>(0.0, 1.0, 1.0, 1.0)) {
+                                        color: SIMD4<Float> = SIMD4<Float>(0.0, 1.0, 1.0, 1.0),
+                                        lineWidth: Float = 0.02) {
         #if canImport(ARKit)
+        // Use solid triangle buffer for barycentric coordinate wireframe rendering
         guard showARMeshWireframe,
               let pipeline = arMeshWirePipelineState,
               let depthState = arMeshWireDepthStencilState,
-              let vbuf = arMeshVertexBuffer,
-              let ibuf = arMeshLineIndexBuffer,
-              arMeshLineIndexCount > 0 else { return }
+              let vbuf = arMeshSolidVertexBuffer,
+              let ibuf = arMeshSolidIndexBuffer,
+              arMeshSolidIndexCount > 0 else { return }
         if #available(iOS 11.0, macOS 10.13, *) {
             guard let (proj, view) = getCameraMatrices(viewportSize: viewportSize, orientation: orientation) else { return }
             var projection = proj
             var viewM = view
             var wireColor = color
+            var wireLineWidth = lineWidth
 
             renderEncoder.setRenderPipelineState(pipeline)
             renderEncoder.setDepthStencilState(depthState)
@@ -803,8 +812,10 @@ extension ARRenderer {
             renderEncoder.setVertexBytes(&projection, length: MemoryLayout<float4x4>.stride, index: 1)
             renderEncoder.setVertexBytes(&viewM, length: MemoryLayout<float4x4>.stride, index: 2)
             renderEncoder.setFragmentBytes(&wireColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
-            renderEncoder.drawIndexedPrimitives(type: .line,
-                                               indexCount: arMeshLineIndexCount,
+            renderEncoder.setFragmentBytes(&wireLineWidth, length: MemoryLayout<Float>.stride, index: 1)
+            // Draw triangles instead of lines for barycentric coordinate wireframe
+            renderEncoder.drawIndexedPrimitives(type: .triangle,
+                                               indexCount: arMeshSolidIndexCount,
                                                indexType: .uint32,
                                                indexBuffer: ibuf,
                                                indexBufferOffset: 0)

@@ -51,18 +51,37 @@ fragment float4 cameraBackgroundFragment(CameraVertexOut in [[stage_in]],
 
 // MARK: - AR Mesh Wireframe Shaders
 
-// AR Mesh Vertex Shader
-vertex float4 arMeshWireVertex(const device float3* position [[buffer(0)]],
-                              constant float4x4& projectionMatrix [[buffer(1)]],
-                              constant float4x4& viewMatrix [[buffer(2)]],
-                              uint vid [[vertex_id]]) {
+struct WireframeVertexOut {
+    float4 position [[position]];
+};
+
+// AR Mesh Wireframe Vertex Shader with barycentric coordinates
+vertex WireframeVertexOut arMeshWireVertex(const device float3* position [[buffer(0)]],
+                                          constant float4x4& projectionMatrix [[buffer(1)]],
+                                          constant float4x4& viewMatrix [[buffer(2)]],
+                                          uint vid [[vertex_id]]) {
+    WireframeVertexOut out;
     float4 worldPosition = float4(position[vid], 1.0);
-    return projectionMatrix * viewMatrix * worldPosition;
+    out.position = projectionMatrix * viewMatrix * worldPosition;
+    return out;
 }
 
-// AR Mesh Fragment Shader
-fragment float4 arMeshWireFragment(constant float4& color [[buffer(0)]]) {
-    return color;
+// AR Mesh Wireframe Fragment Shader using barycentric coordinates
+fragment float4 arMeshWireFragment(WireframeVertexOut in [[stage_in]],
+                                  float3 barycentricCoords [[barycentric_coord]],
+                                  constant float4& color [[buffer(0)]],
+                                  constant float& lineWidth [[buffer(1)]]) {
+    // Calculate distance from edges using barycentric coordinates
+    float edgeDistance = min(barycentricCoords.x, 
+                            min(barycentricCoords.y, barycentricCoords.z));
+    
+    // Create anti-aliased wireframe effect
+    if(edgeDistance > lineWidth){
+        discard_fragment();
+    }
+    
+    // Return wireframe color with calculated alpha
+    return float4(color.rgb, color.a);
 }
 
 // MARK: - AR Mesh Solid Shaders
