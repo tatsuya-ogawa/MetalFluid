@@ -290,30 +290,7 @@ extension MPMFluidRenderer {
     }
     
     
-    // MARK: - Main Render Function
-    func render(
-        renderPassDescriptor: MTLRenderPassDescriptor,
-        performCompute: Bool,
-        projectionMatrix: float4x4,
-        viewMatrix: float4x4
-    ) {
-        switch currentRenderMode {
-        case .particles:
-            particleRenderer.render(
-                renderPassDescriptor: renderPassDescriptor,
-                performCompute: performCompute,
-                projectionMatrix: projectionMatrix,
-                viewMatrix: viewMatrix
-            )
-        case .water:
-            waterRenderer.render(
-                renderPassDescriptor: renderPassDescriptor,
-                performCompute: performCompute,
-                projectionMatrix: projectionMatrix,
-                viewMatrix: viewMatrix
-            )
-        }        
-    }
+    // MARK: - Legacy render function - replaced by IntegratedRenderer
     
     // MARK: - AR Rendering Functions
     

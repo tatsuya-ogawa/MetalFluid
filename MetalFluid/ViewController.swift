@@ -22,6 +22,7 @@ class ViewController: UIViewController {
 
     private var metalView: MTKView!
     private var fluidRenderer: MPMFluidRenderer!
+    private var integratedRenderer: IntegratedRenderer!
     private var lastFrameTime: CFTimeInterval = 0
     
     // Camera properties for 3D viewing
@@ -183,6 +184,13 @@ class ViewController: UIViewController {
             particleCount: Int(initialParticleCount), 
             gridSize: Int(initialGridSize), 
             gridHeightMultiplier: initialGridHeightMultiplier
+        )
+        
+        // Create IntegratedRenderer
+        integratedRenderer = IntegratedRenderer(
+            device: fluidRenderer.device,
+            commandQueue: fluidRenderer.commandQueue,
+            fluidRenderer: fluidRenderer
         )
         
         // Install default background renderer
@@ -1586,8 +1594,8 @@ extension ViewController: MTKViewDelegate {
             return
         }
         
-        // Use the new render mode switching system with proper matrices
-        fluidRenderer.render(
+        // Use IntegratedRenderer as facade for all rendering
+        integratedRenderer.render(
             renderPassDescriptor: renderPassDescriptor,
             performCompute: performStep,
             projectionMatrix: projectionMatrix,
