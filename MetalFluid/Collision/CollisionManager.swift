@@ -424,10 +424,36 @@ class CollisionManager {
             collisionUniformBuffer: item.collisionUniformBuffer
         )
     }
+    
+    private func renderMeshInEncoderForAR(item: CollisionItem, 
+                                        renderEncoder: MTLRenderCommandEncoder, 
+                                        projectionMatrix: float4x4, 
+                                        viewMatrix: float4x4) {
+        meshRenderer.renderInEncoderForAR(
+            item: item.meshRendererItem,
+            renderEncoder: renderEncoder,
+            projectionMatrix: projectionMatrix,
+            viewMatrix: viewMatrix,
+            collisionUniformBuffer: item.collisionUniformBuffer
+        )
+    }
+    
     func renderMeshesInEncoder(renderEncoder: MTLRenderCommandEncoder,
                              vertexUniformBuffer: MTLBuffer) {
         for item in items {
             self.renderMeshInEncoder(item: item, renderEncoder: renderEncoder, vertexUniformBuffer: vertexUniformBuffer)
+        }
+    }
+    
+    // AR mode rendering - uses AR frame matrices instead of fluid scene matrices
+    func renderMeshesInEncoderForAR(renderEncoder: MTLRenderCommandEncoder,
+                                   projectionMatrix: float4x4,
+                                   viewMatrix: float4x4) {
+        for item in items {
+            self.renderMeshInEncoderForAR(item: item, 
+                                        renderEncoder: renderEncoder, 
+                                        projectionMatrix: projectionMatrix, 
+                                        viewMatrix: viewMatrix)
         }
     }
     private var internalItems:[CollisionItem] = []

@@ -21,10 +21,12 @@ extension BackgroundRenderer {
 // MARK: - AR Adapter
 final class ARBackgroundRendererAdapter: BackgroundRenderer {
     private let arRenderer: ARRenderer
+    private weak var fluidRenderer: MPMFluidRenderer?
     var isTransparent: Bool
     
-    init(arRenderer: ARRenderer, isTransparent: Bool) {
+    init(arRenderer: ARRenderer, fluidRenderer: MPMFluidRenderer? = nil, isTransparent: Bool) {
         self.arRenderer = arRenderer
+        self.fluidRenderer = fluidRenderer
         self.isTransparent = isTransparent
     }
     
@@ -57,6 +59,12 @@ final class ARBackgroundRendererAdapter: BackgroundRenderer {
             }
             return .portrait
         }()
+        
+        // Get AR frame matrices and pass them to FluidRenderer for collision alignment
+        if let (projMatrix, viewMatrix) = arRenderer.getCameraMatrices(viewportSize: viewportSize, orientation: orientation) {
+            fluidRenderer?.setARFrameMatrices(projectionMatrix: projMatrix, viewMatrix: viewMatrix)
+        }
+        
         arRenderer.renderARMeshWireframeInEncoder(renderEncoder: renderEncoder, viewportSize: viewportSize, orientation: orientation)
     }
 }

@@ -306,6 +306,11 @@ class MPMFluidRenderer: NSObject {
     internal var isComputing: Bool = false
     public var collisionManager: CollisionManager?
     
+    // AR mode detection for collision rendering
+    public var isARModeActive: Bool = false
+    private var arProjectionMatrix: float4x4?
+    private var arViewMatrix: float4x4?
+    
     // MARK: - Texture Ring Buffer
     internal let maxTextureBuffers: Int = 3
     internal var textureRing: [FluidRenderTextures] = []
@@ -598,17 +603,48 @@ class MPMFluidRenderer: NSObject {
     }
             
     // Helper method to render collision mesh within an existing render encoder
-    internal func renderCollisionMeshInEncoder(renderEncoder: MTLRenderCommandEncoder) {
+    internal func renderCollisionMeshInEncoder(renderEncoder: MTLRenderCommandEncoder, 
+                                              arProjectionMatrix: float4x4? = nil, 
+                                              arViewMatrix: float4x4? = nil) {
         guard let collisionManager = collisionManager,
               collisionManager.isMeshVisible() else {
             return
         }
         
-        // Render collision mesh using the existing encoder
-        collisionManager.renderMeshesInEncoder(
-            renderEncoder: renderEncoder,
-            vertexUniformBuffer: scene.getVertexUniformBuffer()
-        )
+        // Check if we're in AR mode and have AR matrices available
+        if isARModeActive, 
+           let projMatrix = arProjectionMatrix, 
+           let viewMatrix = arViewMatrix {
+            // Use AR frame matrices (bypass fluid matrices)
+            collisionManager.renderMeshesInEncoderForAR(
+                renderEncoder: renderEncoder,
+                projectionMatrix: projMatrix,
+                viewMatrix: viewMatrix
+            )
+        } else {
+            // Use standard fluid scene matrices
+            collisionManager.renderMeshesInEncoder(
+                renderEncoder: renderEncoder,
+                vertexUniformBuffer: scene.getVertexUniformBuffer()
+            )
+        }
+    }
+    
+    // MARK: - AR Mode Support
+    
+    /// Set AR frame matrices for collision mesh alignment
+    public func setARFrameMatrices(projectionMatrix: float4x4, viewMatrix: float4x4) {
+        arProjectionMatrix = projectionMatrix
+        arViewMatrix = viewMatrix
+    }
+    
+    /// Enable/disable AR mode
+    public func setARMode(_ enabled: Bool) {
+        isARModeActive = enabled
+        if !enabled {
+            arProjectionMatrix = nil
+            arViewMatrix = nil
+        }
     }
     
     // --- Add grid debug buffer and methods ---

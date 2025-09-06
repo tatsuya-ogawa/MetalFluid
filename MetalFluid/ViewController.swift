@@ -1713,8 +1713,12 @@ extension ViewController{
             if let ar = arRenderer {
                 ar.startARSession()
                 savedBackgroundRenderer = fluidRenderer.backgroundRenderer
-                fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, isTransparent: true)
+                fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, fluidRenderer: fluidRenderer, isTransparent: true)
             }
+            
+            // Enable AR mode in FluidRenderer for collision mesh alignment
+            fluidRenderer.setARMode(true)
+            
             arToggleButton.setTitle("AR: ON", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
         } else {
@@ -1726,6 +1730,10 @@ extension ViewController{
             } else {
                 installDefaultBackgroundRenderer()
             }
+            
+            // Disable AR mode in FluidRenderer
+            fluidRenderer.setARMode(false)
+            
             arToggleButton.setTitle("AR: OFF", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
         }

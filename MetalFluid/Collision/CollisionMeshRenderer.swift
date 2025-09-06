@@ -256,4 +256,62 @@ public class CollisionMeshRenderer {
             )
         }
     }
+    
+    // AR mode rendering - uses AR frame matrices directly
+    func renderInEncoderForAR(item: CollisionMeshRendererItem,
+                             renderEncoder: MTLRenderCommandEncoder,
+                             projectionMatrix: float4x4,
+                             viewMatrix: float4x4,
+                             collisionUniformBuffer: MTLBuffer) {
+        
+        guard isVisible,
+              let depthStencilState = depthStencilState,
+              let meshBuffer = item.meshBuffer,
+              let meshIndexBuffer = item.meshIndexBuffer,
+              let meshUniformsBuffer = item.meshUniformsBuffer,
+              item.indexCount > 0 else {
+            return
+        }
+        
+        // Additional check for wireframe mode
+        if item.wireframeMode && (item.wireframeIndexBuffer == nil || item.wireframeIndexCount == 0) {
+            return
+        }
+        
+        // Set up rendering pipeline
+        let pipelineState = item.wireframeMode ? wireframePipelineState : solidPipelineState
+        renderEncoder.setRenderPipelineState(pipelineState!)
+        renderEncoder.setDepthStencilState(depthStencilState)
+        
+        // Set vertex data
+        renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
+        
+        // Set AR matrices directly (bypassing fluid vertex uniform buffer)
+        var proj = projectionMatrix
+        var view = viewMatrix
+        renderEncoder.setVertexBytes(&proj, length: MemoryLayout<float4x4>.stride, index: 1)
+        renderEncoder.setVertexBytes(&view, length: MemoryLayout<float4x4>.stride, index: 2)
+        
+        renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
+        renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
+        
+        // Draw based on mode
+        if item.wireframeMode {
+            renderEncoder.drawIndexedPrimitives(
+                type: .line,
+                indexCount: item.wireframeIndexCount,
+                indexType: .uint32,
+                indexBuffer: item.wireframeIndexBuffer!,
+                indexBufferOffset: 0
+            )
+        } else {
+            renderEncoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: item.indexCount,
+                indexType: .uint32,
+                indexBuffer: meshIndexBuffer,
+                indexBufferOffset: 0
+            )
+        }
+    }
 }
