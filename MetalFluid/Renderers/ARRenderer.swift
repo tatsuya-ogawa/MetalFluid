@@ -44,7 +44,7 @@ class ARRenderer:NSObject {
     
     // Tap position for mesh highlighting
     private var tapWorldPosition: SIMD3<Float>? = nil
-    private var tapHighlightRadius: Float = 0.5 // Default 50cm radius
+    private var tapHighlightBoxSize: SIMD3<Float> = SIMD3<Float>(0.5, 0.5, 0.5) // Default 50cm cube
     
     // AR mesh solid buffers
     private var arMeshSolidVertexBuffer: MTLBuffer?
@@ -383,11 +383,11 @@ class ARRenderer:NSObject {
         print("🔧 AR Mesh rendering enabled: \(enabled)")
     }
     
-    // Set tap position for mesh highlighting (debug purpose)
-    public func setTapHighlight(at position: SIMD3<Float>, radius: Float = 0.5) {
+    // Set tap position for mesh highlighting (debug purpose) - uses bounding box like SDF
+    public func setTapHighlight(at position: SIMD3<Float>, boxSize: SIMD3<Float> = SIMD3<Float>(0.5, 0.5, 0.5)) {
         tapWorldPosition = position
-        tapHighlightRadius = radius
-        print("🎯 Debug: Tap highlight set at \(position) with radius \(radius)")
+        tapHighlightBoxSize = boxSize
+        print("🎯 Debug: Tap highlight set at \(position) with box size \(boxSize)")
     }
     
     // Clear tap highlight
@@ -807,12 +807,12 @@ extension ARRenderer {
             renderEncoder.setFragmentBytes(&wireColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             renderEncoder.setFragmentBytes(&wireLineWidth, length: MemoryLayout<Float>.stride, index: 1)
             
-            // Pass tap highlight parameters to shader
+            // Pass tap highlight parameters to shader (bounding box like SDF)
             var tapPos = tapWorldPosition ?? SIMD3<Float>(0, 0, 0)
-            var tapRad = tapHighlightRadius
+            var tapBoxSz = tapHighlightBoxSize
             var hasTap = tapWorldPosition != nil
             renderEncoder.setFragmentBytes(&tapPos, length: MemoryLayout<SIMD3<Float>>.stride, index: 2)
-            renderEncoder.setFragmentBytes(&tapRad, length: MemoryLayout<Float>.stride, index: 3)
+            renderEncoder.setFragmentBytes(&tapBoxSz, length: MemoryLayout<SIMD3<Float>>.stride, index: 3)
             renderEncoder.setFragmentBytes(&hasTap, length: MemoryLayout<Bool>.stride, index: 4)
             
             // Draw triangles instead of lines for barycentric coordinate wireframe

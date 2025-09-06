@@ -73,19 +73,20 @@ fragment float4 arMeshWireFragment(WireframeVertexOut in [[stage_in]],
                                   float3 barycentricCoords [[barycentric_coord]],
                                   constant float4& color [[buffer(0)]],
                                   constant float& lineWidth [[buffer(1)]],
-                                  constant float3& tapPosition [[buffer(2)]],
-                                  constant float& tapRadius [[buffer(3)]],
+                                  constant float3& tapCenter [[buffer(2)]],
+                                  constant float3& tapBoxSize [[buffer(3)]],
                                   constant bool& hasTapHighlight [[buffer(4)]]) {
     
-    // Calculate distance from tap position (for debug highlighting)
-    float distanceFromTap = INFINITY;
+    // Check if we're within tap highlight bounding box (same as SDF bounding box)
+    bool inTapArea = false;
     if (hasTapHighlight) {
-        // Use world position passed from vertex shader
-        distanceFromTap = length(in.worldPosition - tapPosition);
+        float3 halfSize = tapBoxSize * 0.5f;
+        float3 minBounds = tapCenter - halfSize;
+        float3 maxBounds = tapCenter + halfSize;
+        
+        // Check if world position is inside the bounding box
+        inTapArea = all(in.worldPosition >= minBounds) && all(in.worldPosition <= maxBounds);
     }
-    
-    // Check if we're within tap highlight radius
-    bool inTapArea = hasTapHighlight && distanceFromTap <= tapRadius;
     
     // Calculate distance from edges using barycentric coordinates
     float edgeDistance = min(barycentricCoords.x, 

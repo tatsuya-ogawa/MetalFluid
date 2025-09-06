@@ -1434,8 +1434,9 @@ class ViewController: UIViewController {
                 // Extract mesh triangles around tap point and create collision
                 setupCollisionFromARMesh(arRenderer: arRenderer, tapWorldPosition: hitPosition)
                 
-                // Set tap highlight for debug visualization
-                arRenderer.setTapHighlight(at: hitPosition, radius: 0.5)
+                // Set tap highlight for debug visualization (same bounding box as SDF)
+                let boxSize = SIMD3<Float>(0.5, 0.5, 0.5) // Same as collision bounding box
+                arRenderer.setTapHighlight(at: hitPosition, boxSize: boxSize)
                 
                 // Show visual feedback
                 showARTapFeedback(at: tapPoint)
