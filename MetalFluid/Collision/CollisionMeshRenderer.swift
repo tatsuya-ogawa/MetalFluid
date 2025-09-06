@@ -300,7 +300,13 @@ public class CollisionMeshRenderer {
         renderEncoder.setVertexBytes(&arVertexUniforms, length: MemoryLayout<VertexShaderUniforms>.stride, index: 1)
         
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
-        renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
+        
+        // Create AR collision uniforms with identity transform (AR meshes are already in world coordinates)
+        let originalUniforms = collisionUniformBuffer.contents().bindMemory(to: CollisionUniforms.self, capacity: 1)[0]
+        var arCollisionUniforms = originalUniforms
+        arCollisionUniforms.collisionTransform = matrix_identity_float4x4
+        arCollisionUniforms.collisionInvTransform = matrix_identity_float4x4
+        renderEncoder.setVertexBytes(&arCollisionUniforms, length: MemoryLayout<CollisionUniforms>.stride, index: 3)
         
         // Draw based on mode
         if item.wireframeMode {
