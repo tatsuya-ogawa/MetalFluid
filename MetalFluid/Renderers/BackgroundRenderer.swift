@@ -60,10 +60,7 @@ final class ARBackgroundRendererAdapter: BackgroundRenderer {
             return .portrait
         }()
         
-        // Get AR frame matrices and pass them to FluidRenderer for collision alignment
-        if let (projMatrix, viewMatrix) = arRenderer.getCameraMatrices(viewportSize: viewportSize, orientation: orientation) {
-            fluidRenderer?.setARFrameMatrices(projectionMatrix: projMatrix, viewMatrix: viewMatrix)
-        }
+        // AR frame matrices are now handled by IntegratedRenderer
         
         arRenderer.renderARMeshWireframeInEncoder(renderEncoder: renderEncoder, viewportSize: viewportSize, orientation: orientation)
     }

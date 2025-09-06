@@ -17,7 +17,9 @@ class IntegratedRenderer {
         renderPassDescriptor: MTLRenderPassDescriptor,
         performCompute: Bool,
         projectionMatrix: float4x4,
-        viewMatrix: float4x4
+        viewMatrix: float4x4,
+        cameraProjectionMatrix: float4x4? = nil,
+        cameraViewMatrix: float4x4? = nil
     ) {
         guard let fluidRenderer = fluidRenderer,
               let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -48,7 +50,9 @@ class IntegratedRenderer {
         // 5. Collision render
         renderCollision(
             commandBuffer: commandBuffer,
-            renderPassDescriptor: renderPassDescriptor
+            renderPassDescriptor: renderPassDescriptor,
+            cameraProjectionMatrix: cameraProjectionMatrix,
+            cameraViewMatrix: cameraViewMatrix
         )
         
         // 6. Overlay render (AR wireframe, etc.)
@@ -232,15 +236,28 @@ class IntegratedRenderer {
     
     private func renderCollision(
         commandBuffer: MTLCommandBuffer,
-        renderPassDescriptor: MTLRenderPassDescriptor
+        renderPassDescriptor: MTLRenderPassDescriptor,
+        cameraProjectionMatrix: float4x4? = nil,
+        cameraViewMatrix: float4x4? = nil
     ) {
         guard let fluidRenderer = fluidRenderer,
               let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
             return
         }
         
-        // Render collision mesh only
-        fluidRenderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+        // Render collision mesh with appropriate matrices
+        if let camProjMatrix = cameraProjectionMatrix,
+           let camViewMatrix = cameraViewMatrix {
+            // Use camera world matrices for AR mode
+            fluidRenderer.renderCollisionMeshInEncoder(
+                renderEncoder: renderEncoder,
+                arProjectionMatrix: camProjMatrix,
+                arViewMatrix: camViewMatrix
+            )
+        } else {
+            // Use fluid coordinate matrices for normal mode
+            fluidRenderer.renderCollisionMeshInEncoder(renderEncoder: renderEncoder)
+        }
         
         renderEncoder.endEncoding()
     }

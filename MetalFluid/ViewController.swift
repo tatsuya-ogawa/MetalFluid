@@ -1567,11 +1567,20 @@ extension ViewController: MTKViewDelegate {
         // Create transformation matrices (use AR camera when AR is enabled)
         var baseViewMatrix = getViewMatrix()
         var projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+        // Get AR camera matrices if available
+        var cameraProjectionMatrix: float4x4? = nil
+        var cameraViewMatrix: float4x4? = nil
+        
         if isAREnabled {
             #if canImport(ARKit)
             if #available(iOS 11.0, macOS 10.13, *) {
                 let orientation = view.window?.windowScene?.interfaceOrientation ?? .portrait
                 if let (proj, viewM) = arRenderer?.getCameraMatrices(viewportSize: metalView.bounds.size, orientation: orientation) {
+                    // Store raw camera matrices for collision rendering
+                    cameraProjectionMatrix = proj
+                    cameraViewMatrix = viewM
+                    
+                    // Also use for fluid coordinates (existing behavior)
                     projectionMatrix = proj
                     baseViewMatrix = viewM
                 }
@@ -1599,7 +1608,9 @@ extension ViewController: MTKViewDelegate {
             renderPassDescriptor: renderPassDescriptor,
             performCompute: performStep,
             projectionMatrix: projectionMatrix,
-            viewMatrix: viewMatrix
+            viewMatrix: viewMatrix,
+            cameraProjectionMatrix: cameraProjectionMatrix,
+            cameraViewMatrix: cameraViewMatrix
         )
 
         // reset manual step after issuing one compute pass
@@ -1724,8 +1735,7 @@ extension ViewController{
                 fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, fluidRenderer: fluidRenderer, isTransparent: true)
             }
             
-            // Enable AR mode in FluidRenderer for collision mesh alignment
-            fluidRenderer.setARMode(true)
+            // AR mode alignment now handled by IntegratedRenderer
             
             arToggleButton.setTitle("AR: ON", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
@@ -1739,8 +1749,7 @@ extension ViewController{
                 installDefaultBackgroundRenderer()
             }
             
-            // Disable AR mode in FluidRenderer
-            fluidRenderer.setARMode(false)
+            // AR mode alignment now handled by IntegratedRenderer
             
             arToggleButton.setTitle("AR: OFF", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)

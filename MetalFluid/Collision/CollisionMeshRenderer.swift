@@ -286,11 +286,18 @@ public class CollisionMeshRenderer {
         // Set vertex data
         renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
         
-        // Set AR matrices directly (bypassing fluid vertex uniform buffer)
-        var proj = projectionMatrix
-        var view = viewMatrix
-        renderEncoder.setVertexBytes(&proj, length: MemoryLayout<float4x4>.stride, index: 1)
-        renderEncoder.setVertexBytes(&view, length: MemoryLayout<float4x4>.stride, index: 2)
+        // Create AR vertex uniforms with minimal required fields
+        var arVertexUniforms = VertexShaderUniforms(
+            projectionMatrix: projectionMatrix,
+            viewMatrix: viewMatrix,
+            gridSpacing: 1.0,  // Not used in collision rendering
+            physicalDomainOrigin: SIMD3<Float>(0, 0, 0),  // Not used
+            gridResolution: SIMD3<Int32>(0, 0, 0),  // Not used
+            rest_density: 1.0,  // Not used
+            particleSizeMultiplier: 1.0,  // Not used
+            sphere_size: 1.0  // Not used
+        )
+        renderEncoder.setVertexBytes(&arVertexUniforms, length: MemoryLayout<VertexShaderUniforms>.stride, index: 1)
         
         renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
         renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)

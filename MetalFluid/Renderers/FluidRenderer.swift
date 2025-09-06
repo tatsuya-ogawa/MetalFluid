@@ -101,10 +101,7 @@ class MPMFluidRenderer: NSObject {
     internal var isComputing: Bool = false
     public var collisionManager: CollisionManager?
     
-    // AR mode detection for collision rendering
-    public var isARModeActive: Bool = false
-    private var arProjectionMatrix: float4x4?
-    private var arViewMatrix: float4x4?
+    // AR mode detection removed - handled by IntegratedRenderer
     
     // MARK: - Texture Ring Buffer
     internal let maxTextureBuffers: Int = 3
@@ -399,11 +396,10 @@ class MPMFluidRenderer: NSObject {
             return
         }
         
-        // Check if we're in AR mode and have AR matrices available
-        if isARModeActive, 
-           let projMatrix = arProjectionMatrix, 
+        // Use AR matrices if provided, otherwise use fluid scene matrices
+        if let projMatrix = arProjectionMatrix, 
            let viewMatrix = arViewMatrix {
-            // Use AR frame matrices (bypass fluid matrices)
+            // Use camera world matrices for AR mode
             collisionManager.renderMeshesInEncoderForAR(
                 renderEncoder: renderEncoder,
                 projectionMatrix: projMatrix,
@@ -418,22 +414,7 @@ class MPMFluidRenderer: NSObject {
         }
     }
     
-    // MARK: - AR Mode Support
-    
-    /// Set AR frame matrices for collision mesh alignment
-    public func setARFrameMatrices(projectionMatrix: float4x4, viewMatrix: float4x4) {
-        arProjectionMatrix = projectionMatrix
-        arViewMatrix = viewMatrix
-    }
-    
-    /// Enable/disable AR mode
-    public func setARMode(_ enabled: Bool) {
-        isARModeActive = enabled
-        if !enabled {
-            arProjectionMatrix = nil
-            arViewMatrix = nil
-        }
-    }
+    // MARK: - AR Mode Support removed - handled by IntegratedRenderer
     
     // --- Add grid debug buffer and methods ---
 //    public var debugGridBuffer: MTLBuffer!
