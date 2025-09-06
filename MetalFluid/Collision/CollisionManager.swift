@@ -413,17 +413,6 @@ class CollisionManager {
         self.meshRenderer = CollisionMeshRenderer(device: device)
         self.representativeItem = CollisionItem(device: device)
     }
-    private func renderMesh(item:CollisionItem,renderPassDescriptor: MTLRenderPassDescriptor,
-                           commandBuffer: MTLCommandBuffer,
-                           vertexUniformBuffer: MTLBuffer) {
-        meshRenderer.render(
-            item:item.meshRendererItem,
-            renderPassDescriptor: renderPassDescriptor,
-            commandBuffer: commandBuffer,
-            vertexUniformBuffer: vertexUniformBuffer,
-            collisionUniformBuffer: item.collisionUniformBuffer
-        )
-    }
     
     // New method to render within an existing render encoder
     private func renderMeshInEncoder(item:CollisionItem,renderEncoder: MTLRenderCommandEncoder,
