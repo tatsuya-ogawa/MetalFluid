@@ -53,6 +53,7 @@ fragment float4 cameraBackgroundFragment(CameraVertexOut in [[stage_in]],
 
 struct WireframeVertexOut {
     float4 position [[position]];
+    float3 worldPosition;
 };
 
 // AR Mesh Wireframe Vertex Shader with barycentric coordinates
@@ -63,6 +64,7 @@ vertex WireframeVertexOut arMeshWireVertex(const device float3* position [[buffe
     WireframeVertexOut out;
     float4 worldPosition = float4(position[vid], 1.0);
     out.position = projectionMatrix * viewMatrix * worldPosition;
+    out.worldPosition = position[vid]; // Pass world position to fragment shader
     return out;
 }
 
@@ -70,18 +72,42 @@ vertex WireframeVertexOut arMeshWireVertex(const device float3* position [[buffe
 fragment float4 arMeshWireFragment(WireframeVertexOut in [[stage_in]],
                                   float3 barycentricCoords [[barycentric_coord]],
                                   constant float4& color [[buffer(0)]],
-                                  constant float& lineWidth [[buffer(1)]]) {
+                                  constant float& lineWidth [[buffer(1)]],
+                                  constant float3& tapPosition [[buffer(2)]],
+                                  constant float& tapRadius [[buffer(3)]],
+                                  constant bool& hasTapHighlight [[buffer(4)]]) {
+    
+    // Calculate distance from tap position (for debug highlighting)
+    float distanceFromTap = INFINITY;
+    if (hasTapHighlight) {
+        // Use world position passed from vertex shader
+        distanceFromTap = length(in.worldPosition - tapPosition);
+    }
+    
+    // Check if we're within tap highlight radius
+    bool inTapArea = hasTapHighlight && distanceFromTap <= tapRadius;
+    
     // Calculate distance from edges using barycentric coordinates
     float edgeDistance = min(barycentricCoords.x, 
                             min(barycentricCoords.y, barycentricCoords.z));
     
-    // Create anti-aliased wireframe effect
-    if(edgeDistance > lineWidth){
+    // Adjust line width and color based on tap area
+    float adjustedLineWidth = lineWidth;
+    float4 finalColor = color;
+    
+    if (inTapArea) {
+        // Inside tap area: make lines 3x thicker and change color to orange
+        adjustedLineWidth = lineWidth * 3.0;
+        finalColor = float4(1.0, 0.5, 0.0, color.a); // Orange debug color
+    }
+    
+    // Create anti-aliased wireframe effect with adjusted line width
+    if(edgeDistance > adjustedLineWidth){
         discard_fragment();
     }
     
-    // Return wireframe color with calculated alpha
-    return float4(color.rgb, color.a);
+    // Return wireframe color (normal or highlight)
+    return finalColor;
 }
 
 // MARK: - AR Mesh Solid Shaders

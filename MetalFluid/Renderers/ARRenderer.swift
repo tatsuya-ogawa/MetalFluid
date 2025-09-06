@@ -42,6 +42,10 @@ class ARRenderer:NSObject {
     private var arMeshVertexBuffer: MTLBuffer?
     public var showARMeshWireframe: Bool = true
     
+    // Tap position for mesh highlighting
+    private var tapWorldPosition: SIMD3<Float>? = nil
+    private var tapHighlightRadius: Float = 0.5 // Default 50cm radius
+    
     // AR mesh solid buffers
     private var arMeshSolidVertexBuffer: MTLBuffer?
     private var arMeshSolidNormalBuffer: MTLBuffer?
@@ -377,6 +381,19 @@ class ARRenderer:NSObject {
         showARMeshWireframe = enabled
         showARMeshSolid = enabled
         print("🔧 AR Mesh rendering enabled: \(enabled)")
+    }
+    
+    // Set tap position for mesh highlighting (debug purpose)
+    public func setTapHighlight(at position: SIMD3<Float>, radius: Float = 0.5) {
+        tapWorldPosition = position
+        tapHighlightRadius = radius
+        print("🎯 Debug: Tap highlight set at \(position) with radius \(radius)")
+    }
+    
+    // Clear tap highlight
+    public func clearTapHighlight() {
+        tapWorldPosition = nil
+        print("🎯 Debug: Tap highlight cleared")
     }
     
     public var isCameraRenderingEnabled = true
@@ -789,6 +806,15 @@ extension ARRenderer {
             renderEncoder.setVertexBytes(&viewM, length: MemoryLayout<float4x4>.stride, index: 2)
             renderEncoder.setFragmentBytes(&wireColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             renderEncoder.setFragmentBytes(&wireLineWidth, length: MemoryLayout<Float>.stride, index: 1)
+            
+            // Pass tap highlight parameters to shader
+            var tapPos = tapWorldPosition ?? SIMD3<Float>(0, 0, 0)
+            var tapRad = tapHighlightRadius
+            var hasTap = tapWorldPosition != nil
+            renderEncoder.setFragmentBytes(&tapPos, length: MemoryLayout<SIMD3<Float>>.stride, index: 2)
+            renderEncoder.setFragmentBytes(&tapRad, length: MemoryLayout<Float>.stride, index: 3)
+            renderEncoder.setFragmentBytes(&hasTap, length: MemoryLayout<Bool>.stride, index: 4)
+            
             // Draw triangles instead of lines for barycentric coordinate wireframe
             renderEncoder.drawIndexedPrimitives(type: .triangle,
                                                indexCount: arMeshSolidIndexCount,

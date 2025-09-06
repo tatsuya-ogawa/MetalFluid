@@ -1434,6 +1434,9 @@ class ViewController: UIViewController {
                 // Extract mesh triangles around tap point and create collision
                 setupCollisionFromARMesh(arRenderer: arRenderer, tapWorldPosition: hitPosition)
                 
+                // Set tap highlight for debug visualization
+                arRenderer.setTapHighlight(at: hitPosition, radius: 0.5)
+                
                 // Show visual feedback
                 showARTapFeedback(at: tapPoint)
                 
@@ -1472,6 +1475,12 @@ class ViewController: UIViewController {
         worldYaw = 0.0
         worldPitch = 0.0
         worldScale = 1.0
+        
+        // Clear tap highlight when double tapping
+        if let arRenderer = arRenderer {
+            arRenderer.clearTapHighlight()
+        }
+        
         // Coefficients updated, no direct application to renderer
     }
 
