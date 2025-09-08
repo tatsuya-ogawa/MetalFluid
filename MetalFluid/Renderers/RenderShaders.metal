@@ -147,17 +147,18 @@ vertex DepthVertexOut vs_depth(
     uint instance_id [[instance_id]]
 ) {
     DepthVertexOut out;
+    float sphere_size = SPHERE_SIZE_BASE * uniforms.particleSizeMultiplier;
     
     // Get corner position for billboard quad
     float2 corner_pos = cornerPositions[vertex_id];
-    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    float3 corner = float3(corner_pos * sphere_size, 0.0);
     out.uv = corner_pos + 0.5;
     
     // Get particle data
     float3 real_position = particles[instance_id].position;
     float3 view_position = (uniforms.viewMatrix * float4(real_position, 1.0)).xyz;
     out.view_position = view_position;
-    out.sphere_size = uniforms.sphere_size;
+    out.sphere_size = sphere_size;
     
     // Billboard positioning: add corner in view space, then project
     float4 view_pos_with_corner = float4(view_position + corner, 1.0);
@@ -447,7 +448,8 @@ vertex ThicknessVertexOut vs_thickness(
     
     // Get corner position for billboard quad
     float2 corner_pos = cornerPositions[vertex_id];
-    float3 corner = float3(corner_pos * uniforms.sphere_size, 0.0);
+    float sphere_size = SPHERE_SIZE_BASE * uniforms.particleSizeMultiplier;
+    float3 corner = float3(corner_pos * sphere_size, 0.0);
     out.uv = corner_pos + 0.5;
     
     // Get particle data

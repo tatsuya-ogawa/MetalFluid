@@ -21,10 +21,12 @@ extension BackgroundRenderer {
 // MARK: - AR Adapter
 final class ARBackgroundRendererAdapter: BackgroundRenderer {
     private let arRenderer: ARRenderer
+    private weak var fluidRenderer: MPMFluidRenderer?
     var isTransparent: Bool
     
-    init(arRenderer: ARRenderer, isTransparent: Bool) {
+    init(arRenderer: ARRenderer, fluidRenderer: MPMFluidRenderer? = nil, isTransparent: Bool) {
         self.arRenderer = arRenderer
+        self.fluidRenderer = fluidRenderer
         self.isTransparent = isTransparent
     }
     
@@ -43,10 +45,6 @@ final class ARBackgroundRendererAdapter: BackgroundRenderer {
         renderEncoder.endEncoding()
         return targetTexture
     }
-    
-    func updateCollisionSDFIfNeeded() {
-        arRenderer.updateCollision()
-    }
 
     func renderOverlay(renderEncoder: MTLRenderCommandEncoder, targetTexture: MTLTexture) {
         // Compute viewport size and current interface orientation for AR matrices
@@ -57,6 +55,9 @@ final class ARBackgroundRendererAdapter: BackgroundRenderer {
             }
             return .portrait
         }()
+        
+        // AR frame matrices are now handled by IntegratedRenderer
+        
         arRenderer.renderARMeshWireframeInEncoder(renderEncoder: renderEncoder, viewportSize: viewportSize, orientation: orientation)
     }
 }

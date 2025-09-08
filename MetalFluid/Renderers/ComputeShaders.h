@@ -219,7 +219,9 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
 }
 
 // Wrapper: SDF sampling with gradient computation (when both are needed)
-inline float4 sampleSDFWithGradient(float3 worldPos, texture3d<float> sdfTexture, constant CollisionUniforms &collision) {
+inline float4 sampleSDFWithGradient(float3 particlePos, texture3d<float> sdfTexture, constant ComputeShaderUniforms& uniforms,constant CollisionUniforms &collision) {
+    float3 worldPos = (uniforms.worldTransform *
+                                         float4(particlePos, 1.0)).xyz;
     // Use the optimized coordinate transformation function
     float3 texCoord = worldToSDFTexCoord(worldPos, collision);
     

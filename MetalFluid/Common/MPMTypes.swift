@@ -11,6 +11,12 @@ struct Triangle {
     var v0: SIMD3<Float>
     var v1: SIMD3<Float>
     var v2: SIMD3<Float>
+    
+    init(v0: SIMD3<Float>, v1: SIMD3<Float>, v2: SIMD3<Float>) {
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+    }
 }
 
 struct CollisionVertex {
@@ -94,6 +100,7 @@ struct ComputeShaderUniforms {
     var materialMode: UInt32  // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     var youngsModulus: Float  // Young's modulus for elastic material
     var poissonsRatio: Float  // Poisson's ratio for elastic material
+    var worldTransform: float4x4  // Transform from fluid space to world space
 }
 
 struct VertexShaderUniforms {
@@ -104,7 +111,6 @@ struct VertexShaderUniforms {
     var gridResolution: SIMD3<Int32>
     var rest_density: Float
     var particleSizeMultiplier: Float
-    var sphere_size: Float
 }
 
 struct FilterUniforms {

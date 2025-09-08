@@ -65,7 +65,7 @@ extension MPMFluidRenderer {
         
         if materialParameters.currentMaterialMode == .neoHookeanElastic {
             // Dense cube formation for elastic and rigid body materials
-            setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range)
+            setupElasticCube(particlePointer: stagingParticlePointer, center: center, range: range, cubeScale: elasticCubeScale)
             
         } else {
             // Original spherical distribution for fluid
@@ -119,9 +119,9 @@ extension MPMFluidRenderer {
     }
     
             
-    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>) {
+    private func setupElasticCube(particlePointer: UnsafeMutablePointer<MPMParticle>, center: SIMD3<Float>, range: SIMD3<Float>, cubeScale: Float = 1.0) {
         let particlesPerDim = Int(floor(pow(Float(particleCount), 1.0/3.0)))
-        let cubeSize = min(range.x, range.y, range.z) * 0.6
+        let cubeSize = min(range.x, range.y, range.z) * 0.6 * cubeScale
         let spacing = cubeSize / Float(particlesPerDim - 1)
         let cubeOrigin = center - SIMD3<Float>(cubeSize * 0.5, cubeSize * 0.5, cubeSize * 0.5)
         var particleIndex = 0

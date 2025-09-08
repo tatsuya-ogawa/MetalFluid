@@ -163,11 +163,6 @@ class FluidScene {
     func getSDFCollisionsArrayBuffer() -> MTLBuffer? { sdfCollisionsArrayBuffer }
     func getCubeIndexBuffer() -> MTLBuffer? { cubeIndexBuffer }
     
-    // MARK: - Buffer Reference Access (for inout parameters)
-    func getComputeParticleBufferReference() -> UnsafeMutablePointer<MTLBuffer?> {
-        return UnsafeMutablePointer<MTLBuffer?>(&computeParticleBuffer)
-    }
-    
     // MARK: - Buffer Management Operations
     func swapComputeRenderBuffers() {
         swap(&computeParticleBuffer, &renderParticleBuffer)

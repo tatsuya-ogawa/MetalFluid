@@ -398,6 +398,7 @@ kernel void gridToParticlesFluid1(
              particles[id].velocity,
              particles[id].mass,
              sdfTexture,
+             uniforms,
              collision,
              uniforms.deltaTime
         );
@@ -591,6 +592,7 @@ kernel void gridToParticlesElastic(
              particles[id].velocity,
              particles[id].mass,
              sdfTexture,
+             uniforms,
              collision,
              uniforms.deltaTime
         );

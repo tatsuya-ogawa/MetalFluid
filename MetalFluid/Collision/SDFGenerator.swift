@@ -59,7 +59,14 @@ public class SDFGenerator {
             Triangle(v0: triangle.v0, v1: triangle.v1, v2: triangle.v2)
         }
         
-        // Create buffers
+        // Chunking parameters to prevent GPU memory issues
+        let maxTrianglesPerChunk = 1000  // Process in smaller chunks
+        let totalTriangles = sdfTriangles.count
+        let numChunks = (totalTriangles + maxTrianglesPerChunk - 1) / maxTrianglesPerChunk
+        
+        print("🔧 Triangle chunking: \(totalTriangles) triangles -> \(numChunks) chunks")
+        
+        // Create triangle buffer for all triangles (read-only)
         guard let triangleBuffer = device.makeBuffer(
             bytes: sdfTriangles,
             length: MemoryLayout<Triangle>.stride * sdfTriangles.count,
@@ -114,70 +121,93 @@ public class SDFGenerator {
         
         // Setup compute parameters
         let voxelSize = (boundingBox.max - boundingBox.min) / SIMD3<Float>(resolution)
-        var triangleCount = UInt32(sdfTriangles.count)
         var sdfOrigin = boundingBox.min
         var voxelSizeVar = voxelSize
         var resolutionVar = resolution
         
-        // Create command buffer
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            print("Failed to create compute command buffer/encoder")
-            return nil
-        }
-        if useHeapsForSDF {
-            // Sparse: first map full region (tiles). We'll purge empty tiles after SDF is generated.
-#if compiler(>=5.9)
-            if #available(iOS 17.0, macOS 14.0, *),
-               let rse = commandBuffer.makeResourceStateCommandEncoder() {
-                let tile = device.sparseTileSize(with: textureDescriptor.textureType,
-                                                 pixelFormat: textureDescriptor.pixelFormat,
-                                                 sampleCount: 1)
-                let wTiles = max(1, (Int(resolution.x) + tile.width  - 1) / tile.width)
-                let hTiles = max(1, (Int(resolution.y) + tile.height - 1) / tile.height)
-                let dTiles = max(1, (Int(resolution.z) + tile.depth  - 1) / tile.depth)
-                let full = MTLRegionMake3D(0, 0, 0, wTiles, hTiles, dTiles)
-#if targetEnvironment(macCatalyst) || os(macOS)
-                rse.updateTextureMapping?(sdfTexture, mode: .map, region: full, mipLevel: 0, slice: 0)
-#else
-                rse.updateTextureMapping(sdfTexture, mode: .map, region: full, mipLevel: 0, slice: 0)
-#endif
-                rse.endEncoding()
+        // Process triangles in chunks to avoid GPU memory issues
+        for chunkIndex in 0..<numChunks {
+            let chunkStart = chunkIndex * maxTrianglesPerChunk
+            let chunkEnd = min(chunkStart + maxTrianglesPerChunk, totalTriangles)
+            let chunkSize = chunkEnd - chunkStart
+            
+            print("🔧 Processing chunk \(chunkIndex + 1)/\(numChunks): triangles \(chunkStart)..<\(chunkEnd) (\(chunkSize) triangles)")
+            
+            // Create command buffer for this chunk
+            guard let chunkCommandBuffer = commandQueue.makeCommandBuffer() else {
+                print("❌ Failed to create command buffer for chunk \(chunkIndex)")
+                return nil
             }
+            
+            // Handle sparse texture mapping for first chunk
+            if chunkIndex == 0 && useHeapsForSDF {
+                // Sparse: first map full region (tiles). We'll purge empty tiles after SDF is generated.
+#if compiler(>=5.9)
+                if #available(iOS 17.0, macOS 14.0, *),
+                   let rse = chunkCommandBuffer.makeResourceStateCommandEncoder() {
+                    let tile = device.sparseTileSize(with: textureDescriptor.textureType,
+                                                     pixelFormat: textureDescriptor.pixelFormat,
+                                                     sampleCount: 1)
+                    let wTiles = max(1, (Int(resolution.x) + tile.width  - 1) / tile.width)
+                    let hTiles = max(1, (Int(resolution.y) + tile.height - 1) / tile.height)
+                    let dTiles = max(1, (Int(resolution.z) + tile.depth  - 1) / tile.depth)
+                    let full = MTLRegionMake3D(0, 0, 0, wTiles, hTiles, dTiles)
+#if targetEnvironment(macCatalyst) || os(macOS)
+                    rse.updateTextureMapping?(sdfTexture, mode: .map, region: full, mipLevel: 0, slice: 0)
+#else
+                    rse.updateTextureMapping(sdfTexture, mode: .map, region: full, mipLevel: 0, slice: 0)
 #endif
+                    rse.endEncoding()
+                }
+#endif
+            }
+            
+            // Create compute encoder for this chunk
+            guard let computeEncoder = chunkCommandBuffer.makeComputeCommandEncoder() else {
+                print("❌ Failed to create compute encoder for chunk \(chunkIndex)")
+                return nil
+            }
+            
+            computeEncoder.label = "SDF Generation Chunk \(chunkIndex + 1)/\(numChunks)"
+            computeEncoder.setComputePipelineState(pipelineState)
+            computeEncoder.setBuffer(triangleBuffer, offset: 0, index: 0)
+            computeEncoder.setBuffer(sdfDataBuffer, offset: 0, index: 1)
+            
+            var triangleOffset = UInt32(chunkStart)
+            var triangleChunkSize = UInt32(chunkSize)
+            computeEncoder.setBytes(&triangleOffset, length: MemoryLayout<UInt32>.size, index: 2)
+            computeEncoder.setBytes(&triangleChunkSize, length: MemoryLayout<UInt32>.size, index: 3)
+            computeEncoder.setBytes(&sdfOrigin, length: MemoryLayout<SIMD3<Float>>.size, index: 4)
+            computeEncoder.setBytes(&voxelSizeVar, length: MemoryLayout<SIMD3<Float>>.size, index: 5)
+            computeEncoder.setBytes(&resolutionVar, length: MemoryLayout<SIMD3<Int32>>.size, index: 6)
+            
+            // Calculate threadgroup size dynamically from pipeline
+            let w = sdfPipelineState?.threadExecutionWidth ?? 8
+            let maxThreads = sdfPipelineState?.maxTotalThreadsPerThreadgroup ?? 64
+            let h = max(1, maxThreads / w)
+            let threadsPerThreadgroup = MTLSize(width: w, height: h, depth: 1)
+            let threadsPerGrid = MTLSize(width: Int(resolution.x), height: Int(resolution.y), depth: Int(resolution.z))
+            
+            computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+            computeEncoder.endEncoding()
+            
+            // Execute this chunk
+            chunkCommandBuffer.commit()
+            chunkCommandBuffer.waitUntilCompleted()
+            
+            // Check for errors
+            if chunkCommandBuffer.status == .error {
+                print("❌ SDF generation chunk \(chunkIndex + 1) failed")
+                if let error = chunkCommandBuffer.error {
+                    print("  Error: \(error)")
+                }
+                return nil
+            }
+            
+            print("✅ Chunk \(chunkIndex + 1)/\(numChunks) completed successfully")
         }
         
-        // Create compute encoder
-        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
-            print("Failed to create compute command buffer/encoder")
-            return nil
-        }
-        
-        computeEncoder.label = "SDF Generation"
-        computeEncoder.setComputePipelineState(pipelineState)
-        computeEncoder.setBuffer(triangleBuffer, offset: 0, index: 0)
-        computeEncoder.setBuffer(sdfDataBuffer, offset: 0, index: 1)
-        computeEncoder.setBytes(&triangleCount, length: MemoryLayout<UInt32>.size, index: 2)
-        computeEncoder.setBytes(&sdfOrigin, length: MemoryLayout<SIMD3<Float>>.size, index: 3)
-        computeEncoder.setBytes(&voxelSizeVar, length: MemoryLayout<SIMD3<Float>>.size, index: 4)
-        computeEncoder.setBytes(&resolutionVar, length: MemoryLayout<SIMD3<Int32>>.size, index: 5)
-        
-        // Calculate threadgroup size dynamically from pipeline
-        let w = sdfPipelineState?.threadExecutionWidth ?? 8
-        let maxThreads = sdfPipelineState?.maxTotalThreadsPerThreadgroup ?? 64
-        let h = max(1, maxThreads / w)
-        let threadsPerThreadgroup = MTLSize(width: w, height: h, depth: 1)
-        let threadsPerGrid = MTLSize(width: Int(resolution.x), height: Int(resolution.y), depth: Int(resolution.z))
-        computeEncoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
-        computeEncoder.endEncoding()
-        
-        // Wait for completion
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        
-        if commandBuffer.status == .error {
-            print("SDF generation compute command failed")
-            return nil
-        }
+        print("✅ All \(numChunks) chunks processed successfully")
         
         // Copy buffer data to texture using blit encoder (for private texture)
         guard let blitCommandBuffer = commandQueue.makeCommandBuffer(),

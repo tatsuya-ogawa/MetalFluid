@@ -51,18 +51,64 @@ fragment float4 cameraBackgroundFragment(CameraVertexOut in [[stage_in]],
 
 // MARK: - AR Mesh Wireframe Shaders
 
-// AR Mesh Vertex Shader
-vertex float4 arMeshWireVertex(const device float3* position [[buffer(0)]],
-                              constant float4x4& projectionMatrix [[buffer(1)]],
-                              constant float4x4& viewMatrix [[buffer(2)]],
-                              uint vid [[vertex_id]]) {
+struct WireframeVertexOut {
+    float4 position [[position]];
+    float3 worldPosition;
+};
+
+// AR Mesh Wireframe Vertex Shader with barycentric coordinates
+vertex WireframeVertexOut arMeshWireVertex(const device float3* position [[buffer(0)]],
+                                          constant float4x4& projectionMatrix [[buffer(1)]],
+                                          constant float4x4& viewMatrix [[buffer(2)]],
+                                          uint vid [[vertex_id]]) {
+    WireframeVertexOut out;
     float4 worldPosition = float4(position[vid], 1.0);
-    return projectionMatrix * viewMatrix * worldPosition;
+    out.position = projectionMatrix * viewMatrix * worldPosition;
+    out.worldPosition = position[vid]; // Pass world position to fragment shader
+    return out;
 }
 
-// AR Mesh Fragment Shader
-fragment float4 arMeshWireFragment(constant float4& color [[buffer(0)]]) {
-    return color;
+// AR Mesh Wireframe Fragment Shader using barycentric coordinates
+fragment float4 arMeshWireFragment(WireframeVertexOut in [[stage_in]],
+                                  float3 barycentricCoords [[barycentric_coord]],
+                                  constant float4& color [[buffer(0)]],
+                                  constant float& lineWidth [[buffer(1)]],
+                                  constant float3& tapCenter [[buffer(2)]],
+                                  constant float3& tapBoxSize [[buffer(3)]],
+                                  constant bool& hasTapHighlight [[buffer(4)]]) {
+    
+    // Check if we're within tap highlight bounding box (same as SDF bounding box)
+    bool inTapArea = false;
+    if (hasTapHighlight) {
+        float3 halfSize = tapBoxSize * 0.5f;
+        float3 minBounds = tapCenter - halfSize;
+        float3 maxBounds = tapCenter + halfSize;
+        
+        // Check if world position is inside the bounding box
+        inTapArea = all(in.worldPosition >= minBounds) && all(in.worldPosition <= maxBounds);
+    }
+    
+    // Calculate distance from edges using barycentric coordinates
+    float edgeDistance = min(barycentricCoords.x, 
+                            min(barycentricCoords.y, barycentricCoords.z));
+    
+    // Adjust line width and color based on tap area
+    float adjustedLineWidth = lineWidth;
+    float4 finalColor = color;
+    
+    if (inTapArea) {
+        // Inside tap area: make lines 3x thicker and change color to orange
+        adjustedLineWidth = lineWidth * 3.0;
+        finalColor = float4(1.0, 0.5, 0.0, color.a); // Orange debug color
+    }
+    
+    // Create anti-aliased wireframe effect with adjusted line width
+    if(edgeDistance > adjustedLineWidth){
+        discard_fragment();
+    }
+    
+    // Return wireframe color (normal or highlight)
+    return finalColor;
 }
 
 // MARK: - AR Mesh Solid Shaders

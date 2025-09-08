@@ -38,11 +38,13 @@ class ARRenderer:NSObject {
     private var currentMeshAnchors: [ARMeshAnchor] = []
     #endif
 
-    // AR mesh wireframe buffers
+    // AR mesh wireframe buffers (using barycentric coordinates, no line indices needed)
     private var arMeshVertexBuffer: MTLBuffer?
-    private var arMeshLineIndexBuffer: MTLBuffer?
-    private var arMeshLineIndexCount: Int = 0
     public var showARMeshWireframe: Bool = true
+    
+    // Tap position for mesh highlighting
+    private var tapWorldPosition: SIMD3<Float>? = nil
+    private var tapHighlightBoxSize: SIMD3<Float> = SIMD3<Float>(0.5, 0.5, 0.5) // Default 50cm cube
     
     // AR mesh solid buffers
     private var arMeshSolidVertexBuffer: MTLBuffer?
@@ -134,7 +136,7 @@ class ARRenderer:NSObject {
             }
         }
 
-        // AR Mesh Wireframe Pipeline
+        // AR Mesh Wireframe Pipeline with barycentric coordinates
         if let vertexFunction = library.makeFunction(name: "arMeshWireVertex"),
            let fragmentFunction = library.makeFunction(name: "arMeshWireFragment") {
             let pipelineDescriptor = MTLRenderPipelineDescriptor()
@@ -142,6 +144,12 @@ class ARRenderer:NSObject {
             pipelineDescriptor.fragmentFunction = fragmentFunction
             pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
             pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+            
+            // Check if device supports barycentric coordinates
+            if !device.supportsShaderBarycentricCoordinates{
+                fatalError("not supportsShaderBarycentricCoordinates")
+            }
+            
             do {
                 arMeshWirePipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
                 let depthDesc = MTLDepthStencilDescriptor()
@@ -310,11 +318,6 @@ class ARRenderer:NSObject {
                                                 &cbCrTextureRef)
         cameraImageTextureCbCr = CVMetalTextureGetTexture(cbCrTextureRef!)
     }
-    func updateCollision(force: Bool = false){
-        if needUpdate || force {
-            // SDF update logic will be added later
-        }
-    }
     
     var needUpdate: Bool = false
     @available(iOS 13.4, macOS 10.15.4, *)
@@ -332,6 +335,12 @@ class ARRenderer:NSObject {
     func renderCameraBackground(commandEncoder: MTLRenderCommandEncoder) {
         guard let pipelineState = cameraBackgroundPipelineState,
               let vertexBuffer = cameraBackgroundVertexBuffer else { return }
+        
+        // Check if camera rendering is disabled
+        if !isCameraRenderingEnabled {
+            renderFallbackBackground(commandEncoder: commandEncoder)
+            return
+        }
         
         // Non-AR fallback: render solid background
         if !isARSupported {
@@ -360,6 +369,34 @@ class ARRenderer:NSObject {
         // Render a simple dark background when ARKit is not available
         // This could be enhanced with a test pattern or gradient
     }
+    
+    // MARK: - Control Methods
+    
+    func setMeshRenderingEnabled(_ enabled: Bool) {
+        showARMeshWireframe = enabled
+        showARMeshSolid = enabled
+        print("🔧 AR Mesh rendering enabled: \(enabled)")
+    }
+    
+    // Set tap position for mesh highlighting (debug purpose) - uses bounding box like SDF
+    public func setTapHighlight(at position: SIMD3<Float>, boxSize: SIMD3<Float> = SIMD3<Float>(0.5, 0.5, 0.5)) {
+        tapWorldPosition = position
+        tapHighlightBoxSize = boxSize
+        print("🎯 Debug: Tap highlight set at \(position) with box size \(boxSize)")
+    }
+    
+    // Clear tap highlight
+    public func clearTapHighlight() {
+        tapWorldPosition = nil
+        print("🎯 Debug: Tap highlight cleared")
+    }
+    
+    public var isCameraRenderingEnabled = true
+    
+    func setCameraRenderingEnabled(_ enabled: Bool) {
+        isCameraRenderingEnabled = enabled
+        print("🔧 AR Camera rendering enabled: \(enabled)")
+    }
 }
 
 // MARK: - AR Mesh Wireframe
@@ -369,13 +406,10 @@ private extension ARRenderer {
     func rebuildARMeshWireBuffers() {
         guard !currentMeshAnchors.isEmpty else {
             arMeshVertexBuffer = nil
-            arMeshLineIndexBuffer = nil
-            arMeshLineIndexCount = 0
             return
         }
 
         var positions: [SIMD3<Float>] = []
-        var lineIndices: [UInt32] = []
         var base: UInt32 = 0
 
         for anchor in currentMeshAnchors {
@@ -391,18 +425,6 @@ private extension ARRenderer {
                 let world = anchor.transform.transformPoint(local)
                 positions.append(world)
             }
-
-            // Build line indices from triangle faces
-            let fCount = geom.faces.count
-            let fBuf = geom.faces.buffer
-            let fStride = MemoryLayout<UInt32>.stride * 3
-            for fi in 0..<fCount {
-                let fptr = fBuf.contents().advanced(by: fi * fStride).assumingMemoryBound(to: UInt32.self)
-                let i0 = base + fptr[0]
-                let i1 = base + fptr[1]
-                let i2 = base + fptr[2]
-                lineIndices.append(contentsOf: [i0, i1, i1, i2, i2, i0])
-            }
             base += UInt32(vCount)
         }
 
@@ -414,15 +436,8 @@ private extension ARRenderer {
         } else {
             arMeshVertexBuffer = nil
         }
-        if !lineIndices.isEmpty {
-            arMeshLineIndexBuffer = device.makeBuffer(bytes: lineIndices,
-                                                      length: lineIndices.count * MemoryLayout<UInt32>.stride,
-                                                      options: .storageModeShared)
-            arMeshLineIndexCount = lineIndices.count
-        } else {
-            arMeshLineIndexBuffer = nil
-            arMeshLineIndexCount = 0
-        }
+        
+        // No line index buffer needed when using barycentric coordinates
     }
     
     func rebuildARMeshSolidBuffers() {
@@ -754,49 +769,6 @@ extension ARRenderer {
         print("✅ GPU mesh extraction found \(outputCount) triangles")
         return extractedTriangles
     }
-    
-    
-    public func generateSDFFromTapPositionGPU(tapPoint: CGPoint,
-                                             viewportSize: CGSize,
-                                             orientation: UIInterfaceOrientation,
-                                             boundingBoxSize: Float = 0.5) -> MTLTexture? {
-        // Use GPU raycast
-        guard let hitPosition = performGPURaycast(at: tapPoint,
-                                                 viewportSize: viewportSize,
-                                                 orientation: orientation) else {
-            print("No mesh hit at tap position with GPU raycast")
-            return nil
-        }
-        
-        lastTapWorldPosition = hitPosition
-        
-        // Set up bounding box around hit position
-        let size = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
-        selectedMeshBounds = (center: hitPosition, size: size)
-        
-        // Extract triangles within bounding box using GPU
-        guard let triangles = extractMeshesInBoundingBoxGPU(center: hitPosition, size: size) else {
-            print("Failed to extract triangles with GPU")
-            return nil
-        }
-        
-        guard !triangles.isEmpty else {
-            print("No triangles found in bounding box")
-            return nil
-        }
-        
-        print("GPU extracted \(triangles.count) triangles for SDF generation")
-        
-        // Calculate tight bounding box for SDF generation
-        let halfSize = size * 0.5
-        let boundingBox = (min: hitPosition - halfSize, max: hitPosition + halfSize)
-        
-        // Generate SDF
-        let resolution = SIMD3<Int32>(64, 64, 64) // Fixed resolution for consistency
-        return sdfGenerator?.generateSDF(triangles: triangles,
-                                        resolution: resolution,
-                                        boundingBox: boundingBox)
-    }
     #endif
 }
 
@@ -805,19 +777,22 @@ extension ARRenderer {
     func renderARMeshWireframeInEncoder(renderEncoder: MTLRenderCommandEncoder,
                                         viewportSize: CGSize,
                                         orientation: UIInterfaceOrientation,
-                                        color: SIMD4<Float> = SIMD4<Float>(0.0, 1.0, 1.0, 1.0)) {
+                                        color: SIMD4<Float> = SIMD4<Float>(0.0, 1.0, 1.0, 1.0),
+                                        lineWidth: Float = 0.02) {
         #if canImport(ARKit)
+        // Use solid triangle buffer for barycentric coordinate wireframe rendering
         guard showARMeshWireframe,
               let pipeline = arMeshWirePipelineState,
               let depthState = arMeshWireDepthStencilState,
-              let vbuf = arMeshVertexBuffer,
-              let ibuf = arMeshLineIndexBuffer,
-              arMeshLineIndexCount > 0 else { return }
+              let vbuf = arMeshSolidVertexBuffer,
+              let ibuf = arMeshSolidIndexBuffer,
+              arMeshSolidIndexCount > 0 else { return }
         if #available(iOS 11.0, macOS 10.13, *) {
             guard let (proj, view) = getCameraMatrices(viewportSize: viewportSize, orientation: orientation) else { return }
             var projection = proj
             var viewM = view
             var wireColor = color
+            var wireLineWidth = lineWidth
 
             renderEncoder.setRenderPipelineState(pipeline)
             renderEncoder.setDepthStencilState(depthState)
@@ -825,8 +800,19 @@ extension ARRenderer {
             renderEncoder.setVertexBytes(&projection, length: MemoryLayout<float4x4>.stride, index: 1)
             renderEncoder.setVertexBytes(&viewM, length: MemoryLayout<float4x4>.stride, index: 2)
             renderEncoder.setFragmentBytes(&wireColor, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
-            renderEncoder.drawIndexedPrimitives(type: .line,
-                                               indexCount: arMeshLineIndexCount,
+            renderEncoder.setFragmentBytes(&wireLineWidth, length: MemoryLayout<Float>.stride, index: 1)
+            
+            // Pass tap highlight parameters to shader (bounding box like SDF)
+            var tapPos = tapWorldPosition ?? SIMD3<Float>(0, 0, 0)
+            var tapBoxSz = tapHighlightBoxSize
+            var hasTap = tapWorldPosition != nil
+            renderEncoder.setFragmentBytes(&tapPos, length: MemoryLayout<SIMD3<Float>>.stride, index: 2)
+            renderEncoder.setFragmentBytes(&tapBoxSz, length: MemoryLayout<SIMD3<Float>>.stride, index: 3)
+            renderEncoder.setFragmentBytes(&hasTap, length: MemoryLayout<Bool>.stride, index: 4)
+            
+            // Draw triangles instead of lines for barycentric coordinate wireframe
+            renderEncoder.drawIndexedPrimitives(type: .triangle,
+                                               indexCount: arMeshSolidIndexCount,
                                                indexType: .uint32,
                                                indexBuffer: ibuf,
                                                indexBufferOffset: 0)

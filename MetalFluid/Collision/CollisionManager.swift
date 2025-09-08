@@ -20,7 +20,7 @@ class CollisionItem{
     public var currentMeshMax: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     public var currentGridMin: SIMD3<Float>?
     public var currentGridMax: SIMD3<Float>?
-    
+    public let isARMode: Bool
     // MARK: - Private Helper Methods
     
     public func calculateCollisionTransformCenterOfBottom(
@@ -66,8 +66,9 @@ class CollisionItem{
 
         return (transform, invTransform)
     }
+    
     private let device: MTLDevice
-    init(device: MTLDevice) {
+    init(device: MTLDevice,isARMode:Bool) {
         self.device = device
         // Create collision uniform buffer
         let collisionUniformSize = MemoryLayout<CollisionUniforms>.stride
@@ -75,6 +76,7 @@ class CollisionItem{
             fatalError("Failed to create collision uniform buffer")
         }
         self.collisionUniformBuffer = buffer
+        self.isARMode = isARMode
         meshRendererItem = CollisionMeshRendererItem(device: device)
         // Initialize with default values
         initializeCollisionUniforms()
@@ -104,6 +106,7 @@ class CollisionItem{
     public var initialCollisionInvTransform: float4x4 = matrix_identity_float4x4
     public var canMove: Bool = false
     public var useGravity: Bool = false
+    public var skipRenderInAR: Bool = false
     // Current mesh data
     public var currentTriangles: [Triangle] = []
     func updateGridBoundaries(gridBoundaryMin: SIMD3<Float>, gridBoundaryMax: SIMD3<Float>) {
@@ -118,15 +121,19 @@ class CollisionItem{
         let scaleVec = item.scale
         let offsetVec = item.translate
         let rotationVec = item.rotate
-        let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
-            meshMin: currentMeshMin,
-            meshMax: currentMeshMax,
-            gridMin: currentGridMin,
-            gridMax: currentGridMax,
-            scale: scaleVec,
-            rotation: rotationVec,
-            offset: offsetVec
-        )
+        
+        let (transform, invTransform) = isARMode ? 
+            (matrix_identity_float4x4, matrix_identity_float4x4) :
+            calculateCollisionTransformCenterOfBottom(
+                meshMin: currentMeshMin,
+                meshMax: currentMeshMax,
+                gridMin: currentGridMin,
+                gridMax: currentGridMax,
+                scale: scaleVec,
+                rotation: rotationVec,
+                offset: offsetVec
+            )
+        
         let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
             to: CollisionUniforms.self,
             capacity: 1
@@ -253,15 +260,18 @@ class CollisionItem{
             let combinedScale = sdfTransform.scale
             let combinedOffset = sdfTransform.translate
             let combinedRotation = sdfTransform.rotate
-            let (transform, invTransform) = calculateCollisionTransformCenterOfBottom(
-                meshMin: minBounds,
-                meshMax: maxBounds,
-                gridMin: gridBoundaryMin,
-                gridMax: gridBoundaryMax,
-                scale: combinedScale,
-                rotation: combinedRotation,
-                offset: combinedOffset
-            )
+            
+            let (transform, invTransform) = isARMode ?
+                (matrix_identity_float4x4, matrix_identity_float4x4) :
+                calculateCollisionTransformCenterOfBottom(
+                    meshMin: minBounds,
+                    meshMax: maxBounds,
+                    gridMin: gridBoundaryMin,
+                    gridMax: gridBoundaryMax,
+                    scale: combinedScale,
+                    rotation: combinedRotation,
+                    offset: combinedOffset
+                )
             
             // Update collision uniforms
             let collisionUniformPointer = collisionUniformBuffer.contents().bindMemory(
@@ -336,18 +346,7 @@ class CollisionManager {
         self.device = device
         self.sdfGenerator = SDFGenerator(device: device)
         self.meshRenderer = CollisionMeshRenderer(device: device)
-        self.representativeItem = CollisionItem(device: device)
-    }
-    private func renderMesh(item:CollisionItem,renderPassDescriptor: MTLRenderPassDescriptor,
-                           commandBuffer: MTLCommandBuffer,
-                           vertexUniformBuffer: MTLBuffer) {
-        meshRenderer.render(
-            item:item.meshRendererItem,
-            renderPassDescriptor: renderPassDescriptor,
-            commandBuffer: commandBuffer,
-            vertexUniformBuffer: vertexUniformBuffer,
-            collisionUniformBuffer: item.collisionUniformBuffer
-        )
+        self.representativeItem = CollisionItem(device: device,isARMode: false)
     }
     
     // New method to render within an existing render encoder
@@ -360,10 +359,40 @@ class CollisionManager {
             collisionUniformBuffer: item.collisionUniformBuffer
         )
     }
+    
+    private func renderMeshInEncoderForAR(item: CollisionItem, 
+                                        renderEncoder: MTLRenderCommandEncoder, 
+                                        projectionMatrix: float4x4, 
+                                        viewMatrix: float4x4) {
+        meshRenderer.renderInEncoderForAR(
+            item: item.meshRendererItem,
+            renderEncoder: renderEncoder,
+            projectionMatrix: projectionMatrix,
+            viewMatrix: viewMatrix,
+            collisionUniformBuffer: item.collisionUniformBuffer
+        )
+    }
+    
     func renderMeshesInEncoder(renderEncoder: MTLRenderCommandEncoder,
                              vertexUniformBuffer: MTLBuffer) {
         for item in items {
             self.renderMeshInEncoder(item: item, renderEncoder: renderEncoder, vertexUniformBuffer: vertexUniformBuffer)
+        }
+    }
+    
+    // AR mode rendering - uses AR frame matrices instead of fluid scene matrices
+    func renderMeshesInEncoderForAR(renderEncoder: MTLRenderCommandEncoder,
+                                   projectionMatrix: float4x4,
+                                   viewMatrix: float4x4) {
+        for item in items {
+            // Skip rendering if skipRenderInAR is enabled for this item
+            if item.skipRenderInAR {
+                continue
+            }
+            self.renderMeshInEncoderForAR(item: item, 
+                                        renderEncoder: renderEncoder, 
+                                        projectionMatrix: projectionMatrix, 
+                                        viewMatrix: viewMatrix)
         }
     }
     private var internalItems:[CollisionItem] = []
@@ -388,5 +417,14 @@ class CollisionManager {
     }
     func setMeshVisible(_ visible: Bool) {
         meshRenderer.isVisible = visible
-    }    
+    }
+    
+    // Debug support methods for SDF visualization
+    func getFirstSDFTexture() -> MTLTexture? {
+        return items.first?.sdfTexture
+    }
+    
+    func getFirstCollisionUniformsBuffer() -> MTLBuffer? {
+        return items.first?.collisionUniformBuffer
+    }
 }

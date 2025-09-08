@@ -18,115 +18,118 @@ private extension UIColor {
 class ViewController: UIViewController {
     private let recordKey = "r"
     // For 10fps control
-    private var lastComputeTime: CFTimeInterval = 0
-
-    private var metalView: MTKView!
-    private var fluidRenderer: MPMFluidRenderer!
-    private var lastFrameTime: CFTimeInterval = 0
+    internal var lastComputeTime: CFTimeInterval = 0
+    
+    internal var metalView: MTKView!
+    internal var fluidRenderer: MPMFluidRenderer!
+    internal var integratedRenderer: IntegratedRenderer!
+    internal var lastFrameTime: CFTimeInterval = 0
     
     // Camera properties for 3D viewing
-    private var cameraTarget: SIMD3<Float> = SIMD3<Float>(0, 0, -1)
+    internal var cameraTarget: SIMD3<Float> = SIMD3<Float>(0, 0, -1)
     
     // Interaction
-    private var lastPanPoint: CGPoint = .zero
-    private var isInteracting = false
-
-    // Simulation control
-    private var isAutoMode: Bool = true
-    private var shouldStep: Bool = false
+    internal var lastPanPoint: CGPoint = .zero
+    internal var isInteracting = false
     
-    // Animation control (for debug purposes)
-    private var animationController: AnimationController?
+    // Simulation control
+    internal var isAutoMode: Bool = true
+    internal var shouldStep: Bool = false
     
     // Wireframe state tracking
-    private var isWireframeMode: Bool = false
+    internal var isWireframeMode: Bool = false
     
     // Transform coefficients (managed in VC, applied when needed)
-    private var worldTranslation: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, -3.0)
-    private var worldYaw: Float = 0.0
-    private var worldPitch: Float = 0.0
-    private var worldScale: Float = 1.0
-
+    internal var worldTranslation: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, 0.0)
+    internal var worldTranslationOffset: SIMD3<Float> = SIMD3<Float>(0.0, 0.0, 0.0)  // UI offset from base translation
+    internal var worldYaw: Float = 0.0
+    internal var worldPitch: Float = 0.0
+    internal var worldScale: Float = 1.0
+    
     // Orbit control tuning
     private let rotateSpeed: Float = 0.01
     private let worldPanSpeed: Float = 0.003
     private let minPitch: Float = -Float.pi/2 + 0.1
     private let maxPitch: Float =  Float.pi/2 - 0.1
-
+    
     // Initial values (shared between sliders and FluidRenderer)
     private let initialParticleCount: Float = 40000
     private let initialGridSize: Float = 64
-    private let initialGridHeightMultiplier: Float = 1.5
-
-    // UI Elements
-    private var controlPanel: UIView!
-    private var modeButton: UIButton!
-    private var stepButton: UIButton!
-    private var resetButton: UIButton!
-    private var renderModeButton: UIButton!
-    private var particleSizeSlider: UISlider!
-    private var particleSizeLabel: UILabel!
-    private var massScaleSlider: UISlider!
-    private var massScaleLabel: UILabel!
-    private var particleCountSlider: UISlider!
-    private var particleCountLabel: UILabel!
-    private var gridSizeSlider: UISlider!
-    private var gridSizeLabel: UILabel!
-    internal var sdfScaleSlider: UISlider!
-    private var sdfScaleLabel: UILabel!
-    internal var sdfYOffsetSlider: UISlider!
-    private var sdfYOffsetLabel: UILabel!
-    internal var sdfYRotationSlider: UISlider!
-    private var sdfYRotationLabel: UILabel!
+    private let initialGridHeightMultiplier: Float = 1.0
     
-    // Transparent background control
-    private var transparentBackgroundToggle: UIButton!
+    // UI Elements
+    internal var controlPanel: UIStackView!
+    internal var modeButton: UIButton!
+    internal var stepButton: UIButton!
+    internal var resetButton: UIButton!
+    internal var renderModeButton: UIButton!
+    internal var particleSizeSlider: UISlider!
+    internal var particleSizeLabel: UILabel!
+    internal var massScaleSlider: UISlider!
+    internal var massScaleLabel: UILabel!
+    internal var cubeScaleSlider: UISlider!
+    internal var cubeScaleLabel: UILabel!
+    internal var materialScaleStackView: UIStackView!
+    internal var particleCountSlider: UISlider!
+    internal var particleCountLabel: UILabel!
+    internal var gridSizeSlider: UISlider!
+    internal var gridSizeLabel: UILabel!
+    internal var gridSpacingSlider: UISlider!
+    internal var gridSpacingLabel: UILabel!
+    internal var sdfScaleSlider: UISlider!
+    internal var sdfScaleLabel: UILabel!
+    internal var sdfYOffsetSlider: UISlider!
+    internal var sdfYOffsetLabel: UILabel!
+    internal var sdfYRotationSlider: UISlider!
+    internal var sdfYRotationLabel: UILabel!
+    
+    // World translate controls
+    internal var worldTranslateXSlider: UISlider!
+    internal var worldTranslateXLabel: UILabel!
+    internal var worldTranslateYSlider: UISlider!
+    internal var worldTranslateYLabel: UILabel!
+    internal var worldTranslateZSlider: UISlider!
+    internal var worldTranslateZLabel: UILabel!
+    
     
     // Collision controls panel (right side)
-    private var collisionPanel: UIView!
-    private var collisionToggleButton: UIButton!
-    private var meshVisibilityButton: UIButton!
-    private var wireframeButton: UIButton!
-    private var materialModeButton: UIButton!
+    internal var collisionPanel: UIStackView!
+    internal var collisionToggleButton: UIButton!
+    internal var meshVisibilityButton: UIButton!
+    internal var wireframeButton: UIButton!
+    internal var materialModeButton: UIButton!
     
     // AR controls panel (bottom right)
-    private var arPanel: UIView!
-    private var arToggleButton: UIButton!
-    private var arPanelHeightConstraint: NSLayoutConstraint!
+    internal var arPanel: UIView!
+    internal var arToggleButton: UIButton!
+    internal var arMeshToggleButton: UIButton!
+    internal var arCameraToggleButton: UIButton!
+    internal var arCollisionRenderCollectionView: UICollectionView!
+    internal var arCollisionRenderLayout: UICollectionViewFlowLayout!
+    internal var arCollisionTitleLabel: UILabel!
+    internal var arBBRadiusSlider: UISlider!
+    internal var arBBRadiusLabel: UILabel!
+    internal var arPanelHeightConstraint: NSLayoutConstraint!
     
     // ReplayKit recording
     private let screenRecorder = RPScreenRecorder.shared()
-    private var isRecording = false
-    private let meshLoader: MeshLoader = MeshLoader(scaleFactor: 1.0)
+    internal var isRecording = false
+    internal let meshLoader: MeshLoader = MeshLoader(scaleFactor: 1.0)
     
-    // MARK: - Transform Management
-    
-    func setInitialWorldTransform() {
-        // Just set the initial coefficients, don't apply to renderer yet
-        worldTranslation = SIMD3<Float>(0.0, 0.0, -3.0)
-        worldYaw = 0.0
-        worldPitch = 0.0
-        worldScale = 1.0
-    }
-    
-    private func computeWorldTransform() -> float4x4 {
+    public func computeWorldTransform() -> float4x4 {
         // Compute transform from current coefficients: T * R * S order
         let S = float4x4(scale: SIMD3<Float>(worldScale, worldScale, worldScale))
         let R = float4x4(rotationY: worldYaw) * float4x4(rotationX: worldPitch)
-        let T = float4x4(translation: worldTranslation)
+        
+        // Add domain center offset so fluid domain is centered at worldTranslation + worldTranslationOffset
+        let domainCenter = fluidRenderer.getDomainBasePosition()
+        let finalTranslation = worldTranslation + worldTranslationOffset
+        let adjustedTranslation = finalTranslation - domainCenter
+        let T = float4x4(translation: adjustedTranslation)
+        
         return T * R * S
     }
     
-    private func applyWorldTransformToRenderer() {
-        // Apply current coefficients to the renderer only when needed
-        let transform = computeWorldTransform()
-        fluidRenderer.setWorldTransform(transform)
-    }
-    
-    private func updateRendererTransformIfNeeded() {
-        // Apply transform to renderer when rendering or when needed
-        applyWorldTransformToRenderer()
-    }
     override func viewDidLoad() {
         super.viewDidLoad()
         let env = ProcessInfo.processInfo.environment
@@ -144,16 +147,16 @@ class ViewController: UIViewController {
         
         // Set up delegate for AR state changes
         fluidRenderer.viewController = self
+        setupBunny()
         
-        // Initialize debug animation controller (disabled by default)
-        animationController = AnimationController(fluidRenderer: fluidRenderer, viewController: self)
-        setInitialWorldTransform()
+        // Sync grid spacing multiplier slider with renderer default
+        gridSpacingSlider.value = fluidRenderer.getGridSpacingMultiplier()
+        gridSpacingLabel.text = String(format: "Spacing: %.1fx", fluidRenderer.getGridSpacingMultiplier())
         
-        // Apply initial transform
-        updateSdfTransfom()
-        applyWorldTransformToRenderer()
+        // Initialize material mode UI
+        updateMaterialModeUI()
     }
-
+    
     private func setupMetalView() {
         metalView = MTKView(
             frame: view.bounds,
@@ -169,9 +172,9 @@ class ViewController: UIViewController {
             blue: 0.1,
             alpha: 1.0
         )
-
+        
         view.addSubview(metalView)
-
+        
         // Auto layout constraints
         metalView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -181,68 +184,25 @@ class ViewController: UIViewController {
             metalView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
-
+    
     private func setupRenderer() {
         // Use predefined initial values for FluidRenderer constructor
         fluidRenderer = MPMFluidRenderer(
-            particleCount: Int(initialParticleCount), 
-            gridSize: Int(initialGridSize), 
+            particleCount: Int(initialParticleCount),
+            gridSize: Int(initialGridSize),
             gridHeightMultiplier: initialGridHeightMultiplier
+        )
+        
+        integratedRenderer = IntegratedRenderer(
+            device: fluidRenderer.device,
+            commandQueue: fluidRenderer.commandQueue,
+            fluidRenderer: fluidRenderer
         )
         
         // Install default background renderer
         installDefaultBackgroundRenderer()
-        
-        // Load Stanford Bunny for collision detection
-        setupCollisionMesh()
-    }
-    // MARK: - Mesh Loading
-    /// Load Stanford Bunny asynchronously
-    private func loadStanfordBunnyAsync(resolution: SIMD3<Int32>, gridBoundaryMin: SIMD3<Float>? = nil, gridBoundaryMax: SIMD3<Float>? = nil, completion: @escaping (Bool) -> Void) {
-        meshLoader.loadStanfordBunnyAsync(offsetToBottom: nil) { [weak self] triangles in
-            guard let self = self else {
-                completion(false)
-                return
-            }
-            
-            if triangles.isEmpty {
-                print("No triangles loaded from Stanford Bunny")
-                completion(false)
-                return
-            }
-            if let collisionManager = fluidRenderer.collisionManager{
-                collisionManager.representativeItem.processAndGenerateSDF(sdfGenerator: collisionManager.sdfGenerator, triangles: triangles, resolution: resolution, gridBoundaryMin: gridBoundaryMin, gridBoundaryMax: gridBoundaryMax)
-            }
-            completion(true)
-        }
     }
     
-    private func setupCollisionMesh() {
-        // Get grid boundary to position bunny correctly
-        let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
-        
-        // Use fixed SDF resolution (64x64x64) instead of world resolution
-        // The collision system will handle scaling and transformation automatically
-        let fixedSDFResolution = SIMD3<Int32>(64, 64, 64)
-        
-        // Load Stanford Bunny asynchronously (with caching)
-        loadStanfordBunnyAsync(
-            resolution: fixedSDFResolution,
-            gridBoundaryMin: boundaryMin,
-            gridBoundaryMax: boundaryMax
-        ) { [weak self] success in
-            if success {
-                print("✅ Stanford Bunny loaded successfully!")
-                // Configure collision visualization
-                self?.fluidRenderer.collisionManager?.setMeshVisible(true)
-                self?.fluidRenderer.collisionManager?.representativeItem.setMeshColor(SIMD4<Float>(1.0, 1.0, 1.0, 0.8)) // Semi-transparent white
-                print("🐰 Stanford Bunny collision mesh configured!")
-            } else {
-                print("❌ Failed to load Stanford Bunny. Collision detection disabled.")
-            }
-        }
-    }
-
     private func setupGestures() {
         // Pan gesture for orbit control
         let panGesture = UIPanGestureRecognizer(
@@ -252,7 +212,7 @@ class ViewController: UIViewController {
         panGesture.maximumNumberOfTouches = 1
         panGesture.delegate = self
         metalView.addGestureRecognizer(panGesture)
-
+        
         // Two-finger pan for world translation (screen-plane)
         let twoFingerPan = UIPanGestureRecognizer(
             target: self,
@@ -262,7 +222,7 @@ class ViewController: UIViewController {
         twoFingerPan.maximumNumberOfTouches = 2
         twoFingerPan.delegate = self
         metalView.addGestureRecognizer(twoFingerPan)
-
+        
         // Pinch gesture for zoom
         let pinchGesture = UIPinchGestureRecognizer(
             target: self,
@@ -270,15 +230,15 @@ class ViewController: UIViewController {
         )
         pinchGesture.delegate = self
         metalView.addGestureRecognizer(pinchGesture)
-
-
+        
+        
         // Tap gesture for fluid interaction
         let tapGesture = UITapGestureRecognizer(
             target: self,
             action: #selector(handleTapGesture(_:))
         )
         metalView.addGestureRecognizer(tapGesture)
-
+        
         // Double tap to reset camera
         let doubleTapGesture = UITapGestureRecognizer(
             target: self,
@@ -286,17 +246,22 @@ class ViewController: UIViewController {
         )
         doubleTapGesture.numberOfTapsRequired = 2
         metalView.addGestureRecognizer(doubleTapGesture)
-
+        
         tapGesture.require(toFail: doubleTapGesture)
     }
-
+    
     private func setupControlPanel() {
-        // Create control panel
-        controlPanel = UIView()
+        controlPanel = UIStackView()
+        controlPanel.axis = .vertical
+        controlPanel.distribution = .fill
+        controlPanel.alignment = .fill
+        controlPanel.spacing = 10
         controlPanel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         controlPanel.layer.cornerRadius = 10
+        controlPanel.isLayoutMarginsRelativeArrangement = true
+        controlPanel.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
         view.addSubview(controlPanel)
-
+        
         // Mode toggle button
         modeButton = UIButton(type: .system)
         modeButton.setTitle("Auto Mode", for: .normal)
@@ -308,7 +273,7 @@ class ViewController: UIViewController {
             action: #selector(toggleMode),
             for: .touchUpInside
         )
-
+        
         // Step button
         stepButton = UIButton(type: .system)
         stepButton.setTitle("Step", for: .normal)
@@ -322,7 +287,7 @@ class ViewController: UIViewController {
         )
         stepButton.isEnabled = false
         stepButton.alpha = 0.5
-
+        
         // Reset button
         resetButton = UIButton(type: .system)
         resetButton.setTitle("Reset", for: .normal)
@@ -334,7 +299,7 @@ class ViewController: UIViewController {
             action: #selector(resetSimulation),
             for: .touchUpInside
         )
-
+        
         // Render mode button
         renderModeButton = UIButton(type: .system)
         renderModeButton.setTitle("Particles", for: .normal)
@@ -346,7 +311,7 @@ class ViewController: UIViewController {
             action: #selector(toggleRenderMode),
             for: .touchUpInside
         )
-
+        
         // Material mode button
         materialModeButton = UIButton(type: .system)
         materialModeButton.setTitle("Fluid", for: .normal)
@@ -398,6 +363,33 @@ class ViewController: UIViewController {
         massScaleLabel.font = UIFont.systemFont(ofSize: 14)
         massScaleLabel.textAlignment = .center
         
+        // Cube scale slider (for Elastic mode)
+        cubeScaleSlider = UISlider()
+        cubeScaleSlider.minimumValue = 0.1
+        cubeScaleSlider.maximumValue = 1.5
+        cubeScaleSlider.value = 0.8
+        cubeScaleSlider.addTarget(
+            self,
+            action: #selector(cubeScaleChanged),
+            for: .valueChanged
+        )
+        
+        // Cube scale label
+        cubeScaleLabel = UILabel()
+        cubeScaleLabel.text = "Cube: 0.8x"
+        cubeScaleLabel.textColor = .white
+        cubeScaleLabel.font = UIFont.systemFont(ofSize: 14)
+        cubeScaleLabel.textAlignment = .center
+        
+        // Material scale stack view (contains mass and cube controls)
+        materialScaleStackView = UIStackView()
+        materialScaleStackView.axis = .vertical
+        materialScaleStackView.distribution = .fill
+        materialScaleStackView.alignment = .fill
+        materialScaleStackView.spacing = 10
+        
+        // Height constraints are set in the main NSLayoutConstraint.activate section
+        
         // Particle count slider
         particleCountSlider = UISlider()
         particleCountSlider.minimumValue = 1000
@@ -433,6 +425,24 @@ class ViewController: UIViewController {
         gridSizeLabel.textColor = .white
         gridSizeLabel.font = UIFont.systemFont(ofSize: 14)
         gridSizeLabel.textAlignment = .center
+        
+        // Grid spacing multiplier slider
+        gridSpacingSlider = UISlider()
+        gridSpacingSlider.minimumValue = 0.1
+        gridSpacingSlider.maximumValue = 5.0
+        gridSpacingSlider.value = 1.0  // Default multiplier
+        gridSpacingSlider.addTarget(
+            self,
+            action: #selector(gridSpacingChanged),
+            for: .valueChanged
+        )
+        
+        // Grid spacing multiplier label
+        gridSpacingLabel = UILabel()
+        gridSpacingLabel.text = String(format: "Spacing: %.1fx", gridSpacingSlider.value)
+        gridSpacingLabel.textColor = .white
+        gridSpacingLabel.font = UIFont.systemFont(ofSize: 14)
+        gridSpacingLabel.textAlignment = .center
         
         // SDF scale slider
         sdfScaleSlider = UISlider()
@@ -481,17 +491,6 @@ class ViewController: UIViewController {
             for: .valueChanged
         )
         
-        // Transparent background toggle
-        transparentBackgroundToggle = UIButton(type: .system)
-        transparentBackgroundToggle.setTitle("Transparent: OFF", for: .normal)
-        transparentBackgroundToggle.setTitleColor(.white, for: .normal)
-        transparentBackgroundToggle.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
-        transparentBackgroundToggle.layer.cornerRadius = 8
-        transparentBackgroundToggle.addTarget(
-            self,
-            action: #selector(toggleTransparentBackground),
-            for: .touchUpInside
-        )
         
         // SDF Y rotation label
         sdfYRotationLabel = UILabel()
@@ -499,266 +498,129 @@ class ViewController: UIViewController {
         sdfYRotationLabel.textColor = .white
         sdfYRotationLabel.font = UIFont.systemFont(ofSize: 14)
         sdfYRotationLabel.textAlignment = .center
-
-        // Add buttons to control panel
-        controlPanel.addSubview(modeButton)
-        controlPanel.addSubview(stepButton)
-        controlPanel.addSubview(resetButton)
-        controlPanel.addSubview(renderModeButton)
-        controlPanel.addSubview(materialModeButton)
-        // worldOrbitButton lives in arPanel, not controlPanel
-        controlPanel.addSubview(particleSizeSlider)
-        controlPanel.addSubview(particleSizeLabel)
-        controlPanel.addSubview(massScaleSlider)
-        controlPanel.addSubview(massScaleLabel)
-        controlPanel.addSubview(particleCountSlider)
-        controlPanel.addSubview(particleCountLabel)
-        controlPanel.addSubview(gridSizeSlider)
-        controlPanel.addSubview(gridSizeLabel)
-
-        // Setup constraints
+        
+        // World translate X slider
+        worldTranslateXSlider = UISlider()
+        worldTranslateXSlider.minimumValue = -5.0
+        worldTranslateXSlider.maximumValue = 5.0
+        worldTranslateXSlider.value = 0.0
+        worldTranslateXSlider.addTarget(
+            self,
+            action: #selector(worldTranslateXChanged),
+            for: .valueChanged
+        )
+        
+        // World translate X label
+        worldTranslateXLabel = UILabel()
+        worldTranslateXLabel.text = String(format: "World X: %.1f", worldTranslateXSlider.value)
+        worldTranslateXLabel.textColor = .white
+        worldTranslateXLabel.font = UIFont.systemFont(ofSize: 14)
+        worldTranslateXLabel.textAlignment = .center
+        
+        // World translate Y slider
+        worldTranslateYSlider = UISlider()
+        worldTranslateYSlider.minimumValue = -5.0
+        worldTranslateYSlider.maximumValue = 5.0
+        worldTranslateYSlider.value = 0.0
+        worldTranslateYSlider.addTarget(
+            self,
+            action: #selector(worldTranslateYChanged),
+            for: .valueChanged
+        )
+        
+        // World translate Y label
+        worldTranslateYLabel = UILabel()
+        worldTranslateYLabel.text = String(format: "World Y: %.1f", worldTranslateYSlider.value)
+        worldTranslateYLabel.textColor = .white
+        worldTranslateYLabel.font = UIFont.systemFont(ofSize: 14)
+        worldTranslateYLabel.textAlignment = .center
+        
+        // World translate Z slider
+        worldTranslateZSlider = UISlider()
+        worldTranslateZSlider.minimumValue = -5.0
+        worldTranslateZSlider.maximumValue = 5.0
+        worldTranslateZSlider.value = 0.0
+        worldTranslateZSlider.addTarget(
+            self,
+            action: #selector(worldTranslateZChanged),
+            for: .valueChanged
+        )
+        
+        // World translate Z label
+        worldTranslateZLabel = UILabel()
+        worldTranslateZLabel.text = String(format: "World Z: %.1f", worldTranslateZSlider.value)
+        worldTranslateZLabel.textColor = .white
+        worldTranslateZLabel.font = UIFont.systemFont(ofSize: 14)
+        worldTranslateZLabel.textAlignment = .center
+        
+        controlPanel.addArrangedSubview(modeButton)
+        controlPanel.addArrangedSubview(stepButton)
+        controlPanel.addArrangedSubview(resetButton)
+        controlPanel.addArrangedSubview(renderModeButton)
+        controlPanel.addArrangedSubview(materialModeButton)
+        controlPanel.addArrangedSubview(particleSizeLabel)
+        controlPanel.addArrangedSubview(particleSizeSlider)
+        controlPanel.addArrangedSubview(materialScaleStackView)
+        controlPanel.addArrangedSubview(particleCountLabel)
+        controlPanel.addArrangedSubview(particleCountSlider)
+        controlPanel.addArrangedSubview(gridSizeLabel)
+        controlPanel.addArrangedSubview(gridSizeSlider)
+        controlPanel.addArrangedSubview(gridSpacingLabel)
+        controlPanel.addArrangedSubview(gridSpacingSlider)
+        controlPanel.addArrangedSubview(worldTranslateXLabel)
+        controlPanel.addArrangedSubview(worldTranslateXSlider)
+        controlPanel.addArrangedSubview(worldTranslateYLabel)
+        controlPanel.addArrangedSubview(worldTranslateYSlider)
+        controlPanel.addArrangedSubview(worldTranslateZLabel)
+        controlPanel.addArrangedSubview(worldTranslateZSlider)
+        
         controlPanel.translatesAutoresizingMaskIntoConstraints = false
-        modeButton.translatesAutoresizingMaskIntoConstraints = false
-        stepButton.translatesAutoresizingMaskIntoConstraints = false
-        resetButton.translatesAutoresizingMaskIntoConstraints = false
-        renderModeButton.translatesAutoresizingMaskIntoConstraints = false
-        materialModeButton.translatesAutoresizingMaskIntoConstraints = false
-        // worldOrbitButton constraints are defined in setupARPanel
-        particleSizeSlider.translatesAutoresizingMaskIntoConstraints = false
-        particleSizeLabel.translatesAutoresizingMaskIntoConstraints = false
-        massScaleSlider.translatesAutoresizingMaskIntoConstraints = false
-        massScaleLabel.translatesAutoresizingMaskIntoConstraints = false
-        particleCountSlider.translatesAutoresizingMaskIntoConstraints = false
-        particleCountLabel.translatesAutoresizingMaskIntoConstraints = false
-        gridSizeSlider.translatesAutoresizingMaskIntoConstraints = false
-        gridSizeLabel.translatesAutoresizingMaskIntoConstraints = false
-        sdfScaleSlider.translatesAutoresizingMaskIntoConstraints = false
-        sdfScaleLabel.translatesAutoresizingMaskIntoConstraints = false
-        sdfYOffsetSlider.translatesAutoresizingMaskIntoConstraints = false
-        sdfYOffsetLabel.translatesAutoresizingMaskIntoConstraints = false
-        sdfYRotationSlider.translatesAutoresizingMaskIntoConstraints = false
-        sdfYRotationLabel.translatesAutoresizingMaskIntoConstraints = false
-
+        
         NSLayoutConstraint.activate([
-            // Control panel constraints
-            controlPanel.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor,
-                constant: 20
-            ),
-            controlPanel.leadingAnchor.constraint(
-                equalTo: view.leadingAnchor,
-                constant: 20
-            ),
+            // Control panel constraints (only position and width needed for StackView)
+            controlPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            controlPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             controlPanel.widthAnchor.constraint(equalToConstant: 200),
-
-            // Mode button constraints
-            modeButton.topAnchor.constraint(
-                equalTo: controlPanel.topAnchor,
-                constant: 10
-            ),
-            modeButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            modeButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
+            
+            // Set heights for buttons and sliders
             modeButton.heightAnchor.constraint(equalToConstant: 40),
-
-            // Step button constraints
-            stepButton.topAnchor.constraint(
-                equalTo: modeButton.bottomAnchor,
-                constant: 10
-            ),
-            stepButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            stepButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             stepButton.heightAnchor.constraint(equalToConstant: 40),
-
-            // Reset button constraints
-            resetButton.topAnchor.constraint(
-                equalTo: stepButton.bottomAnchor,
-                constant: 10
-            ),
-            resetButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            resetButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             resetButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Render mode button constraints
-            renderModeButton.topAnchor.constraint(
-                equalTo: resetButton.bottomAnchor,
-                constant: 10
-            ),
-            renderModeButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            renderModeButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             renderModeButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Material mode button constraints
-            materialModeButton.topAnchor.constraint(
-                equalTo: renderModeButton.bottomAnchor,
-                constant: 10
-            ),
-            materialModeButton.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            materialModeButton.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             materialModeButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Particle size label constraints
-            particleSizeLabel.topAnchor.constraint(
-                equalTo: materialModeButton.bottomAnchor,
-                constant: 10
-            ),
-            particleSizeLabel.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            particleSizeLabel.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             particleSizeLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // Particle size slider constraints
-            particleSizeSlider.topAnchor.constraint(
-                equalTo: particleSizeLabel.bottomAnchor,
-                constant: 5
-            ),
-            particleSizeSlider.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            particleSizeSlider.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             particleSizeSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // Mass scale label constraints
-            massScaleLabel.topAnchor.constraint(
-                equalTo: particleSizeSlider.bottomAnchor,
-                constant: 10
-            ),
-            massScaleLabel.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            massScaleLabel.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
-            massScaleLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // Mass scale slider constraints
-            massScaleSlider.topAnchor.constraint(
-                equalTo: massScaleLabel.bottomAnchor,
-                constant: 5
-            ),
-            massScaleSlider.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            massScaleSlider.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
-            massScaleSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // Particle count label constraints
-            particleCountLabel.topAnchor.constraint(
-                equalTo: massScaleSlider.bottomAnchor,
-                constant: 10
-            ),
-            particleCountLabel.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            particleCountLabel.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             particleCountLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // Particle count slider constraints
-            particleCountSlider.topAnchor.constraint(
-                equalTo: particleCountLabel.bottomAnchor,
-                constant: 5
-            ),
-            particleCountSlider.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            particleCountSlider.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             particleCountSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // Grid size label constraints
-            gridSizeLabel.topAnchor.constraint(
-                equalTo: particleCountSlider.bottomAnchor,
-                constant: 10
-            ),
-            gridSizeLabel.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            gridSizeLabel.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             gridSizeLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // Grid size slider constraints
-            gridSizeSlider.topAnchor.constraint(
-                equalTo: gridSizeLabel.bottomAnchor,
-                constant: 5
-            ),
-            gridSizeSlider.leadingAnchor.constraint(
-                equalTo: controlPanel.leadingAnchor,
-                constant: 10
-            ),
-            gridSizeSlider.trailingAnchor.constraint(
-                equalTo: controlPanel.trailingAnchor,
-                constant: -10
-            ),
             gridSizeSlider.heightAnchor.constraint(equalToConstant: 30),
+            gridSpacingLabel.heightAnchor.constraint(equalToConstant: 20),
+            gridSpacingSlider.heightAnchor.constraint(equalToConstant: 30),
+            worldTranslateXLabel.heightAnchor.constraint(equalToConstant: 20),
+            worldTranslateXSlider.heightAnchor.constraint(equalToConstant: 30),
+            worldTranslateYLabel.heightAnchor.constraint(equalToConstant: 20),
+            worldTranslateYSlider.heightAnchor.constraint(equalToConstant: 30),
+            worldTranslateZLabel.heightAnchor.constraint(equalToConstant: 20),
+            worldTranslateZSlider.heightAnchor.constraint(equalToConstant: 30),
             
-            // Bottom constraint to define controlPanel height
-            controlPanel.bottomAnchor.constraint(
-                equalTo: gridSizeSlider.bottomAnchor,
-                constant: 10
-            ),
+            // Material scale elements (mass/cube)
+            massScaleLabel.heightAnchor.constraint(equalToConstant: 20),
+            massScaleSlider.heightAnchor.constraint(equalToConstant: 30),
+            cubeScaleLabel.heightAnchor.constraint(equalToConstant: 20),
+            cubeScaleSlider.heightAnchor.constraint(equalToConstant: 30)
         ])
     }
     
     private func setupCollisionPanel() {
-        // Create collision control panel (right side)
-        collisionPanel = UIView()
+        collisionPanel = UIStackView()
+        collisionPanel.axis = .vertical
+        collisionPanel.distribution = .fill
+        collisionPanel.alignment = .fill
+        collisionPanel.spacing = 10
         collisionPanel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         collisionPanel.layer.cornerRadius = 10
+        collisionPanel.isLayoutMarginsRelativeArrangement = true
+        collisionPanel.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
         view.addSubview(collisionPanel)
         
         // Collision toggle button
@@ -772,7 +634,7 @@ class ViewController: UIViewController {
             action: #selector(toggleCollision),
             for: .touchUpInside
         )
-                
+        
         // Mesh visibility button
         meshVisibilityButton = UIButton(type: .system)
         meshVisibilityButton.setTitle("Mesh: ON", for: .normal)
@@ -798,179 +660,38 @@ class ViewController: UIViewController {
         )
         
         // Add buttons to collision panel
-        collisionPanel.addSubview(collisionToggleButton)
-        collisionPanel.addSubview(meshVisibilityButton)
-        collisionPanel.addSubview(wireframeButton)
-        collisionPanel.addSubview(sdfScaleSlider)
-        collisionPanel.addSubview(sdfScaleLabel)
-        collisionPanel.addSubview(sdfYOffsetSlider)
-        collisionPanel.addSubview(sdfYOffsetLabel)
-        collisionPanel.addSubview(sdfYRotationSlider)
-        collisionPanel.addSubview(sdfYRotationLabel)
+        collisionPanel.addArrangedSubview(collisionToggleButton)
+        collisionPanel.addArrangedSubview(meshVisibilityButton)
+        collisionPanel.addArrangedSubview(wireframeButton)
+        collisionPanel.addArrangedSubview(sdfScaleLabel)
+        collisionPanel.addArrangedSubview(sdfScaleSlider)
+        collisionPanel.addArrangedSubview(sdfYOffsetLabel)
+        collisionPanel.addArrangedSubview(sdfYOffsetSlider)
+        collisionPanel.addArrangedSubview(sdfYRotationLabel)
+        collisionPanel.addArrangedSubview(sdfYRotationSlider)
         
-        // Setup constraints
         collisionPanel.translatesAutoresizingMaskIntoConstraints = false
-        collisionToggleButton.translatesAutoresizingMaskIntoConstraints = false
-        meshVisibilityButton.translatesAutoresizingMaskIntoConstraints = false
-        wireframeButton.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            // Collision panel constraints (right side)
-            collisionPanel.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor,
-                constant: 20
-            ),
-            collisionPanel.trailingAnchor.constraint(
-                equalTo: view.trailingAnchor,
-                constant: -20
-            ),
+            // Collision panel constraints (only position and width needed for StackView)
+            collisionPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            collisionPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             collisionPanel.widthAnchor.constraint(equalToConstant: 200),
             
-            // Collision toggle button constraints
-            collisionToggleButton.topAnchor.constraint(
-                equalTo: collisionPanel.topAnchor,
-                constant: 10
-            ),
-            collisionToggleButton.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            collisionToggleButton.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
+            // Set heights for buttons and sliders
             collisionToggleButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Mesh visibility button constraints
-            meshVisibilityButton.topAnchor.constraint(
-                equalTo: collisionToggleButton.bottomAnchor,
-                constant: 10
-            ),
-            meshVisibilityButton.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            meshVisibilityButton.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             meshVisibilityButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // Wireframe button constraints
-            wireframeButton.topAnchor.constraint(
-                equalTo: meshVisibilityButton.bottomAnchor,
-                constant: 10
-            ),
-            wireframeButton.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            wireframeButton.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             wireframeButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            // SDF scale label constraints
-            sdfScaleLabel.topAnchor.constraint(
-                equalTo: wireframeButton.bottomAnchor,
-                constant: 10
-            ),
-            sdfScaleLabel.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfScaleLabel.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             sdfScaleLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // SDF scale slider constraints
-            sdfScaleSlider.topAnchor.constraint(
-                equalTo: sdfScaleLabel.bottomAnchor,
-                constant: 5
-            ),
-            sdfScaleSlider.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfScaleSlider.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             sdfScaleSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // SDF Y offset label constraints
-            sdfYOffsetLabel.topAnchor.constraint(
-                equalTo: sdfScaleSlider.bottomAnchor,
-                constant: 10
-            ),
-            sdfYOffsetLabel.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfYOffsetLabel.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             sdfYOffsetLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // SDF Y offset slider constraints
-            sdfYOffsetSlider.topAnchor.constraint(
-                equalTo: sdfYOffsetLabel.bottomAnchor,
-                constant: 5
-            ),
-            sdfYOffsetSlider.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfYOffsetSlider.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             sdfYOffsetSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // SDF Y rotation label constraints
-            sdfYRotationLabel.topAnchor.constraint(
-                equalTo: sdfYOffsetSlider.bottomAnchor,
-                constant: 10
-            ),
-            sdfYRotationLabel.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfYRotationLabel.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
             sdfYRotationLabel.heightAnchor.constraint(equalToConstant: 20),
-            
-            // SDF Y rotation slider constraints
-            sdfYRotationSlider.topAnchor.constraint(
-                equalTo: sdfYRotationLabel.bottomAnchor,
-                constant: 5
-            ),
-            sdfYRotationSlider.leadingAnchor.constraint(
-                equalTo: collisionPanel.leadingAnchor,
-                constant: 10
-            ),
-            sdfYRotationSlider.trailingAnchor.constraint(
-                equalTo: collisionPanel.trailingAnchor,
-                constant: -10
-            ),
-            sdfYRotationSlider.heightAnchor.constraint(equalToConstant: 30),
-            
-            // Bottom constraint to define collision panel height
-            collisionPanel.bottomAnchor.constraint(
-                equalTo: sdfYRotationSlider.bottomAnchor,
-                constant: 10
-            ),
+            sdfYRotationSlider.heightAnchor.constraint(equalToConstant: 30)
         ])
     }
     
     private func setupARPanel() {
-        // Create AR control panel (bottom right)
         arPanel = UIView()
         arPanel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         arPanel.layer.cornerRadius = 10
@@ -989,15 +710,88 @@ class ViewController: UIViewController {
             for: .touchUpInside
         )
         
+        // AR Mesh toggle button
+        arMeshToggleButton = UIButton(type: .system)
+        arMeshToggleButton.setTitle("Mesh: ON", for: .normal)
+        arMeshToggleButton.setTitleColor(.white, for: .normal)
+        arMeshToggleButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        arMeshToggleButton.layer.cornerRadius = 8
+        arMeshToggleButton.addTarget(
+            self,
+            action: #selector(toggleARMesh),
+            for: .touchUpInside
+        )
+        
+        // AR Camera toggle button
+        arCameraToggleButton = UIButton(type: .system)
+        arCameraToggleButton.setTitle("Camera: ON", for: .normal)
+        arCameraToggleButton.setTitleColor(.white, for: .normal)
+        arCameraToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        arCameraToggleButton.layer.cornerRadius = 8
+        arCameraToggleButton.addTarget(
+            self,
+            action: #selector(toggleARCamera),
+            for: .touchUpInside
+        )
+        
+        // AR Collision Render collection view
+        arCollisionRenderLayout = UICollectionViewFlowLayout()
+        arCollisionRenderLayout.scrollDirection = .horizontal
+        arCollisionRenderLayout.minimumLineSpacing = 8
+        arCollisionRenderLayout.minimumInteritemSpacing = 8
+        arCollisionRenderLayout.itemSize = CGSize(width: 60, height: 36)
+        
+        arCollisionRenderCollectionView = UICollectionView(frame: .zero, collectionViewLayout: arCollisionRenderLayout)
+        arCollisionRenderCollectionView.backgroundColor = UIColor.clear
+        arCollisionRenderCollectionView.showsHorizontalScrollIndicator = false
+        arCollisionRenderCollectionView.allowsMultipleSelection = true
+        arCollisionRenderCollectionView.delegate = self
+        arCollisionRenderCollectionView.dataSource = self
+        arCollisionRenderCollectionView.register(CollisionRenderCell.self, forCellWithReuseIdentifier: "CollisionRenderCell")
+        
+        // AR Collision Title label
+        arCollisionTitleLabel = UILabel()
+        arCollisionTitleLabel.text = "Active Collision:"
+        arCollisionTitleLabel.textColor = .white
+        arCollisionTitleLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        arCollisionTitleLabel.textAlignment = .left
+        
+        // AR Bounding Box Radius slider
+        arBBRadiusSlider = UISlider()
+        arBBRadiusSlider.minimumValue = 0.1
+        arBBRadiusSlider.maximumValue = 2.0
+        arBBRadiusSlider.value = arBoundingBoxRadius
+        arBBRadiusSlider.addTarget(
+            self,
+            action: #selector(arBBRadiusChanged),
+            for: .valueChanged
+        )
+        
+        // AR Bounding Box Radius label
+        arBBRadiusLabel = UILabel()
+        arBBRadiusLabel.text = String(format: "BB: %.1fm", arBoundingBoxRadius)
+        arBBRadiusLabel.textColor = .white
+        arBBRadiusLabel.font = UIFont.systemFont(ofSize: 14)
+        arBBRadiusLabel.textAlignment = .center
+        
         // Add controls to AR panel (bottom right)
         arPanel.addSubview(arToggleButton)
-        arPanel.addSubview(transparentBackgroundToggle)
+        arPanel.addSubview(arMeshToggleButton)
+        arPanel.addSubview(arCameraToggleButton)
+        arPanel.addSubview(arCollisionTitleLabel)
+        arPanel.addSubview(arCollisionRenderCollectionView)
+        arPanel.addSubview(arBBRadiusSlider)
+        arPanel.addSubview(arBBRadiusLabel)
         
         
-        // Setup constraints
         arPanel.translatesAutoresizingMaskIntoConstraints = false
         arToggleButton.translatesAutoresizingMaskIntoConstraints = false
-        transparentBackgroundToggle.translatesAutoresizingMaskIntoConstraints = false
+        arMeshToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        arCameraToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        arCollisionTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        arCollisionRenderCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        arBBRadiusSlider.translatesAutoresizingMaskIntoConstraints = false
+        arBBRadiusLabel.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
             // AR panel constraints (bottom right with fixed bottom anchor)
@@ -1026,28 +820,105 @@ class ViewController: UIViewController {
             ),
             arToggleButton.heightAnchor.constraint(equalToConstant: 40),
             
-            // Transparent background toggle constraints (below AR toggle)
-            transparentBackgroundToggle.topAnchor.constraint(
+            // AR Mesh toggle button constraints (below AR toggle)
+            arMeshToggleButton.topAnchor.constraint(
                 equalTo: arToggleButton.bottomAnchor,
                 constant: 10
             ),
-            transparentBackgroundToggle.leadingAnchor.constraint(
+            arMeshToggleButton.leadingAnchor.constraint(
                 equalTo: arPanel.leadingAnchor,
                 constant: 10
             ),
-            transparentBackgroundToggle.trailingAnchor.constraint(
+            arMeshToggleButton.trailingAnchor.constraint(
                 equalTo: arPanel.trailingAnchor,
                 constant: -10
             ),
-            transparentBackgroundToggle.heightAnchor.constraint(equalToConstant: 40),
+            arMeshToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // AR Camera toggle button constraints (below AR mesh toggle)
+            arCameraToggleButton.topAnchor.constraint(
+                equalTo: arMeshToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            arCameraToggleButton.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arCameraToggleButton.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arCameraToggleButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            // AR Collision Title label constraints (below AR camera toggle)
+            arCollisionTitleLabel.topAnchor.constraint(
+                equalTo: arCameraToggleButton.bottomAnchor,
+                constant: 10
+            ),
+            arCollisionTitleLabel.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arCollisionTitleLabel.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arCollisionTitleLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // AR Collision Render collection view constraints (below title label)
+            arCollisionRenderCollectionView.topAnchor.constraint(
+                equalTo: arCollisionTitleLabel.bottomAnchor,
+                constant: 5
+            ),
+            arCollisionRenderCollectionView.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arCollisionRenderCollectionView.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arCollisionRenderCollectionView.heightAnchor.constraint(equalToConstant: 40),
+            
+            // AR Bounding Box Radius label constraints (below collision render collection view)
+            arBBRadiusLabel.topAnchor.constraint(
+                equalTo: arCollisionRenderCollectionView.bottomAnchor,
+                constant: 10
+            ),
+            arBBRadiusLabel.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arBBRadiusLabel.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arBBRadiusLabel.heightAnchor.constraint(equalToConstant: 20),
+            
+            // AR Bounding Box Radius slider constraints (below label)
+            arBBRadiusSlider.topAnchor.constraint(
+                equalTo: arBBRadiusLabel.bottomAnchor,
+                constant: 5
+            ),
+            arBBRadiusSlider.leadingAnchor.constraint(
+                equalTo: arPanel.leadingAnchor,
+                constant: 10
+            ),
+            arBBRadiusSlider.trailingAnchor.constraint(
+                equalTo: arPanel.trailingAnchor,
+                constant: -10
+            ),
+            arBBRadiusSlider.heightAnchor.constraint(equalToConstant: 30),
         ])
         
         // Create and manage panel height constraint (adjusted dynamically)
-        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 60)
+        // Height: AR OFF = AR(40) + paddings(20) = 70
+        // Height: AR ON = AR(40) + Mesh(40) + Camera(40) + CollisionTitle(20) + spacing(5) + Collision(40) + BBLabel(20) + BBSlider(30) + 7 spacings(65) + paddings(20) = 320
+        arPanelHeightConstraint = arPanel.heightAnchor.constraint(equalToConstant: 70)
         arPanelHeightConstraint.isActive = true
         
         // Initialize AR panel visibility
-        updateTransparentBackgroundToggleVisibility()
+        updateARButtonsVisibility()
     }
     
     @objc private func particleSizeChanged(_ slider: UISlider) {
@@ -1062,6 +933,12 @@ class ViewController: UIViewController {
         fluidRenderer.setMassScale(scale)
     }
     
+    @objc private func cubeScaleChanged(_ slider: UISlider) {
+        let scale = slider.value
+        cubeScaleLabel.text = String(format: "Cube: %.1fx", scale)
+        fluidRenderer.elasticCubeScale = scale
+    }
+    
     @objc private func particleCountChanged(_ slider: UISlider) {
         let count = Int(slider.value)
         particleCountLabel.text = "Particles: \(count)"
@@ -1074,28 +951,52 @@ class ViewController: UIViewController {
         fluidRenderer.setGridSize(size)
     }
     
+    @objc private func gridSpacingChanged(_ slider: UISlider) {
+        let multiplier = slider.value
+        gridSpacingLabel.text = String(format: "Spacing: %.1fx", multiplier)
+        fluidRenderer.setGridSpacingMultiplier(multiplier)
+    }
+    
     @objc private func sdfScaleChanged(_ slider: UISlider) {
         let scale = slider.value
         sdfScaleLabel.text = String(format: "SDF Scale: %.2fx", scale)
-        updateSdfTransfom()
+        updateSdfTransform()
     }
     
     @objc private func sdfYOffsetChanged(_ slider: UISlider) {
         let offset = slider.value
         sdfYOffsetLabel.text = String(format: "SDF Y Offset: %.1f", offset)
-        updateSdfTransfom()
+        updateSdfTransform()
     }
     
     @objc private func sdfYRotationChanged(_ slider: UISlider) {
         let rotation = slider.value
         sdfYRotationLabel.text = String(format: "SDF Y Rotation: %.0f°", rotation)
-        updateSdfTransfom()
+        updateSdfTransform()
     }
-    private func updateSdfTransfom(){
+    internal func updateSdfTransform(){
         let scale = sdfScaleSlider.value
         let offset = sdfYOffsetSlider.value
         let rotation = sdfYRotationSlider.value
         fluidRenderer.collisionManager?.representativeItem.updateSdfTransform(scale: SIMD3<Float>(scale, scale, scale), translate:SIMD3<Float>(0.0, offset, 0.0),rotate: SIMD3<Float>(0.0, rotation * Float.pi / 180.0, 0.0))
+    }
+    
+    @objc private func worldTranslateXChanged(_ slider: UISlider) {
+        let xOffset = slider.value
+        worldTranslateXLabel.text = String(format: "World X: %.1f", xOffset)
+        worldTranslationOffset.x = xOffset
+    }
+    
+    @objc private func worldTranslateYChanged(_ slider: UISlider) {
+        let yOffset = slider.value
+        worldTranslateYLabel.text = String(format: "World Y: %.1f", yOffset)
+        worldTranslationOffset.y = yOffset
+    }
+    
+    @objc private func worldTranslateZChanged(_ slider: UISlider) {
+        let zOffset = slider.value
+        worldTranslateZLabel.text = String(format: "World Z: %.1f", zOffset)
+        worldTranslationOffset.z = zOffset
     }
     
     @objc private func toggleRenderMode() {
@@ -1117,15 +1018,15 @@ class ViewController: UIViewController {
             renderModeButton.backgroundColor = UIColor.systemTeal.withAlphaComponent(0.8)
         }
     }
-
+    
     // MARK: - Background Color Controls
     public var defaultBackgroundColorParticles: MTLClearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
     public var defaultBackgroundColorWater: MTLClearColor = MTLClearColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
     private func installDefaultBackgroundRenderer() {
         guard let fluidRenderer = fluidRenderer else { return }
         let color = (fluidRenderer.currentRenderMode == .water) ?
-            defaultBackgroundColorWater :
-            defaultBackgroundColorParticles
+        defaultBackgroundColorWater :
+        defaultBackgroundColorParticles
         // Update in place if already using a solid color background
         if let solid = fluidRenderer.backgroundRenderer as? SolidColorBackgroundRenderer {
             solid.clearColor = color
@@ -1135,7 +1036,7 @@ class ViewController: UIViewController {
         // Also reflect on MTKView as a fallback when no background renderer is active
         metalView?.clearColor = color
     }
-
+    
     @objc private func toggleMaterialMode() {
         guard let renderer = fluidRenderer else { return }
         
@@ -1151,14 +1052,41 @@ class ViewController: UIViewController {
             materialModeButton.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.8)
         }
         
+        // Update UI visibility based on material mode
+        updateMaterialModeUI()
+        
         // Reset simulation when material mode changes
         renderer.reset()
         print("🔄 Material mode changed to: \(renderer.materialParameters.currentMaterialMode)")
     }
-
+    
+    private func updateMaterialModeUI() {
+        guard let renderer = fluidRenderer else { return }
+        
+        let isElasticMode = (renderer.materialParameters.currentMaterialMode == .neoHookeanElastic)
+        
+        // Clear all arranged subviews
+        materialScaleStackView.arrangedSubviews.forEach { subview in
+            materialScaleStackView.removeArrangedSubview(subview)
+            subview.removeFromSuperview()
+        }
+        
+        if isElasticMode {
+            // Show only Cube Scale controls for Elastic mode
+            materialScaleStackView.addArrangedSubview(cubeScaleLabel)
+            materialScaleStackView.addArrangedSubview(cubeScaleSlider)
+        } else {
+            // Show only Mass Scale controls for Fluid mode  
+            materialScaleStackView.addArrangedSubview(massScaleLabel)
+            materialScaleStackView.addArrangedSubview(massScaleSlider)
+        }
+        
+        print("🔧 Material Mode UI - Elastic: \(isElasticMode ? "ON" : "OFF"), Stack contains: \(materialScaleStackView.arrangedSubviews.count) views")
+    }
+    
     @objc private func toggleMode() {
         isAutoMode.toggle()
-
+        
         if isAutoMode {
             modeButton.setTitle("Auto Mode", for: .normal)
             modeButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(
@@ -1174,13 +1102,13 @@ class ViewController: UIViewController {
             stepButton.alpha = 1.0
         }
     }
-
+    
     @objc private func stepSimulation() {
         if !isAutoMode {
             shouldStep = true
         }
     }
-
+    
     @objc private func resetSimulation() {
         // Reset simulation to clean state first
         fluidRenderer.reset()
@@ -1207,7 +1135,7 @@ class ViewController: UIViewController {
             collisionToggleButton.backgroundColor = UIColor.systemRed.withAlphaComponent(0.8)
         }
     }
-        
+    
     @objc private func toggleMeshVisibility() {
         guard let isVisible = fluidRenderer.collisionManager?.isMeshVisible() else {
             return
@@ -1237,12 +1165,23 @@ class ViewController: UIViewController {
             wireframeButton.backgroundColor = UIColor.systemPurple.withAlphaComponent(0.8)
         }
     }
-   
-
+    
+    
     // MARK: - World Transform Controls (for AR placement)
     public func setFluidWorldTranslation(_ t: SIMD3<Float>) {
         // Update only the translation coefficients
         worldTranslation = t
+        // Reset the UI offset when setting new base translation
+        worldTranslationOffset = SIMD3<Float>(0.0, 0.0, 0.0)
+        // Update UI sliders to reflect the reset offset
+        DispatchQueue.main.async { [weak self] in
+            self?.worldTranslateXSlider.value = 0.0
+            self?.worldTranslateYSlider.value = 0.0
+            self?.worldTranslateZSlider.value = 0.0
+            self?.worldTranslateXLabel.text = "World X: 0.0"
+            self?.worldTranslateYLabel.text = "World Y: 0.0"
+            self?.worldTranslateZLabel.text = "World Z: 0.0"
+        }
     }
     
     public func setFluidWorldRotationEuler(yaw: Float, pitch: Float, roll: Float) {
@@ -1267,49 +1206,20 @@ class ViewController: UIViewController {
         worldPitch = asin(normalizedForward.y)
     }
     
-    public func getFluidWorldTransform() -> float4x4 {
-        // Return computed transform without applying to renderer
-        return computeWorldTransform()
-    }
-    @objc private func toggleTransparentBackground() {
-        // Swap between AR background and existing background renderer
-        guard let fluidRenderer = fluidRenderer else { return }
-        if fluidRenderer.backgroundRenderer is ARBackgroundRendererAdapter {
-            // Swap back to saved (or default) background
-            if let saved = savedBackgroundRenderer {
-                fluidRenderer.backgroundRenderer = saved
-            } else {
-                installDefaultBackgroundRenderer()
-            }
-            transparentBackgroundToggle.setTitle("AR BG: OFF", for: .normal)
-            transparentBackgroundToggle.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
-        } else {
-            // Ensure AR renderer exists
-            if arRenderer == nil {
-                arRenderer = ARRenderer(device: fluidRenderer.device, commandQueue: fluidRenderer.commandQueue)
-            }
-            guard let arRenderer = arRenderer else { return }
-            // Save current background and swap to AR background
-            savedBackgroundRenderer = fluidRenderer.backgroundRenderer
-            arRenderer.startARSession()
-            fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: arRenderer, isTransparent: true)
-            transparentBackgroundToggle.setTitle("AR BG: ON", for: .normal)
-            transparentBackgroundToggle.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
-        }
-    }
     
-    private var isAREnabled: Bool = false
-    private var arRenderer: ARRenderer?
-    private var savedBackgroundRenderer: BackgroundRenderer?
+    internal var isAREnabled: Bool = false
+    internal var arRenderer: ARRenderer?
+    internal var savedBackgroundRenderer: BackgroundRenderer?
+    internal var arBoundingBoxRadius: Float = 0.5  // Default 50cm radius
     
-
+    
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: metalView)
-
+        
         switch gesture.state {
         case .began:
             lastPanPoint = gesture.location(in: metalView)
-
+            
         case .changed:
             if isAREnabled {
                 return
@@ -1326,7 +1236,7 @@ class ViewController: UIViewController {
             break
         }
     }
-
+    
     @objc private func handleTwoFingerPanGesture(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: metalView)
         switch gesture.state {
@@ -1334,15 +1244,15 @@ class ViewController: UIViewController {
             if isAREnabled {
                 return
             }
-            var baseViewMatrix = getViewMatrix()
+            let baseViewMatrix = getViewMatrix()
             let invView = baseViewMatrix.inverse
             let right = SIMD3<Float>(invView.columns.0.x, invView.columns.0.y, invView.columns.0.z)
             let up = SIMD3<Float>(invView.columns.1.x, invView.columns.1.y, invView.columns.1.z)
-
+            
             // Two-finger: translate world in screen plane
             let dx = Float(translation.x) * worldPanSpeed
             let dy = Float(-translation.y) * worldPanSpeed
-
+            
             // Update translation coefficients directly
             worldTranslation = worldTranslation + right * dx + up * dy
             gesture.setTranslation(.zero, in: metalView)
@@ -1350,7 +1260,7 @@ class ViewController: UIViewController {
             break
         }
     }
-
+    
     @objc private func handlePinchGesture(_ gesture: UIPinchGestureRecognizer) {
         switch gesture.state {
         case .began:
@@ -1374,10 +1284,10 @@ class ViewController: UIViewController {
             break
         }
     }
-
+    
     @objc private func handleTapGesture(_ gesture: UITapGestureRecognizer) {
         let tapPoint = gesture.location(in: metalView)
-
+        
         if isAREnabled {
             // AR Mode: Perform raycast against AR mesh
             handleARTap(at: tapPoint)
@@ -1385,19 +1295,19 @@ class ViewController: UIViewController {
             // Non-AR Mode: Original 2D fluid interaction
             let normalizedX = Float(tapPoint.x / metalView.bounds.width) * 2.0 - 1.0
             let normalizedY = Float(1.0 - tapPoint.y / metalView.bounds.height) * 2.0 - 1.0
-
+            
             let worldPosition = SIMD2<Float>(normalizedX, normalizedY)
             let force = SIMD2<Float>(
                 Float.random(in: -5.0...5.0),
                 Float.random(in: -2.0...8.0)
             )
-
+            
             fluidRenderer.addForce(at: worldPosition, force: force)
         }
     }
     
     private func handleARTap(at tapPoint: CGPoint) {
-        #if canImport(ARKit)
+#if canImport(ARKit)
         guard let arRenderer = arRenderer,
               let orientation = metalView.window?.windowScene?.interfaceOrientation else {
             print("AR renderer or orientation not available")
@@ -1405,30 +1315,34 @@ class ViewController: UIViewController {
         }
         
         if #available(iOS 11.0, macOS 10.13, *) {
-            // Perform GPU raycast and generate SDF
-            if let sdfTexture = arRenderer.generateSDFFromTapPositionGPU(
-                tapPoint: tapPoint,
+            // Perform GPU raycast to get hit position
+            if let hitPosition = arRenderer.performGPURaycast(
+                at: tapPoint,
                 viewportSize: metalView.bounds.size,
-                orientation: orientation,
-                boundingBoxSize: 0.3 // 30cm bounding box
+                orientation: orientation
             ) {
-                print("✅ Successfully generated SDF from AR mesh at tap position")
+                print("✅ AR raycast hit at: \(hitPosition)")
                 
-                // Here you can use the SDF texture for collision detection
-                // For example, integrate with collision manager:
-                // fluidRenderer.collisionManager?.setCustomSDF(sdfTexture)
+                // Simplified: use hit position directly (no grid transform compensation needed)
+                setFluidWorldTranslation(hitPosition)
+                
+                // Extract mesh triangles around tap point and create collision
+                setupCollisionFromARMesh(arRenderer: arRenderer, tapWorldPosition: hitPosition)
+                
+                // Set tap highlight for debug visualization (same bounding box as SDF)
+                let boxSize = SIMD3<Float>(arBoundingBoxRadius, arBoundingBoxRadius, arBoundingBoxRadius) // Use configurable radius
+                arRenderer.setTapHighlight(at: hitPosition, boxSize: boxSize)
                 
                 // Show visual feedback
                 showARTapFeedback(at: tapPoint)
             } else {
-                print("❌ Failed to generate SDF from tap position")
+                print("❌ AR raycast missed - no mesh hit at tap position")
             }
         }
-        #endif
+#endif
     }
     
     private func showARTapFeedback(at tapPoint: CGPoint) {
-        // Create visual feedback for successful AR tap
         let feedbackView = UIView(frame: CGRect(x: tapPoint.x - 25, y: tapPoint.y - 25, width: 50, height: 50))
         feedbackView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.6)
         feedbackView.layer.cornerRadius = 25
@@ -1444,30 +1358,58 @@ class ViewController: UIViewController {
             feedbackView.removeFromSuperview()
         }
     }
-
+    
     @objc private func handleDoubleTapGesture(_ gesture: UITapGestureRecognizer)
     {
         // Reset world transform rotation and scale (keep translation)
         worldYaw = 0.0
         worldPitch = 0.0
         worldScale = 1.0
+        
+        // Also reset translation offset and update UI
+        worldTranslationOffset = SIMD3<Float>(0.0, 0.0, 0.0)
+        worldTranslateXSlider.value = 0.0
+        worldTranslateYSlider.value = 0.0
+        worldTranslateZSlider.value = 0.0
+        worldTranslateXLabel.text = "World X: 0.0"
+        worldTranslateYLabel.text = "World Y: 0.0"
+        worldTranslateZLabel.text = "World Z: 0.0"
+        
+        // Clear tap highlight when double tapping
+        if let arRenderer = arRenderer {
+            arRenderer.clearTapHighlight()
+        }
+        
         // Coefficients updated, no direct application to renderer
     }
-
-    private func updateTransparentBackgroundToggleVisibility() {
+    
+    private func updateARButtonsVisibility() {
         let isAREnabled = self.isAREnabled
         
-        print("🔍 AR State: \(isAREnabled), Transparent toggle hidden: \(!isAREnabled)")
+        print("🔍 AR State: \(isAREnabled), AR buttons hidden: \(!isAREnabled)")
         
-        // Show/hide transparent background toggle based on AR state
-        transparentBackgroundToggle.isHidden = !isAREnabled
+        // Show/hide AR mesh, camera, collision render, and BB radius controls based on AR state
+        arMeshToggleButton.isHidden = !isAREnabled
+        arCameraToggleButton.isHidden = !isAREnabled
+        arCollisionTitleLabel.isHidden = !isAREnabled
+        arCollisionRenderCollectionView.isHidden = !isAREnabled
+        arBBRadiusSlider.isHidden = !isAREnabled
+        arBBRadiusLabel.isHidden = !isAREnabled
+        
+        // Reload collection view data when AR state changes
+        if isAREnabled {
+            arCollisionRenderCollectionView.reloadData()
+        }
+        
+        // Hide collision controls in AR mode
+        collisionPanel.isHidden = isAREnabled
         
         // Update AR panel height based on visibility
-        // Elements: AR button (always), Transparent (AR ON only), World Orbit (always)
+        // Elements: AR button (always), Mesh, Camera, CollisionTitle, Collision, BB Label, BB Slider (AR ON only)
         // Height formula: top padding (10) + sum(button heights + inner spacings) + bottom padding (10)
-        // - AR OFF: AR(40) + spacing(10) + World(40) + paddings(20) = 110
-        // - AR ON:  AR(40) + spacing(10) + Transparent(40) + spacing(10) + World(40) + paddings(20) = 160
-        arPanelHeightConstraint.constant = isAREnabled ? 160 : 110
+        // - AR OFF: AR(40) + paddings(20) = 70
+        // - AR ON:  AR(40) + spacing(10) + Mesh(40) + spacing(10) + Camera(40) + spacing(10) + CollisionTitle(20) + spacing(5) + Collision(40) + spacing(10) + BBLabel(20) + spacing(5) + BBSlider(30) + paddings(20) = 320
+        arPanelHeightConstraint.constant = isAREnabled ? 320 : 70
         
         print("📏 AR Panel height set to: \(arPanelHeightConstraint.constant)")
         
@@ -1477,15 +1419,15 @@ class ViewController: UIViewController {
         }
     }
     
-
+    
     private func getViewMatrix() -> float4x4 {
         return matrix_identity_float4x4
     }
-
+    
     private func getProjectionMatrix(aspectRatio: Float) -> float4x4 {
         let fov: Float = 45.0 * Float.pi / 180.0
         let nearPlane: Float = 0.1
-        let farPlane: Float = 100.0
+        let farPlane: Float = 10.0
         return perspective(
             fovy: fov,
             aspect: aspectRatio,
@@ -1498,15 +1440,16 @@ extension ViewController: MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         // Handle size changes if needed
     }
-
+    
     func draw(in view: MTKView) {
-        // Apply transform coefficients to renderer only when rendering
-        updateRendererTransformIfNeeded()
+        guard let renderPassDescriptor = view.currentRenderPassDescriptor else {
+            return
+        }
         
         let currentTime = CACurrentMediaTime()
         let deltaTime = Float(currentTime - lastFrameTime)
         lastFrameTime = currentTime
-
+        
         // Only compute at 10fps equivalent
         let computeInterval: CFTimeInterval = 0.05  // 20fps
         var performStep = isAutoMode || shouldStep
@@ -1517,54 +1460,61 @@ extension ViewController: MTKViewDelegate {
                 lastComputeTime = currentTime
             }
         }
-
+        
         let screenSize = SIMD2<Float>(
             Float(view.bounds.width),
             Float(view.bounds.height)
         )
         let aspectRatio = screenSize.x / screenSize.y
-
+        
         // Create transformation matrices (use AR camera when AR is enabled)
-        var baseViewMatrix = getViewMatrix()
+        var viewMatrix = getViewMatrix()
         var projectionMatrix = getProjectionMatrix(aspectRatio: aspectRatio)
+        // Get AR camera matrices if available
+        var cameraProjectionMatrix: float4x4? = nil
+        var cameraViewMatrix: float4x4? = nil
         if isAREnabled {
-            #if canImport(ARKit)
+#if canImport(ARKit)
             if #available(iOS 11.0, macOS 10.13, *) {
                 let orientation = view.window?.windowScene?.interfaceOrientation ?? .portrait
                 if let (proj, viewM) = arRenderer?.getCameraMatrices(viewportSize: metalView.bounds.size, orientation: orientation) {
+                    // Store raw camera matrices for collision rendering
+                    cameraProjectionMatrix = proj
+                    cameraViewMatrix = viewM
+                    
+                    // Also use for fluid coordinates (existing behavior)
                     projectionMatrix = proj
-                    baseViewMatrix = viewM
+                    viewMatrix = viewM
                 }
             }
-            #endif
+#endif
         }
-        // Complete view matrix: View * Model(world) * Scale(sim units->world) * Centering
-        let viewMatrix = baseViewMatrix * fluidRenderer.worldTransform * fluidRenderer.getGridToLocalTransform()
+        viewMatrix = viewMatrix * computeWorldTransform()
         // Update simulation based on mode
         if performStep {
-            fluidRenderer.update(
-                deltaTime: deltaTime,
-                screenSize: screenSize,
-                projectionMatrix: projectionMatrix,
-                viewMatrix: viewMatrix
-            )
+            fluidRenderer.updateComputeUniforms(worldTransform:computeWorldTransform())
         }
-
-        guard let renderPassDescriptor = view.currentRenderPassDescriptor else {
-            return
-        }
+        fluidRenderer.updateVertexUniforms(
+            deltaTime: deltaTime,
+            screenSize: screenSize,
+            projectionMatrix: projectionMatrix,
+            viewMatrix: viewMatrix,
+            worldTransform: computeWorldTransform()
+        )
         
-        // Use the new render mode switching system with proper matrices
-        fluidRenderer.render(
+        // Use IntegratedRenderer as facade for all rendering
+        integratedRenderer.render(
             renderPassDescriptor: renderPassDescriptor,
             performCompute: performStep,
             projectionMatrix: projectionMatrix,
-            viewMatrix: viewMatrix
+            viewMatrix: viewMatrix,
+            cameraProjectionMatrix: cameraProjectionMatrix,
+            cameraViewMatrix: cameraViewMatrix
         )
-
+        
         // reset manual step after issuing one compute pass
         shouldStep = false
-
+        
         guard let drawable = view.currentDrawable else { return }
         drawable.present()
     }
@@ -1618,8 +1568,8 @@ extension ViewController {
             DispatchQueue.main.async {
                 if let error = error {
                     print("Failed to start recording: \(error.localizedDescription)")
-                    self?.showAlert(title: "Recording Error", 
-                                   message: "Failed to start screen recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error",
+                                    message: "Failed to start screen recording: \(error.localizedDescription)")
                 } else {
                     self?.isRecording = true
                     print("🎥 Screen recording started - Press Shift+G to stop")
@@ -1637,8 +1587,8 @@ extension ViewController {
                 
                 if let error = error {
                     print("Failed to stop recording: \(error.localizedDescription)")
-                    self?.showAlert(title: "Recording Error", 
-                                   message: "Failed to stop recording: \(error.localizedDescription)")
+                    self?.showAlert(title: "Recording Error",
+                                    message: "Failed to stop recording: \(error.localizedDescription)")
                     return
                 }
                 
@@ -1681,8 +1631,11 @@ extension ViewController{
             if let ar = arRenderer {
                 ar.startARSession()
                 savedBackgroundRenderer = fluidRenderer.backgroundRenderer
-                fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, isTransparent: true)
+                fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, fluidRenderer: fluidRenderer, isTransparent: true)
             }
+            
+            // AR mode alignment now handled by IntegratedRenderer
+            
             arToggleButton.setTitle("AR: ON", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
         } else {
@@ -1694,6 +1647,9 @@ extension ViewController{
             } else {
                 installDefaultBackgroundRenderer()
             }
+            
+            // AR mode alignment now handled by IntegratedRenderer
+            
             arToggleButton.setTitle("AR: OFF", for: .normal)
             arToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
         }
@@ -1703,7 +1659,226 @@ extension ViewController{
     // Called when AR state changes
     func onARStateChanged() {
         DispatchQueue.main.async {
-            self.updateTransparentBackgroundToggleVisibility()
+            self.updateARButtonsVisibility()
         }
+    }
+    
+    // MARK: - AR Mesh Collision Setup
+    
+    private func setupCollisionFromARMesh(arRenderer: ARRenderer, tapWorldPosition: SIMD3<Float>) {
+#if canImport(ARKit)
+        
+        // Define bounding box size around tap point (in world coordinates)
+        let boundingBoxSize: Float = arBoundingBoxRadius // Use configurable radius
+        let boundingBox = SIMD3<Float>(boundingBoxSize, boundingBoxSize, boundingBoxSize)
+        
+        // Extract triangles from AR mesh around adjusted tap point
+        guard let worldTriangles = arRenderer.extractMeshesInBoundingBoxGPU(
+            center: tapWorldPosition,
+            size: boundingBox
+        ) else {
+            print("❌ Failed to extract mesh triangles around tap point")
+            return
+        }
+        
+        if worldTriangles.isEmpty {
+            print("⚠️ No triangles found around tap point")
+            return
+        }
+        
+        // Use triangles directly (no transformation needed)
+        generateSDFFromTriangles(triangles: worldTriangles)
+        
+#endif
+    }
+    
+    
+    private func generateSDFFromTriangles(triangles: [Triangle]) {
+        print("🔧 Generating SDF from \(triangles.count) transformed triangles")
+        
+        guard let collisionManager = fluidRenderer.collisionManager else {
+            print("❌ Collision manager not available")
+            return
+        }
+        
+        // Get scene boundary for SDF resolution
+        let (boundaryMin, boundaryMax) = fluidRenderer.getBoundaryMinMax()
+        let sdfResolution = SIMD3<Int32>(64, 64, 64) // Fixed resolution
+        
+        print("🔧 SDF Generation Parameters:")
+        print("  Boundary Min: \(boundaryMin)")
+        print("  Boundary Max: \(boundaryMax)")
+        print("  SDF Resolution: \(sdfResolution)")
+        
+        // Debug: Show some transformed triangle bounds
+        if !triangles.isEmpty {
+            let firstTriangle = triangles[0]
+            let minBounds = min(min(firstTriangle.v0, firstTriangle.v1), firstTriangle.v2)
+            let maxBounds = max(max(firstTriangle.v0, firstTriangle.v1), firstTriangle.v2)
+            print("🔍 First transformed triangle bounds:")
+            print("  Min: \(minBounds)")
+            print("  Max: \(maxBounds)")
+        }
+        collisionManager.setMeshVisible(false)
+        collisionManager.representativeItem.setEnabled(false)
+        let arItem = CollisionItem(device: fluidRenderer.device,isARMode: true)
+        
+        // Process and generate SDF from the transformed triangles
+        arItem.processAndGenerateSDF(
+            sdfGenerator: collisionManager.sdfGenerator,
+            triangles: triangles,
+            resolution: sdfResolution,
+            gridBoundaryMin: boundaryMin,
+            gridBoundaryMax: boundaryMax
+        )
+        collisionManager.representativeItem = arItem
+        
+        // Enable collision and make mesh visible
+        collisionManager.representativeItem.setEnabled(true)
+        collisionManager.setMeshVisible(true)
+        collisionManager.representativeItem.setMeshColor(SIMD4<Float>(0.0, 1.0, 0.0, 0.8)) // Green semi-transparent
+        
+        // Reload collection view to show new collision item
+        DispatchQueue.main.async { [weak self] in
+            self?.arCollisionRenderCollectionView.reloadData()
+        }
+        
+        print("✅ SDF generated and collision enabled from AR mesh")
+    }
+    
+    @objc private func toggleARMesh() {
+        guard let arRenderer = arRenderer else { return }
+        
+        let currentlyVisible = arRenderer.showARMeshWireframe
+        let newVisibility = !currentlyVisible
+        
+        arRenderer.setMeshRenderingEnabled(newVisibility)
+        
+        if newVisibility {
+            arMeshToggleButton.setTitle("Mesh: ON", for: .normal)
+            arMeshToggleButton.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.8)
+        } else {
+            arMeshToggleButton.setTitle("Mesh: OFF", for: .normal)
+            arMeshToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+        
+        print("🔧 AR Mesh visibility: \(newVisibility)")
+    }
+    
+    @objc private func arBBRadiusChanged(_ slider: UISlider) {
+        arBoundingBoxRadius = slider.value
+        arBBRadiusLabel.text = String(format: "BB: %.1fm", arBoundingBoxRadius)
+        print("🔧 AR Bounding Box Radius: \(arBoundingBoxRadius)m")
+    }
+    
+    @objc private func toggleARCamera() {
+        guard let arRenderer = arRenderer else { return }
+        
+        // Get current camera rendering state from ARRenderer
+        let currentlyActive = arRenderer.isCameraRenderingEnabled
+        let newActive = !currentlyActive
+        
+        arRenderer.setCameraRenderingEnabled(newActive)
+        
+        // Switch background renderer based on camera state
+        if newActive {
+            // Camera ON: Use AR background
+            fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: arRenderer, fluidRenderer: fluidRenderer, isTransparent: true)
+            arCameraToggleButton.setTitle("Camera: ON", for: .normal)
+            arCameraToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
+        } else {
+            // Camera OFF: Use original fluid background
+            if let saved = savedBackgroundRenderer {
+                fluidRenderer.backgroundRenderer = saved
+            } else {
+                installDefaultBackgroundRenderer()
+            }
+            arCameraToggleButton.setTitle("Camera: OFF", for: .normal)
+            arCameraToggleButton.backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        }
+        
+        print("🔧 AR Camera active: \(newActive)")
+    }
+    
+}
+
+// MARK: - CollisionRenderCell
+class CollisionRenderCell: UICollectionViewCell {
+    private let label: UILabel = UILabel()
+    
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupCell()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupCell()
+    }
+    
+    private func setupCell() {
+        backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+        layer.cornerRadius = 8
+        
+        label.textAlignment = .center
+        label.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .white
+        addSubview(label)
+        
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+    
+    func configure(with index: Int, isSelected: Bool) {
+        label.text = "\(index + 1)"
+        
+        if isSelected {
+            backgroundColor = UIColor.systemOrange.withAlphaComponent(0.9)
+            layer.borderWidth = 2
+            layer.borderColor = UIColor.white.cgColor
+        } else {
+            backgroundColor = UIColor.systemGray.withAlphaComponent(0.8)
+            layer.borderWidth = 0
+            layer.borderColor = UIColor.clear.cgColor
+        }
+    }
+}
+
+// MARK: - UICollectionView DataSource & Delegate
+extension ViewController: UICollectionViewDataSource, UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        // Return the number of collision items
+        guard collectionView == arCollisionRenderCollectionView else { return 0 }
+        return fluidRenderer?.collisionManager?.items.count ?? 0
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        guard collectionView == arCollisionRenderCollectionView else { return UICollectionViewCell() }
+        
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "CollisionRenderCell", for: indexPath) as! CollisionRenderCell
+        
+        // Check if this collision item is currently enabled (not skipped)
+        let isEnabled = !(fluidRenderer?.collisionManager?.items[indexPath.item].skipRenderInAR ?? true)
+        cell.configure(with: indexPath.item, isSelected: isEnabled)
+        
+        return cell
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard collectionView == arCollisionRenderCollectionView,
+              let collisionManager = fluidRenderer?.collisionManager,
+              indexPath.item < collisionManager.items.count else { return }
+        
+        // Toggle skipRenderInAR for the selected collision item
+        let item = collisionManager.items[indexPath.item]
+        item.skipRenderInAR = !item.skipRenderInAR
+        
+        // Update the cell appearance
+        collectionView.reloadItems(at: [indexPath])
+        
+        print("🔧 Collision Item \(indexPath.item + 1) Render: \(item.skipRenderInAR ? "DISABLED" : "ENABLED")")
     }
 }

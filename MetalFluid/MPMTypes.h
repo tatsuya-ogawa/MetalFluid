@@ -87,6 +87,7 @@ typedef struct {
     uint32_t materialMode;     // 0: fluid, 1: neo-hookean elastic, 2: rigid body
     float youngsModulus;       // Young's modulus for elastic material
     float poissonsRatio;       // Poisson's ratio for elastic material
+    simd_float4x4 worldTransform; // Transform from fluid space to world space
 } ComputeShaderUniforms;
 
 // Collision detection uniforms
@@ -112,7 +113,6 @@ typedef struct {
     simd_int3 gridResolution;
     float rest_density;    // For pressure heatmap calculation
     float particleSizeMultiplier; // For dynamic particle size scaling
-    float sphere_size;     // Sphere size for billboard rendering (same as WebGPU-Ocean)
 } VertexShaderUniforms;
 
 // Fluid rendering uniforms (same as WebGPU-Ocean)
@@ -136,4 +136,5 @@ struct Triangle {
     float3 v1;
     float3 v2;
 };
+constant float SPHERE_SIZE_BASE = 0.025;
 #endif /* MPMTypes_h */

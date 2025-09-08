@@ -107,7 +107,7 @@ public class CollisionMeshRendererItem {
     // Utility methods
     func setColor(_ color: SIMD4<Float>) {
         meshColor = color
-        // Note: For dynamic color changes, we'd need to pass color as uniform to shader
+        updateMeshUniforms() // Update uniforms immediately when color changes
     }
     
     func setWireframeMode(_ enabled: Bool) {
@@ -198,72 +198,6 @@ public class CollisionMeshRenderer {
         depthStencilState = device.makeDepthStencilState(descriptor: depthDescriptor)
     }
         
-    func render(item:CollisionMeshRendererItem,renderPassDescriptor: MTLRenderPassDescriptor,
-                commandBuffer: MTLCommandBuffer,
-                vertexUniformBuffer: MTLBuffer,
-                collisionUniformBuffer: MTLBuffer) {
-        
-        guard isVisible,
-              let depthStencilState = depthStencilState,
-              let meshBuffer = item.meshBuffer,
-              let meshIndexBuffer = item.meshIndexBuffer,
-              let meshUniformsBuffer = item.meshUniformsBuffer,
-              item.indexCount > 0 else {
-            return
-        }
-        
-        // Additional check for wireframe mode
-        if item.wireframeMode && (item.wireframeIndexBuffer == nil || item.wireframeIndexCount == 0) {
-            return
-        }
-        
-        // Update mesh uniforms
-        item.updateMeshUniforms()
-        
-        // Select pipeline based on mode
-        let pipelineState = item.wireframeMode ? wireframePipelineState : solidPipelineState
-        guard let pipeline = pipelineState else {
-            return
-        }
-        
-        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
-            return
-        }
-        
-        renderEncoder.label = item.wireframeMode ? "Collision Mesh Wireframe" : "Collision Mesh Solid"
-        renderEncoder.setRenderPipelineState(pipeline)
-        renderEncoder.setDepthStencilState(depthStencilState)
-        
-        // Set vertex buffer and uniforms
-        renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
-        renderEncoder.setVertexBuffer(vertexUniformBuffer, offset: 0, index: 1)
-        renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
-        renderEncoder.setVertexBuffer(collisionUniformBuffer, offset: 0, index: 3)
-        
-        // Draw based on mode
-        if item.wireframeMode {
-            // Draw wireframe as lines
-            renderEncoder.drawIndexedPrimitives(
-                type: .line,
-                indexCount: item.wireframeIndexCount,
-                indexType: .uint32,
-                indexBuffer: item.wireframeIndexBuffer!,
-                indexBufferOffset: 0
-            )
-        } else {
-            // Draw solid triangles
-            renderEncoder.drawIndexedPrimitives(
-                type: .triangle,
-                indexCount: item.indexCount,
-                indexType: .uint32,
-                indexBuffer: meshIndexBuffer,
-                indexBufferOffset: 0
-            )
-        }
-        
-        renderEncoder.endEncoding()
-    }
-    
     // Render within an existing render encoder (doesn't create or end encoding)
     func renderInEncoder(item:CollisionMeshRendererItem,renderEncoder: MTLRenderCommandEncoder,
                         vertexUniformBuffer: MTLBuffer,
@@ -313,6 +247,76 @@ public class CollisionMeshRenderer {
             )
         } else {
             // Draw solid triangles
+            renderEncoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: item.indexCount,
+                indexType: .uint32,
+                indexBuffer: meshIndexBuffer,
+                indexBufferOffset: 0
+            )
+        }
+    }
+    
+    // AR mode rendering - uses AR frame matrices directly
+    func renderInEncoderForAR(item: CollisionMeshRendererItem,
+                             renderEncoder: MTLRenderCommandEncoder,
+                             projectionMatrix: float4x4,
+                             viewMatrix: float4x4,
+                             collisionUniformBuffer: MTLBuffer) {
+        
+        guard isVisible,
+              let depthStencilState = depthStencilState,
+              let meshBuffer = item.meshBuffer,
+              let meshIndexBuffer = item.meshIndexBuffer,
+              let meshUniformsBuffer = item.meshUniformsBuffer,
+              item.indexCount > 0 else {
+            return
+        }
+        
+        // Additional check for wireframe mode
+        if item.wireframeMode && (item.wireframeIndexBuffer == nil || item.wireframeIndexCount == 0) {
+            return
+        }
+        
+        // Set up rendering pipeline
+        let pipelineState = item.wireframeMode ? wireframePipelineState : solidPipelineState
+        renderEncoder.setRenderPipelineState(pipelineState!)
+        renderEncoder.setDepthStencilState(depthStencilState)
+        
+        // Set vertex data
+        renderEncoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
+        
+        // Create AR vertex uniforms with minimal required fields
+        var arVertexUniforms = VertexShaderUniforms(
+            projectionMatrix: projectionMatrix,
+            viewMatrix: viewMatrix,
+            gridSpacing: 1.0,  // Not used in collision rendering
+            physicalDomainOrigin: SIMD3<Float>(0, 0, 0),  // Not used
+            gridResolution: SIMD3<Int32>(0, 0, 0),  // Not used
+            rest_density: 1.0,  // Not used
+            particleSizeMultiplier: 1.0,  // Not used
+        )
+        renderEncoder.setVertexBytes(&arVertexUniforms, length: MemoryLayout<VertexShaderUniforms>.stride, index: 1)
+        
+        renderEncoder.setVertexBuffer(meshUniformsBuffer, offset: 0, index: 2)
+        
+        // Create AR collision uniforms with identity transform (AR meshes are already in world coordinates)
+        let originalUniforms = collisionUniformBuffer.contents().bindMemory(to: CollisionUniforms.self, capacity: 1)[0]
+        var arCollisionUniforms = originalUniforms
+        arCollisionUniforms.collisionTransform = matrix_identity_float4x4
+        arCollisionUniforms.collisionInvTransform = matrix_identity_float4x4
+        renderEncoder.setVertexBytes(&arCollisionUniforms, length: MemoryLayout<CollisionUniforms>.stride, index: 3)
+        
+        // Draw based on mode
+        if item.wireframeMode {
+            renderEncoder.drawIndexedPrimitives(
+                type: .line,
+                indexCount: item.wireframeIndexCount,
+                indexType: .uint32,
+                indexBuffer: item.wireframeIndexBuffer!,
+                indexBufferOffset: 0
+            )
+        } else {
             renderEncoder.drawIndexedPrimitives(
                 type: .triangle,
                 indexCount: item.indexCount,

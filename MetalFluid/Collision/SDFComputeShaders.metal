@@ -69,14 +69,15 @@ inline float signedDistanceToTriangle(float3 point, Triangle triangle) {
     return signVal >= 0.0 ? d : -d;
 }
 
-// SDF generation compute shader
+// SDF generation compute shader with chunking support
 kernel void generateSDF(
     device const Triangle* triangles [[buffer(0)]],
     device float* sdfData [[buffer(1)]],
-    constant uint& triangleCount [[buffer(2)]],
-    constant float3& sdfOrigin [[buffer(3)]],
-    constant float3& voxelSize [[buffer(4)]],
-    constant int3& resolution [[buffer(5)]],
+    constant uint& triangleOffset [[buffer(2)]],    // Start index of triangle chunk
+    constant uint& triangleChunkSize [[buffer(3)]], // Number of triangles in this chunk
+    constant float3& sdfOrigin [[buffer(4)]],
+    constant float3& voxelSize [[buffer(5)]],
+    constant int3& resolution [[buffer(6)]],
     uint3 gid [[thread_position_in_grid]]
 ) {
     // Check bounds
@@ -89,18 +90,22 @@ kernel void generateSDF(
     // Calculate world position for this voxel
     float3 worldPos = sdfOrigin + float3(gid) * voxelSize;
     
-    // Find minimum distance to all triangles
-    float minDistance = INFINITY;
+    uint index = gid.x + gid.y * uint(resolution.x) + gid.z * uint(resolution.x) * uint(resolution.y);
     
-    for (uint i = 0; i < triangleCount; i++) {
+    // For first chunk, initialize with INFINITY
+    // For subsequent chunks, read existing value to compare
+    float minDistance = (triangleOffset == 0) ? INFINITY : sdfData[index];
+    
+    // Process only the triangles in this chunk
+    uint chunkEnd = triangleOffset + triangleChunkSize;
+    for (uint i = triangleOffset; i < chunkEnd; i++) {
         float distance = signedDistanceToTriangle(worldPos, triangles[i]);
         if(abs(distance) < abs(minDistance)){
             minDistance = distance;
         }
     }
     
-    // Store result
-    uint index = gid.x + gid.y * uint(resolution.x) + gid.z * uint(resolution.x) * uint(resolution.y);
+    // Store result (always write back the minimum distance found so far)
     sdfData[index] = minDistance;
 }
 

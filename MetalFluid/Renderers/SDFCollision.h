@@ -57,10 +57,11 @@ inline float3 computeParticleSDFCollisionImpulse(
     float3 particleVel,
     float particleMass,
     texture3d<float> sdfTexture,
+    constant ComputeShaderUniforms& uniforms,
     constant CollisionUniforms &collision,
     float dt
 ) {
-    float4 sdfData = sampleSDFWithGradient(particlePos, sdfTexture, collision);
+    float4 sdfData = sampleSDFWithGradient(particlePos, sdfTexture, uniforms,collision);
     float phi = sdfData.x;
     float3 normal = sdfData.yzw;
     
@@ -129,7 +130,7 @@ inline void projectConstraints(
 ) {
     device MPMParticle& particle = particles[particleId];
     
-    float4 sdfData = sampleSDFWithGradient(particle.position, sdfTexture, collision);
+    float4 sdfData = sampleSDFWithGradient(particle.position, sdfTexture, uniforms,collision);
     float phi = sdfData.x;
     float3 normal = sdfData.yzw;
     
