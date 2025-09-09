@@ -12,6 +12,7 @@ class IntegratedRenderer {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private weak var fluidRenderer: MPMFluidRenderer?
+    public weak var overlayRenderer: OverlayRenderer?
     
     init(device: MTLDevice, commandQueue: MTLCommandQueue, fluidRenderer: MPMFluidRenderer) {
         self.device = device
@@ -414,9 +415,7 @@ class IntegratedRenderer {
         renderPassDescriptor: MTLRenderPassDescriptor,
         depthStencilDescriptor: MTLDepthStencilDescriptor? = nil
     ) {
-        guard let fluidRenderer = fluidRenderer,
-              let backgroundRenderer = fluidRenderer.backgroundRenderer,
-              let colorAttachmentTexture = renderPassDescriptor.colorAttachments[0].texture else {
+        guard let colorAttachmentTexture = renderPassDescriptor.colorAttachments[0].texture else {
             return
         }
         
@@ -430,8 +429,8 @@ class IntegratedRenderer {
             renderEncoder.setDepthStencilState(depthStencilState)
         }
         
-        // Render overlay (AR wireframe, etc.)
-        backgroundRenderer.renderOverlay(renderEncoder: renderEncoder, targetTexture: colorAttachmentTexture)
+        // Render additional overlay (independent of background renderer type)
+        overlayRenderer?.renderOverlay(renderEncoder: renderEncoder, targetTexture: colorAttachmentTexture)
         
         renderEncoder.endEncoding()
     }

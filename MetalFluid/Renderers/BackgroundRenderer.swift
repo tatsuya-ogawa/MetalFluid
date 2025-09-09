@@ -57,8 +57,8 @@ final class ARBackgroundRendererAdapter: BackgroundRenderer {
         }()
         
         // AR frame matrices are now handled by IntegratedRenderer
-        
-        arRenderer.renderARMeshWireframeInEncoder(renderEncoder: renderEncoder, viewportSize: viewportSize, orientation: orientation)
+        // AR mesh wireframe rendering is now handled by IntegratedRenderer's overlayRenderer
+        // to ensure mesh is visible regardless of AR camera state
     }
 }
 

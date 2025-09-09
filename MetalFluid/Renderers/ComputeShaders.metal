@@ -685,13 +685,16 @@ kernel void gridToParticlesElastic(
     }
 }
 
-// Apply force to grid nodes within radius
+
+// Apply force to grid nodes within radius (with collision detection)
 kernel void applyForceToGrid(
     device MPMGridNode* grid [[buffer(0)]],
     constant ComputeShaderUniforms& uniforms [[buffer(1)]],
     constant float3& forcePosition [[buffer(2)]],
     constant float3& forceVector [[buffer(3)]],
     constant float& forceRadius [[buffer(4)]],
+    constant SDFSet& sdfSet [[buffer(5)]],
+    constant uint& sdfCount [[buffer(6)]],
     uint id [[thread_position_in_grid]]
 ) {
     if (id >= uniforms.gridNodeCount) return;
@@ -699,21 +702,45 @@ kernel void applyForceToGrid(
     // Get grid coordinates from linear index
     uint3 gridCoord = gridXYZ(id, uniforms);
     
-    // Convert grid coordinate to world position
-    float3 gridWorldPos = uniforms.domainOrigin + float3(gridCoord) * uniforms.gridSpacing;
+    // Force position should already be in grid coordinates (converted in Swift)
+    float distance = length(float3(gridCoord) - forcePosition);
     
-    float distance = length(gridWorldPos - forcePosition);
-    
+    // Force radius should already be in grid units (converted in Swift)
     if (distance < forceRadius) {
         float mass = atomicLoadWithUniform(&grid[id].mass, uniforms);
         if (mass > 1e-6) {  // Only apply force to grid nodes with mass
-            float falloff = exp(-distance * 8.0);
-            float3 force = forceVector * falloff * uniforms.deltaTime;
             
-            // Add force as velocity impulse
-            atomicAddWithUniform(&grid[id].velocity_x, force.x, uniforms);
-            atomicAddWithUniform(&grid[id].velocity_y, force.y, uniforms);
-            atomicAddWithUniform(&grid[id].velocity_z, force.z, uniforms);
+            // Check for collision at this grid position
+            bool isInsideCollider = false;
+            for (uint i = 0; i < sdfCount && !isInsideCollider; i++) {
+                constant CollisionUniforms& collision = *sdfSet.collision[i];
+                texture3d<float> sdfTexture = sdfSet.sdf[i];
+                
+                // Skip if collision is disabled
+                if (!isCollisionEnabled(collision)) continue;
+                
+                // Sample SDF at grid position (pass grid coordinate, not world position)
+                // sampleSDFWithGradient will apply worldTransform internally
+                float3 gridPos = float3(gridCoord);
+                float4 sdfData = sampleSDFWithGradient(gridPos, sdfTexture, uniforms, collision);
+                float phi = sdfData.x;
+                
+                // If inside SDF (phi < 0), this is a collider region
+                if (phi < 0.0) {
+                    isInsideCollider = true;
+                }
+            }
+            
+            // Only apply force if not inside a collider
+            if (!isInsideCollider) {
+                float falloff = exp(-distance * 8.0);
+                float3 force = forceVector * falloff * uniforms.deltaTime;
+                
+                // Add force as velocity impulse
+                atomicAddWithUniform(&grid[id].velocity_x, force.x, uniforms);
+                atomicAddWithUniform(&grid[id].velocity_y, force.y, uniforms);
+                atomicAddWithUniform(&grid[id].velocity_z, force.z, uniforms);
+            }
         }
     }
 }

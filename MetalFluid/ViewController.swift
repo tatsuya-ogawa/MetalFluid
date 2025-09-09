@@ -1632,6 +1632,7 @@ extension ViewController{
                 ar.startARSession()
                 savedBackgroundRenderer = fluidRenderer.backgroundRenderer
                 fluidRenderer.backgroundRenderer = ARBackgroundRendererAdapter(arRenderer: ar, fluidRenderer: fluidRenderer, isTransparent: true)
+                integratedRenderer.overlayRenderer = arRenderer
             }
             
             // AR mode alignment now handled by IntegratedRenderer
@@ -1640,6 +1641,7 @@ extension ViewController{
             arToggleButton.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.8)
         } else {
             // Stop AR session and detach background renderer
+            integratedRenderer.overlayRenderer = nil
             arRenderer?.stopARSession()
             if let saved = savedBackgroundRenderer {
                 fluidRenderer.backgroundRenderer = saved
@@ -1647,7 +1649,7 @@ extension ViewController{
             } else {
                 installDefaultBackgroundRenderer()
             }
-            
+
             // AR mode alignment now handled by IntegratedRenderer
             
             arToggleButton.setTitle("AR: OFF", for: .normal)

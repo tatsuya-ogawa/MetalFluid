@@ -293,18 +293,40 @@ class MPMFluidRenderer: NSObject {
         guard !currentForces.isEmpty,
               let computeEncoder = commandBuffer.makeComputeCommandEncoder() else { return }
         
+        // Prepare collision detection data
+        let enabledItems = collisionManager?.items.filter({ $0.isEnabled() }) ?? []
+        
         for force in currentForces {
-            let forcePositionBuffer = device.makeBuffer(bytes: [force.position], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
-            let forceVectorBuffer = device.makeBuffer(bytes: [force.vector], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
-            let forceRadiusBuffer = device.makeBuffer(bytes: [force.radius], length: MemoryLayout<Float>.stride, options: .storageModeShared)!
+            // Convert world coordinates to grid coordinates
+            // Get world transform from compute uniforms
+            let computeUniformsPointer = scene.getComputeUniformBuffer().contents().bindMemory(to: ComputeShaderUniforms.self, capacity: 1)
+            let worldTransform = computeUniformsPointer[0].worldTransform
+            let invWorldTransform = worldTransform.inverse
+            let forcePositionFluid = invWorldTransform * SIMD4<Float>(force.position, 1.0)
+            let forcePositionGrid = (SIMD3<Float>(forcePositionFluid.x,forcePositionFluid.y,forcePositionFluid.z) - domainOrigin) / gridSpacing
+            let forceRadiusGrid = force.radius / gridSpacing
             
-            // Dispatch force application to grid
+            let forcePositionBuffer = device.makeBuffer(bytes: [forcePositionGrid], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
+            let forceVectorBuffer = device.makeBuffer(bytes: [force.vector], length: MemoryLayout<SIMD3<Float>>.stride, options: .storageModeShared)!
+            let forceRadiusBuffer = device.makeBuffer(bytes: [forceRadiusGrid], length: MemoryLayout<Float>.stride, options: .storageModeShared)!
+            
+            // Apply force with collision detection
             computeEncoder.setComputePipelineState(applyForceToGridPipelineState)
             computeEncoder.setBuffer(scene.getComputeGridBuffer(), offset: 0, index: 0)
             computeEncoder.setBuffer(scene.getComputeUniformBuffer(), offset: 0, index: 1)
             computeEncoder.setBuffer(forcePositionBuffer, offset: 0, index: 2)
             computeEncoder.setBuffer(forceVectorBuffer, offset: 0, index: 3)
             computeEncoder.setBuffer(forceRadiusBuffer, offset: 0, index: 4)
+            
+            // Set up SDF argument buffer (textures and uniforms) at index 5
+            if let collisionManager = collisionManager {
+                setupSdfArgumentBufferForCompute(computeEncoder: computeEncoder, collisionManager: collisionManager)
+            }
+            
+            // Set SDF count at index 6
+            let sdfCount = UInt32(min(enabledItems.count, CollisionManager.MAX_COLLISION_SDF))
+            let sdfCountBuffer = device.makeBuffer(bytes: [sdfCount], length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+            computeEncoder.setBuffer(sdfCountBuffer, offset: 0, index: 6)
             
             let gridThreadsPerThreadgroup = MTLSize(width: 64, height: 1, depth: 1)  // GRID_THREADGROUP_SIZE
             let gridThreadgroups = MTLSize(

@@ -526,6 +526,27 @@ private extension ARRenderer {
 }
 #endif
 
+// MARK: - OverlayRenderer Protocol Conformance
+extension ARRenderer: OverlayRenderer {
+    func renderOverlay(renderEncoder: MTLRenderCommandEncoder, targetTexture: MTLTexture) {
+        // Compute viewport size and current interface orientation for AR matrices
+        let viewportSize = CGSize(width: targetTexture.width, height: targetTexture.height)
+        let orientation: UIInterfaceOrientation = {
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                return scene.interfaceOrientation
+            }
+            return .portrait
+        }()
+        
+        // Render AR mesh wireframe
+        renderARMeshWireframeInEncoder(
+            renderEncoder: renderEncoder,
+            viewportSize: viewportSize,
+            orientation: orientation
+        )
+    }
+}
+
 // MARK: - Raycast and Mesh Extraction
 extension ARRenderer {
     #if canImport(ARKit)

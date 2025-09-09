@@ -41,7 +41,7 @@ extension MPMFluidRenderer {
         clearGridPipelineState = createComputePipelineState(library: library, functionName: "clearGrid")
         updateGridVelocityPipelineState = createComputePipelineState(library: library, functionName: "updateGridVelocity")
 
-        // Force application pipeline
+        // Force application pipeline (with collision detection)
         applyForceToGridPipelineState = createComputePipelineState(library: library, functionName: "applyForceToGrid")
         
         // SDF collision physics integration pipeline
@@ -239,7 +239,7 @@ extension MPMFluidRenderer {
         }
     }
     // Bind SDF resources: textures + uniforms via argument buffer (SDFSet), physics direct
-    private func setupSdfArgumentBufferForCompute(computeEncoder: MTLComputeCommandEncoder, collisionManager: CollisionManager) {
+    internal func setupSdfArgumentBufferForCompute(computeEncoder: MTLComputeCommandEncoder, collisionManager: CollisionManager) {
         let items = collisionManager.items.filter{ $0.isEnabled() }
         let count = min(items.count, CollisionManager.MAX_COLLISION_SDF)
         // Build argument buffer for SDFSet (textures + uniform pointers) → buffer(3)
