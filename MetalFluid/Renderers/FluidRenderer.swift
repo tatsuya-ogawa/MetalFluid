@@ -318,15 +318,32 @@ class MPMFluidRenderer: NSObject {
             computeEncoder.setBuffer(forceVectorBuffer, offset: 0, index: 3)
             computeEncoder.setBuffer(forceRadiusBuffer, offset: 0, index: 4)
             
-            // Set up SDF argument buffer (textures and uniforms) at index 5
+            // Set up SDF resources manually for applyForceToGrid
             if let collisionManager = collisionManager {
-                setupSdfArgumentBufferForCompute(computeEncoder: computeEncoder, collisionManager: collisionManager)
+                let items = collisionManager.items.filter{ $0.isEnabled() }
+                let count = min(items.count, CollisionManager.MAX_COLLISION_SDF)
+                
+                // Build argument buffer for SDFSet (textures + uniform pointers) → buffer(5)
+                let (argBuf, argEnc) = ensureSdfArgumentBuffer()
+                for i in 0..<count {
+                    if let tex = items[i].getSDFTexture() {
+                        argEnc.setTexture(tex, index: i)
+                        computeEncoder.useResource(tex, usage: .read)
+                    }
+                    argEnc.setBuffer(items[i].getCollisionUniformBuffer(), offset: 0, index: CollisionManager.MAX_COLLISION_SDF + i)
+                }
+                computeEncoder.setBuffer(argBuf, offset: 0, index: 5)
+                
+                // Set SDF count at index 6
+                let sdfCount = UInt32(count)
+                let sdfCountBuffer = device.makeBuffer(bytes: [sdfCount], length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+                computeEncoder.setBuffer(sdfCountBuffer, offset: 0, index: 6)
+            } else {
+                // No collision manager - set empty SDF count
+                let sdfCount = UInt32(0)
+                let sdfCountBuffer = device.makeBuffer(bytes: [sdfCount], length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
+                computeEncoder.setBuffer(sdfCountBuffer, offset: 0, index: 6)
             }
-            
-            // Set SDF count at index 6
-            let sdfCount = UInt32(min(enabledItems.count, CollisionManager.MAX_COLLISION_SDF))
-            let sdfCountBuffer = device.makeBuffer(bytes: [sdfCount], length: MemoryLayout<UInt32>.stride, options: .storageModeShared)!
-            computeEncoder.setBuffer(sdfCountBuffer, offset: 0, index: 6)
             
             let gridThreadsPerThreadgroup = MTLSize(width: 64, height: 1, depth: 1)  // GRID_THREADGROUP_SIZE
             let gridThreadgroups = MTLSize(
