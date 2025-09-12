@@ -166,6 +166,11 @@ class ViewController: UIViewController {
         metalView.preferredFramesPerSecond = 60
         metalView.colorPixelFormat = .bgra8Unorm
         metalView.depthStencilPixelFormat = .depth32Float
+        
+        // Enable triple buffering
+        if let layer = metalView.layer as? CAMetalLayer {
+            layer.maximumDrawableCount = 3
+        }
         metalView.clearColor = MTLClearColor(
             red: 0.05,
             green: 0.05,
