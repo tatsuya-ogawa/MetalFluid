@@ -57,6 +57,7 @@ class IntegratedRenderer {
     }
     
     func render(
+        drawable:CAMetalDrawable,
         renderPassDescriptor: MTLRenderPassDescriptor,
         performCompute: Bool,
         projectionMatrix: float4x4,
@@ -139,6 +140,7 @@ class IntegratedRenderer {
             depthStencilDescriptor: collisionDepthStencilDescriptor
         )
         // 8. Commit
+        commandBuffer.present(drawable)
         commandBuffer.commit()
     }
     

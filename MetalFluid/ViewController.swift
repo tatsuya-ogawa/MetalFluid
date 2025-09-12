@@ -1499,6 +1499,8 @@ extension ViewController: MTKViewDelegate {
         if performStep {
             fluidRenderer.updateComputeUniforms(worldTransform:computeWorldTransform())
         }
+        
+        guard let drawable = view.currentDrawable else { return }
         fluidRenderer.updateVertexUniforms(
             deltaTime: deltaTime,
             screenSize: screenSize,
@@ -1506,9 +1508,10 @@ extension ViewController: MTKViewDelegate {
             viewMatrix: viewMatrix,
             worldTransform: computeWorldTransform()
         )
-        
+                
         // Use IntegratedRenderer as facade for all rendering
         integratedRenderer.render(
+            drawable: drawable,
             renderPassDescriptor: renderPassDescriptor,
             performCompute: performStep,
             projectionMatrix: projectionMatrix,
@@ -1519,9 +1522,6 @@ extension ViewController: MTKViewDelegate {
         
         // reset manual step after issuing one compute pass
         shouldStep = false
-        
-        guard let drawable = view.currentDrawable else { return }
-        drawable.present()
     }
 }
 
