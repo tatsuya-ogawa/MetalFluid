@@ -109,6 +109,22 @@ class IntegratedRenderer {
         renderPassDescriptor.depthAttachment.loadAction = .clear
         renderPassDescriptor.depthAttachment.storeAction = .store
         renderPassDescriptor.depthAttachment.clearDepth = 1.0
+        // 6. Collision render (depth clear + write enabled)
+        // Create collision depth stencil descriptor (depth clear + write enabled)
+        let collisionDepthStencilDescriptor = createDepthStencilDescriptor(
+            depthCompareFunction: .less,
+            isDepthWriteEnabled: true
+        )
+        renderCollision(
+            commandBuffer: commandBuffer,
+            renderPassDescriptor: renderPassDescriptor,
+            cameraProjectionMatrix: cameraProjectionMatrix,
+            cameraViewMatrix: cameraViewMatrix,
+            depthStencilDescriptor: collisionDepthStencilDescriptor
+        )
+        renderPassDescriptor.depthAttachment.texture = depthBuffer
+        renderPassDescriptor.depthAttachment.loadAction = .load
+        renderPassDescriptor.depthAttachment.storeAction = .store
         // 7. Fluid render (uses custom depthWrite setting from facade or fallback)
         // Set depth buffer to load for fluid rendering
         let fluidDepthStencilDescriptor = createDepthStencilDescriptor(
@@ -122,22 +138,6 @@ class IntegratedRenderer {
             viewMatrix: viewMatrix,
             context: fluidContext,
             depthStencilDescriptor: fluidDepthStencilDescriptor
-        )
-        renderPassDescriptor.depthAttachment.texture = depthBuffer
-        renderPassDescriptor.depthAttachment.loadAction = .load
-        renderPassDescriptor.depthAttachment.storeAction = .store
-        // 6. Collision render (depth clear + write enabled)
-        // Create collision depth stencil descriptor (depth clear + write enabled)
-        let collisionDepthStencilDescriptor = createDepthStencilDescriptor(
-            depthCompareFunction: .less,
-            isDepthWriteEnabled: true
-        )
-        renderCollision(
-            commandBuffer: commandBuffer,
-            renderPassDescriptor: renderPassDescriptor,
-            cameraProjectionMatrix: cameraProjectionMatrix,
-            cameraViewMatrix: cameraViewMatrix,
-            depthStencilDescriptor: collisionDepthStencilDescriptor
         )
         // 8. Commit
         commandBuffer.present(drawable)

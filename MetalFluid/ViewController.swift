@@ -1497,7 +1497,7 @@ extension ViewController: MTKViewDelegate {
         viewMatrix = viewMatrix * computeWorldTransform()
         // Update simulation based on mode
         if performStep {
-            fluidRenderer.updateComputeUniforms(worldTransform:computeWorldTransform())
+            fluidRenderer.updateComputeUniforms(worldTransform:isAREnabled ? computeWorldTransform(): matrix_identity_float4x4)
         }
         
         guard let drawable = view.currentDrawable else { return }
