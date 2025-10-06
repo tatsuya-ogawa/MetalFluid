@@ -34,24 +34,118 @@ inline float3x3 neoHookeanStress(float3x3 F, float lambda, float mu) {
     return P;
 }
 
+// ===== COLLISION FUNCTIONS (Newton-inspired) =====
+
+// Coulomb friction model - solve for relative velocity in isotropic friction
+// Based on Newton's solve_coulomb_isotropic (solve_rheology.py:667-687)
+inline float3 solveCoulombIsotropic(float mu, float3 normal, float3 u) {
+    float u_n = dot(u, normal);
+
+    if (u_n < 0.0) {  // Contact: normal pointing inward
+        u -= u_n * normal;  // Remove normal component
+        float tau = dot(u, u);  // Tangential velocity squared
+        float alpha = mu * u_n;  // Friction threshold
+
+        if (tau <= alpha * alpha) {
+            // Static friction - stick
+            u = float3(0.0);
+        } else {
+            // Dynamic friction - slide
+            u *= 1.0 + mu * u_n / sqrt(tau);
+        }
+    }
+
+    return u;
+}
+
+// Improved boundary collision with Coulomb friction
+// Based on Newton's project_outside_collider (rasterized_collisions.py:172-238)
+inline void projectOutsideBoundary(
+    thread float3& position,
+    thread float3& velocity,
+    thread float3x3& velocityGradient,
+    constant ComputeShaderUniforms& uniforms,
+    float dt,
+    float friction,
+    float projectionThreshold
+) {
+    float3 boundaryMin = uniforms.boundaryMin;
+    float3 boundaryMax = uniforms.boundaryMax;
+
+    // Find closest boundary and compute SDF
+    float3 distToMin = position - boundaryMin;
+    float3 distToMax = boundaryMax - position;
+
+    float minDist = min(min(min(distToMin.x, distToMin.y), distToMin.z),
+                       min(min(distToMax.x, distToMax.y), distToMax.z));
+
+    float3 boundaryNormal;
+    float sdf;
+
+    // Determine closest boundary and its normal
+    if (minDist == distToMin.x) {
+        boundaryNormal = float3(-1.0, 0.0, 0.0);
+        sdf = distToMin.x;
+    } else if (minDist == distToMax.x) {
+        boundaryNormal = float3(1.0, 0.0, 0.0);
+        sdf = distToMax.x;
+    } else if (minDist == distToMin.y) {
+        boundaryNormal = float3(0.0, -1.0, 0.0);
+        sdf = distToMin.y;
+    } else if (minDist == distToMax.y) {
+        boundaryNormal = float3(0.0, 1.0, 0.0);
+        sdf = distToMax.y;
+    } else if (minDist == distToMin.z) {
+        boundaryNormal = float3(0.0, 0.0, -1.0);
+        sdf = distToMin.z;
+    } else {
+        boundaryNormal = float3(0.0, 0.0, 1.0);
+        sdf = distToMax.z;
+    }
+
+    // Check penetration at end of timestep
+    float voxelSize = uniforms.gridSpacing;
+    float sdf_end = sdf + projectionThreshold * voxelSize;
+
+    if (sdf_end < 0.0) {
+        // Collision detected - apply Coulomb friction response
+        float3 boundaryVel = float3(0.0);  // Static boundary
+        float3 relativeVel = velocity - boundaryVel;
+
+        // Solve for friction-corrected velocity
+        float3 deltaVel = solveCoulombIsotropic(friction, boundaryNormal, relativeVel);
+        deltaVel += boundaryVel - velocity;
+
+        // Update velocity and position
+        velocity += deltaVel;
+        position += deltaVel * dt;
+
+        // Project position outside boundary
+        position -= min(0.0, sdf_end + dt * dot(deltaVel, boundaryNormal)) * boundaryNormal;
+
+        // Rigidify velocity gradient (keep only antisymmetric part = rotation)
+        velocityGradient = 0.5 * (velocityGradient - transpose(velocityGradient));
+    }
+}
+
 // Compute boundary normal and distance from domain boundaries
-inline void computeBoundaryInfo(float3 position, 
+inline void computeBoundaryInfo(float3 position,
                                constant ComputeShaderUniforms& uniforms,
-                               thread float3& boundaryNormal, 
+                               thread float3& boundaryNormal,
                                thread float& boundaryDistance) {
     float3 boundaryMin = uniforms.boundaryMin;
     float3 boundaryMax = uniforms.boundaryMax;
-    
+
     // Find closest boundary
     float3 distToMin = position - boundaryMin;
     float3 distToMax = boundaryMax - position;
-    
+
     // Find minimum distance to any boundary
     float minDist = min(min(min(distToMin.x, distToMin.y), distToMin.z),
                        min(min(distToMax.x, distToMax.y), distToMax.z));
-    
+
     boundaryDistance = minDist;
-    
+
     // Determine boundary normal based on closest boundary
     if (minDist == distToMin.x) {
         boundaryNormal = float3(-1.0, 0.0, 0.0);  // Left wall
@@ -435,34 +529,33 @@ kernel void gridToParticlesFluid1(
         }
     }
     
-    // Compute boundary information for this particle
-    float3 boundaryNormal;
-    float boundaryDistance;
-    computeBoundaryInfo(particles[id].position, uniforms, boundaryNormal, boundaryDistance);
-    
-    // Boundary handling using taichi-mpm approach
-    const float boundaryThreshold = 2.0 * uniforms.gridSpacing;  // Distance threshold for near-boundary
+    // Newton-style boundary collision with Coulomb friction
     const float friction = 0.1;  // Fluid friction coefficient
-    const float pushingForce = 0.0;  // No additional pushing force for fluid
-    
-    if (boundaryDistance < boundaryThreshold) {
-        // Apply friction projection for boundary particles
-        float3 projectedVelocity = frictionProject(particles[id].velocity, float3(0.0), boundaryNormal, friction);
-        particles[id].velocity = projectedVelocity;
-        
-        // Add slight pushing force away from boundary if very close
-        if (boundaryDistance < uniforms.gridSpacing) {
-            particles[id].velocity += boundaryNormal * pushingForce * uniforms.deltaTime;
-        }
-        
-        // Clear affine momentum near boundaries (following taichi-mpm)
-        particles[id].C = float3x3(0.0);
-    }
-    
+    const float projectionThreshold = 0.5;  // Projection threshold (fraction of voxel size)
+
+    // Use local variables for thread reference
+    float3 tmpPos = particles[id].position;
+    float3 tmpVel = particles[id].velocity;
+    float3x3 tmpC = particles[id].C;
+
+    projectOutsideBoundary(
+        tmpPos,
+        tmpVel,
+        tmpC,
+        uniforms,
+        uniforms.deltaTime,
+        friction,
+        projectionThreshold
+    );
+
+    particles[id].position = tmpPos;
+    particles[id].velocity = tmpVel;
+    particles[id].C = tmpC;
+
     // Final position clamping as safety net
     float3 safetyMargin = float3(0.5) * uniforms.gridSpacing;
-    particles[id].position = clamp(particles[id].position, 
-                                  uniforms.boundaryMin + safetyMargin, 
+    particles[id].position = clamp(particles[id].position,
+                                  uniforms.boundaryMin + safetyMargin,
                                   uniforms.boundaryMax - safetyMargin);
     
     // Flush threadgroup accumulations to device memory
@@ -628,44 +721,38 @@ kernel void gridToParticlesElastic(
         }
     }
 
-    
-    // Boundary conditions for elastic materials - Essential for stability
-    const float k = 3.0;
-    const float wall_stiffness = 0.3;
-    float3 wall_min = uniforms.boundaryMin + float3(3.0) * uniforms.gridSpacing;
-    float3 wall_max = uniforms.boundaryMax - float3(4.0) * uniforms.gridSpacing;
-    float3 x_n = particles[id].position + particles[id].velocity * uniforms.deltaTime * k;
-    
-   
-    // Wall collisions - Critical for preventing divergence
-    if (x_n.x < wall_min.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_min.x - x_n.x);
-    }
-    if (x_n.x > wall_max.x) {
-        particles[id].velocity.x += wall_stiffness * (wall_max.x - x_n.x);
-    }
-    if (x_n.y < wall_min.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_min.y - x_n.y);
-    }
-    if (x_n.y > wall_max.y) {
-        particles[id].velocity.y += wall_stiffness * (wall_max.y - x_n.y);
-    }
-    if (x_n.z < wall_min.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_min.z - x_n.z);
-    }
-    if (x_n.z > wall_max.z) {
-        particles[id].velocity.z += wall_stiffness * (wall_max.z - x_n.z);
-    }
-    
-    // Position clamping - Essential safety net like in working sample
-    particles[id].position = clamp(particles[id].position, 
-                                  uniforms.boundaryMin + uniforms.gridSpacing, 
+    // Newton-style boundary collision with Coulomb friction for elastic materials
+    const float friction = 0.3;  // Higher friction for elastic materials
+    const float projectionThreshold = 0.5;  // Projection threshold (fraction of voxel size)
+
+    // Use local variables for thread reference
+    float3 tmpPos = particles[id].position;
+    float3 tmpVel = particles[id].velocity;
+    float3x3 tmpC = particles[id].C;
+
+    projectOutsideBoundary(
+        tmpPos,
+        tmpVel,
+        tmpC,
+        uniforms,
+        uniforms.deltaTime,
+        friction,
+        projectionThreshold
+    );
+
+    particles[id].position = tmpPos;
+    particles[id].velocity = tmpVel;
+    particles[id].C = tmpC;
+
+    // Position clamping - Essential safety net
+    particles[id].position = clamp(particles[id].position,
+                                  uniforms.boundaryMin + uniforms.gridSpacing,
                                   uniforms.boundaryMax - 2.0 * uniforms.gridSpacing);
-    
+
     // Velocity clamping to prevent extreme values while allowing strong elastic motion
     const float max_velocity = 35.0;  // Higher limit for strong elastic response
-    particles[id].velocity = clamp(particles[id].velocity, 
-                                  float3(-max_velocity), 
+    particles[id].velocity = clamp(particles[id].velocity,
+                                  float3(-max_velocity),
                                   float3(max_velocity));
     
     // Flush threadgroup accumulations to device memory
