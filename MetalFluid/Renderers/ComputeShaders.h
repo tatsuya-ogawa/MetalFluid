@@ -179,7 +179,8 @@ inline float3 worldToSDFTexCoord(float3 worldPos, constant CollisionUniforms &co
     float3 meshSpacePos = meshSpacePos4.xyz;
     
     // Convert mesh space position to SDF texture coordinates
-    return (meshSpacePos - collision.sdfOrigin) / collision.sdfSize;
+    float3 safeSize = max(abs(collision.sdfSize), float3(1e-6));
+    return (meshSpacePos - collision.sdfOrigin) / safeSize;
 }
 
 // Compute SDF normal/gradient only (more efficient when SDF value is already known)
@@ -204,14 +205,26 @@ inline float3 computeSDFNormal(float3 worldPos, texture3d<float> sdfTexture, con
     float sdfZPos = (any(texCoordZPos < 0.0) || any(texCoordZPos > 1.0)) ? 1.0 : sampleSparseSDFOrInf(sdfTexture, texCoordZPos);
     float sdfZNeg = (any(texCoordZNeg < 0.0) || any(texCoordZNeg > 1.0)) ? 1.0 : sampleSparseSDFOrInf(sdfTexture, texCoordZNeg);
     
+    // Sparse tiles can return +inf for non-resident texels; sanitize before differencing.
+    if (!isfinite(sdfXPos)) sdfXPos = 1.0;
+    if (!isfinite(sdfXNeg)) sdfXNeg = 1.0;
+    if (!isfinite(sdfYPos)) sdfYPos = 1.0;
+    if (!isfinite(sdfYNeg)) sdfYNeg = 1.0;
+    if (!isfinite(sdfZPos)) sdfZPos = 1.0;
+    if (!isfinite(sdfZNeg)) sdfZNeg = 1.0;
+    
     // Compute gradient using world space epsilon
     gradient.x = (sdfXPos - sdfXNeg) / (2.0 * eps);
     gradient.y = (sdfYPos - sdfYNeg) / (2.0 * eps);
     gradient.z = (sdfZPos - sdfZNeg) / (2.0 * eps);
     
+    if (!all(isfinite(gradient))) {
+        return float3(0, 1, 0);
+    }
+    
     // Normalize gradient to get surface normal
     float gradLength = length(gradient);
-    if (gradLength < 1e-6) {
+    if (!isfinite(gradLength) || gradLength < 1e-6) {
         return float3(0, 1, 0); // Default to up vector
     } else {
         return gradient / gradLength;
@@ -225,6 +238,10 @@ inline float4 sampleSDFWithGradient(float3 particlePos, texture3d<float> sdfText
     // Use the optimized coordinate transformation function
     float3 texCoord = worldToSDFTexCoord(worldPos, collision);
     
+    if (!all(isfinite(texCoord))) {
+        return float4(1.0, 0.0, 1.0, 0.0);
+    }
+    
     // Check bounds
     if (any(texCoord < 0.0) || any(texCoord > 1.0)) {
         return float4(1.0, 0.0, 1.0, 0.0); // Outside bounds: no collision, default normal up
@@ -232,9 +249,15 @@ inline float4 sampleSDFWithGradient(float3 particlePos, texture3d<float> sdfText
     
     // Sample SDF value first
     float sdfValue = sampleSparseSDFOrInf(sdfTexture, texCoord);
+    if (!isfinite(sdfValue)) {
+        return float4(1.0, 0.0, 1.0, 0.0);
+    }
     
     // Compute normal separately for efficiency
     float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
+    if (!all(isfinite(normal))) {
+        return float4(1.0, 0.0, 1.0, 0.0);
+    }
     
     return float4(sdfValue, normal);
 }

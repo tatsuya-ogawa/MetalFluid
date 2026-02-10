@@ -65,15 +65,30 @@ inline float3 resolveParticleSDFCollision(
     float phi = sdfData.x;
     float3 normal = sdfData.yzw;
     
+    // Guard against invalid SDF samples to prevent NaN propagation into particle state.
+    if (!isfinite(phi) || !all(isfinite(normal))) {
+        return float3(0.0);
+    }
+    
     // No collision if particle is outside SDF
     if (phi > 0.0) {
         return float3(0.0);
     }
     
+    float nLen = length(normal);
+    if (!isfinite(nLen) || nLen < 1e-6) {
+        return float3(0.0);
+    }
+    normal /= nLen;
+    
     // 1. Position Projection (Hard Constraint)
     // Move particle out of the SDF along the normal
     // We only project if phi is negative (inside)
-    p.position -= phi * normal;
+    float3 projectedPos = p.position - phi * normal;
+    if (!all(isfinite(projectedPos))) {
+        return float3(0.0);
+    }
+    p.position = projectedPos;
     
     // 2. Velocity Constraint
     // Calculate relative velocity
