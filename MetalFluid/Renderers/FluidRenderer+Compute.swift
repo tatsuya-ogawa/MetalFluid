@@ -435,6 +435,12 @@ extension MPMFluidRenderer {
                 )
                 computeEncoder.setBuffer(scene.getComputeGridBuffer(), offset: 0, index: 0)
                 computeEncoder.setBuffer(scene.getComputeUniformBuffer(), offset: 0, index: 1)
+                
+                // Set collision resources if available (for grid collision)
+                if let collisionManager {
+                    setupSdfArgumentBufferForCompute(computeEncoder: computeEncoder, collisionManager: collisionManager)
+                }
+                
                 computeEncoder.dispatchThreadgroups(
                     gridThreadgroups,
                     threadsPerThreadgroup: gridThreadsPerThreadgroup
