@@ -51,17 +51,17 @@ inline bool needsPhysicsAccumulation(constant CollisionUniforms& collision) {
 }
 
 // MARK: - SDF Collision Impulse Functions (Taichi-MPM Style)
-// Taichi-MPM style collision impulse for particle-SDF collision
-inline float3 computeParticleSDFCollisionImpulse(
-    float3 particlePos,
-    float3 particleVel,
-    float particleMass,
+// Taichi-MPM style collision resolution
+// Modifies particle state directly for stability (Hard Constraint)
+// Returns the impulse applied to the particle (for rigid body coupling)
+inline float3 resolveParticleSDFCollision(
+    device MPMParticle& p,
     texture3d<float> sdfTexture,
     constant ComputeShaderUniforms& uniforms,
     constant CollisionUniforms &collision,
     float dt
 ) {
-    float4 sdfData = sampleSDFWithGradient(particlePos, sdfTexture, uniforms,collision);
+    float4 sdfData = sampleSDFWithGradient(p.position, sdfTexture, uniforms, collision);
     float phi = sdfData.x;
     float3 normal = sdfData.yzw;
     
@@ -70,51 +70,53 @@ inline float3 computeParticleSDFCollisionImpulse(
         return float3(0.0);
     }
     
-    // Taichi-MPM collision response parameters
-    const float restitution = 0.4;  // Coefficient of restitution
-    const float friction = 0.3;     // Coefficient of friction
+    // 1. Position Projection (Hard Constraint)
+    // Move particle out of the SDF along the normal
+    // We only project if phi is negative (inside)
+    p.position -= phi * normal;
     
-    // Velocity relative to surface (assuming static surface)
-    float3 relativeVel = particleVel;
+    // 2. Velocity Constraint
+    // Calculate relative velocity
+    float3 colliderVel = float3(0.0); // Assuming static or handled via physics state
+    // Note: If we had collider velocity, we'd subtract it here:
+    // float3 relVel = p.velocity - colliderVel;
+    float3 relVel = p.velocity;
     
-    // Normal and tangential velocity components
-    float vn = dot(relativeVel, normal);
-    float3 vt = relativeVel - vn * normal;
+    float v_n = dot(relVel, normal);
     
-    // Only process if particle is moving into the surface
-    if (vn >= 0.0) {
+    // If separating, no velocity correction needed (unless sticky)
+    if (v_n >= 0.0) {
         return float3(0.0);
     }
     
-    // Normal impulse (prevent penetration + restitution)
-    float normalImpulseMagnitude = -(1.0 + restitution) * vn * particleMass;
+    float3 oldVelocity = p.velocity;
     
-    // Tangential impulse (friction)
-    float vtMagnitude = length(vt);
-    float3 tangentialImpulse = float3(0.0);
+    // Apply normal constraint (inelastic collision)
+    // Remove normal component of velocity
+    float3 normalVel = v_n * normal;
+    relVel -= normalVel; // Now relVel is purely tangential
     
-    if (vtMagnitude > 1e-6) {
-        float3 tangentDirection = vt / vtMagnitude;
-        
-        // Coulomb friction model
-        float maxFrictionImpulse = friction * normalImpulseMagnitude;
-        float tangentialImpulseMagnitude = min(maxFrictionImpulse, vtMagnitude * particleMass);
-        
-        tangentialImpulse = -tangentialImpulseMagnitude * tangentDirection;
+    // Apply friction to tangential component
+    const float friction = 0.3;
+    float v_t_len = length(relVel);
+    
+    if (v_t_len > 1e-6) {
+        // Coulomb friction: max tangential impulse <= mu * |normal_impulse|
+        // Here we operate on velocities directly.
+        // The "normal impulse" equivalent in velocity space is |v_n|.
+        // We want to reduce tangential velocity by at most friction * |v_n|.
+        float frictionDeltaV = friction * abs(v_n);
+        float new_v_t_len = max(0.0, v_t_len - frictionDeltaV);
+        relVel *= (new_v_t_len / v_t_len);
     }
-    if(USE_DIRECT_POSITION_FIX){
-        particlePos += normal * -phi;
-        float3 normalImpulse = normalImpulseMagnitude * normal;
-        return normalImpulse + tangentialImpulse;
-    }else{
-        // Position correction to prevent penetration (Taichi-MPM approach)
-        float positionCorrection = -phi; // Move particle out of SDF
-        float3 positionImpulse = positionCorrection * normal * particleMass / dt;
-        
-        // Total impulse
-        float3 normalImpulse = normalImpulseMagnitude * normal;
-        return normalImpulse + tangentialImpulse + positionImpulse;
-    }
+    
+    // Update particle velocity
+    p.velocity = relVel; // + colliderVel if moving
+    
+    // Calculate impulse J = m * delta_v
+    // This is the impulse applied TO the particle
+    float3 deltaV = p.velocity - oldVelocity;
+    return p.mass * deltaV;
 }
 
 // MARK: - Projection-Based Dynamics Functions
