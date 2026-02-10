@@ -253,6 +253,11 @@ inline float4 sampleSDFWithGradient(float3 particlePos, texture3d<float> sdfText
         return float4(1.0, 0.0, 1.0, 0.0);
     }
     
+    // Most samples are outside collider. Skip expensive gradient sampling unless penetrating.
+    if (sdfValue >= COLLISION_THRESHOLD) {
+        return float4(sdfValue, 0.0, 1.0, 0.0);
+    }
+    
     // Compute normal separately for efficiency
     float3 normal = computeSDFNormal(worldPos, sdfTexture, collision);
     if (!all(isfinite(normal))) {
